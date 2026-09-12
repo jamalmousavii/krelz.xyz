@@ -1,0 +1,46 @@
+{
+  "name": "krelz-miner",
+  "version": "1.0.0",
+  "description": "Krelz Network Miner Application",
+  "author": "Krelz Network",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux",
+    "build:mac": "electron-builder --mac",
+    "dev": "electron ."
+  },
+  "dependencies": {
+    "ethers": "^6.9.0",
+    "axios": "^1.6.2",
+    "systeminformation": "^5.21.0"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "build": {
+    "appId": "com.krelz.miner",
+    "productName": "Krelz Miner",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": ["nsis"],
+      "icon": "assets"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "icon": "assets"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "assets"
+    }
+  }
+}
