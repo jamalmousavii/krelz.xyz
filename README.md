@@ -1,19 +1,38 @@
 # Krelz Network
 
-شبکه غیرمتمرکز LLM برای اشتراک‌گذاری منابع GPU
+Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 
-## 🔗 لینک‌ها
+## Links
 
-| سرویس | آدرس |
-|-------|------|
-| سایت اصلی | https://krelz.xyz |
+| Service | URL |
+|---------|-----|
+| Website | https://krelz.xyz |
 | Chat AI | https://krelz.xyz/chat |
-| دانلود ماینر | https://krelz.xyz/miner |
-| اکسپلورر | https://krelz.xyz/explorer |
-| API | https://krelz.xyz/api/health |
-| دانلود مستقیم ماینر | https://krelz.xyz/downloads/krelz-miner.AppImage |
+| Miner Install | https://krelz.xyz/miner |
+| Explorer | https://krelz.xyz/explorer |
+| API Health | https://krelz.xyz/api/health |
 
-## 🏗️ معماری
+## Quick Install (Miner)
+
+### Ubuntu / Debian
+
+```bash
+wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-ubuntu.sh && bash install-ubuntu.sh
+```
+
+### RedHat / Fedora / CentOS
+
+```bash
+wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-redhat.sh && bash install-redhat.sh
+```
+
+The install script automatically sets up:
+- Node.js 20
+- Ollama
+- llama3:8b model
+- Krelz Miner
+
+## Architecture
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌───────────────┐
@@ -32,90 +51,82 @@
                     │
               ┌─────▼─────┐         ┌──────────────────┐
               │ Miner App  │────────▶│ BSC Testnet/Main │
-              │ (Electron) │         │ Smart Contracts  │
+              │  (Bash)    │         │ Smart Contracts  │
               └───────────┘         └──────────────────┘
 ```
 
-## 📁 ساختار پروژه
+## Project Structure
 
 ```
-krelz-public/
+krelz.xyz/
 ├── backend/                    # API Server (Node.js/Express)
 │   ├── src/
-│   │   ├── server.js          # نقطه ورود
+│   │   ├── server.js          # Entry point
 │   │   ├── database/
-│   │   │   ├── pool.js        # اتصال PostgreSQL
-│   │   │   └── migrate.js     # مایگریشن دیتابیس
+│   │   │   ├── pool.js        # PostgreSQL connection
+│   │   │   └── migrate.js     # DB migration
 │   │   └── routes/
-│   │       ├── auth.js        # احراز هویت
-│   │       ├── miners.js      # مدیریت ماینرها
-│   │       ├── chat.js        # چت LLM
-│   │       ├── payments.js    # پرداخت‌ها
-│   │       ├── token.js       # توکن KRELZ
-│   │       └── stats.js       # آمار شبکه
+│   │       ├── auth.js        # Authentication
+│   │       ├── miners.js      # Miner management
+│   │       ├── chat.js        # LLM chat
+│   │       ├── payments.js    # Payments
+│   │       ├── token.js       # KRELZ token
+│   │       └── stats.js       # Network stats
 │   └── package.json
-├── frontend/                   # رابط کاربری (Next.js)
+├── frontend/                   # UI (Next.js + Tailwind CSS)
 │   ├── pages/
-│   │   ├── index.js           # صفحه اصلی
-│   │   ├── chat.js            # چت با AI
-│   │   ├── miner.js           # دانلود ماینر
-│   │   └── explorer.js        # اکسپلورر شبکه
+│   │   ├── index.js           # Home page
+│   │   ├── chat.js            # Chat with AI
+│   │   ├── miner.js           # Miner install
+│   │   └── explorer.js        # Network explorer
+│   ├── components/
+│   │   └── LanguageSwitcher.js # Language toggle
+│   ├── i18n/
+│   │   ├── translations.js    # EN/FA translations
+│   │   └── LanguageContext.js  # i18n context provider
 │   └── package.json
-├── miner-app/                  # اپلیکیشن دسکتاپ (Electron)
-│   ├── src/
-│   │   ├── main.js            # نقطه ورود Electron
-│   │   ├── renderer/
-│   │   │   └── index.html     # UI ماینر
-│   │   └── services/
-│   │       ├── ollama.js      # سرویس Ollama
-│   │       ├── miner.js       # سرویس ماینینگ
-│   │       ├── blockchain.js  # اتصال بلاکچین
-│   │       └── api.js         # اتصال API
-│   └── package.json
-├── contracts/                  # قراردادهای هوشمند (Solidity)
+├── miner-app/                  # Miner install scripts
+│   ├── install-ubuntu.sh      # Ubuntu/Debian installer
+│   ├── install-redhat.sh      # RedHat/Fedora installer
+│   └── src/                   # Miner source code
+│       ├── main.js
+│       ├── renderer/index.html
+│       └── services/
+├── contracts/                  # Smart Contracts (Solidity)
 │   ├── contracts/
-│   │   ├── KrelzToken.sol     # توکن ERC-20
-│   │   └── StakingPool.sol    # استخر استیکینگ
+│   │   ├── KrelzToken.sol     # ERC-20 Token
+│   │   └── StakingPool.sol    # Staking Pool
 │   ├── scripts/
-│   │   └── deploy.js          # اسکریپت Deploy
-│   ├── hardhat.config.js      # تنظیمات Hardhat
-│   └── deploy.sh              # اسکریپت Deploy آماده
-└── docs/                       # مستندات
+│   │   └── deploy.js          # Deploy script
+│   ├── hardhat.config.js
+│   └── deploy.sh
+└── docs/                       # Documentation
     ├── architecture.md
     ├── tokenomics.md
     └── api.md
 ```
 
-## ⚡ شروع سریع
+## Development
 
-### دانلود ماینر
-
-```bash
-# لینوکس
-wget https://krelz.xyz/downloads/krelz-miner.AppImage
-chmod +x "Krelz Miner-1.0.0.AppImage"
-./"Krelz Miner-1.0.0.AppImage"
-```
-
-### اجرای Backend
+### Backend
 
 ```bash
 cd backend
 npm install
 node src/server.js
-# اجرا در http://localhost:3000
+# Runs at http://localhost:3000
 ```
 
-### اجرای Frontend
+### Frontend
 
 ```bash
 cd frontend
 npm install
 npm run dev
-# اجرا در http://localhost:3001
+# Runs at http://localhost:3001
 ```
 
-### Deploy قرارداد هوشمند
+### Smart Contracts
 
 ```bash
 cd contracts
@@ -124,51 +135,47 @@ npx hardhat compile
 npx hardhat run scripts/deploy.js --network bscTestnet
 ```
 
-## 🔐 توکنومیکس
+## Internationalization (i18n)
 
-| پارامتر | مقدار |
-|---------|-------|
-| نام توکن | Krelz (KRELZ) |
-| عرضه کل | 1,000,000,000 |
-|imals | 18 |
-| استاندارد | BEP-20 (BNB Chain) |
-| کارمزد پلتفرم | 10% ماینر + 10% کاربر |
-| سوزاندن | 1% تراکنش، 2% LLM، 5% جریمه |
+The site supports English (default) and Farsi. To add a new language:
 
-### توزیع توکن
+1. Add translations in `frontend/i18n/translations.js`
+2. The language switcher appears on all pages
+3. RTL is automatically handled for Farsi
 
-- **60%** ماینینگ
-- **20%** اکوسیستم
-- **10%** تیم (24 ماه vesting)
-- **10%** بنیاد
+## Tokenomics
 
-## 🛠️ فناوری‌ها
+| Parameter | Value |
+|-----------|-------|
+| Token Name | Krelz (KRELZ) |
+| Total Supply | 1,000,000,000 |
+| Decimals | 18 |
+| Standard | BEP-20 (BNB Chain) |
+| Platform Fee | 10% miner + 10% user |
+| Burning | 1% transactions, 2% LLM, 5% penalties |
 
-| لایه | فناوری |
-|------|--------|
+### Token Distribution
+
+- **60%** Mining rewards
+- **20%** Ecosystem
+- **10%** Team (24-month vesting)
+- **10%** Foundation
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
 | Frontend | Next.js 14, React, Tailwind CSS |
 | Backend | Node.js, Express, PostgreSQL, Redis |
 | LLM | Ollama, llama3:8b |
 | Blockchain | BNB Chain, Solidity 0.8.20, Hardhat |
-| Miner App | Electron 28 |
 | Server | Ubuntu 24.04, Nginx, Let's Encrypt |
+| i18n | English (default), Farsi |
 
-## 📊 سرورها
-
-| سرویس | آدرس | پورت |
-|-------|------|------|
-| VPS | 65.109.176.28 | 22 (SSH) |
-| Nginx | krelz.xyz | 80, 443 |
-| Backend | localhost | 3000 |
-| Frontend | localhost | 3001 |
-| PostgreSQL | localhost | 5432 |
-| Redis | localhost | 6379 |
-| Ollama | localhost | 11434 |
-
-## 📄 مجوز
+## License
 
 MIT License
 
 ---
 
-ساخته شده با ❤️ برای جامعه غیرمتمرکز
+Built with love for the decentralized community
