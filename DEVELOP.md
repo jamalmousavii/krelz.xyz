@@ -74,8 +74,9 @@ Node.js/Express API with PostgreSQL.
 backend/
 ├── src/
 │   ├── server.js       # Entry point
+│   ├── models.js       # Available LLM models config
 │   ├── database/       # DB connection & migrations
-│   └── routes/         # API routes
+│   └── routes/         # API routes (chat, miners, models, ...)
 └── package.json
 ```
 
@@ -141,6 +142,43 @@ t('nav.explorer')     → "Explorer" / "اکسپلورر"
 t('miner.quickInstall') → "Quick Install" / "نصب سریع"
 t('home.title')       → "Decentralized LLM Network"
 ```
+
+## Model Configuration
+
+### Available Models
+
+Models are defined in `backend/src/models.js`. Each model has:
+- `id`: Ollama model ID (e.g., `llama3.1:8b`)
+- `name`: Display name
+- `size`: Parameter count (e.g., `8B`)
+- `ram`: Required RAM
+- `category`: `chat`, `code`, `vision`, `embedding`
+
+### API Endpoints
+
+```
+GET /api/models              → All models
+GET /api/models?category=chat → Filter by category
+GET /api/models/categories   → List categories
+```
+
+### Adding a New Model
+
+1. Open `backend/src/models.js`
+2. Add model entry:
+
+```javascript
+{ id: 'model-name:size', name: 'Display Name', size: '8B', ram: '4.4 GB', category: 'chat', pulls: '1M', desc: 'Description' }
+```
+
+3. Restart backend
+
+### Miner Model Selection
+
+Miners choose which models to run during installation:
+- Interactive menu in install scripts
+- Models saved to `miner-app/config.json`
+- Models sent to backend via `/api/miners/register`
 
 ## VPS Deployment
 

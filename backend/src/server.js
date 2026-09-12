@@ -12,6 +12,7 @@ const chatRoutes = require('./routes/chat');
 const paymentRoutes = require('./routes/payments');
 const tokenRoutes = require('./routes/token');
 const statsRoutes = require('./routes/stats');
+const modelRoutes = require('./routes/models');
 
 const app = express();
 const PORT = process.env.API_PORT || 3000;
@@ -36,6 +37,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/token', tokenRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/models', modelRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

@@ -23,6 +23,7 @@ const translations = {
       startChat: 'Start Chat',
       footer: 'All rights reserved.',
       installMetaMask: 'Please install MetaMask',
+      version: 'v1.2.0',
     },
     chat: {
       title: 'Chat with AI - Krelz Network',
@@ -32,6 +33,7 @@ const translations = {
       greeting: 'Hello! How can I help you?',
       errorResponse: 'Error receiving response',
       errorConnection: 'Error connecting to server',
+      selectModel: 'Select AI Model',
     },
     miner: {
       title: 'Miner - Krelz Network',
@@ -49,9 +51,12 @@ const translations = {
       wallet: 'MetaMask wallet',
       howItWorks: 'How it Works',
       step1: 'Run the install script for your system',
-      step2: 'Ollama + llama3:8b model installs automatically',
+      step2: 'Ollama + your selected model installs automatically',
       step3: 'Connect your MetaMask wallet in the miner app',
       step4: 'Start mining and earn KRELZ!',
+      selectModels: 'Select Models to Mine',
+      selectModelsDesc: 'Choose which AI models you want to run on your GPU',
+      selectedModels: 'Selected Models',
     },
     explorer: {
       title: 'Explorer - Krelz Network',
@@ -107,6 +112,7 @@ const translations = {
       startChat: 'شروع چت',
       footer: 'تمامی حقوق محفوظ است.',
       installMetaMask: 'لطفاً MetaMask را نصب کنید',
+      version: 'نسخه ۱.۲.۰',
     },
     chat: {
       title: 'چت با AI - Krelz Network',
@@ -116,6 +122,7 @@ const translations = {
       greeting: 'سلام! چطور می‌توانم کمک کنم؟',
       errorResponse: 'خطا در دریافت پاسخ',
       errorConnection: 'خطا در اتصال به سرور',
+      selectModel: 'انتخاب مدل AI',
     },
     miner: {
       title: 'ماینر - Krelz Network',
@@ -133,9 +140,12 @@ const translations = {
       wallet: 'کیف پول MetaMask',
       howItWorks: 'نحوه کار',
       step1: 'اسکریپت نصب مخصوص سیستم‌عامل خود را اجرا کنید',
-      step2: 'Ollama و مدل llama3:8b خودکار نصب می‌شوند',
+      step2: 'Ollama و مدل انتخابی شما خودکار نصب می‌شوند',
       step3: 'کیف پول MetaMask را در اپلیکیشن ماینر وصل کنید',
       step4: 'شروع به ماینینگ و کسب درآمد KRELZ کنید!',
+      selectModels: 'انتخاب مدل‌ها برای ماینینگ',
+      selectModelsDesc: 'مشخص کنید کدام مدل‌های هوش مصنوعی را روی GPU خود اجرا کنید',
+      selectedModels: 'مدل‌های انتخاب شده',
     },
     explorer: {
       title: 'اکسپلورر - Krelz Network',

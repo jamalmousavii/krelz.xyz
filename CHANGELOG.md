@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.2.0] - 2026-09-12
+
+### Added
+- Model selection in Chat page (60+ models from Ollama library)
+- Model selection in Miner page (choose which models to mine)
+- /api/models endpoint (filter by category: chat, code, vision, embedding)
+- models column on miners table (JSON array of supported models)
+- current_model column on miners table
+- Interactive install scripts (model selection during installation)
+- config.json saved during install (selected models)
+- OllamaService.setModel() and pullModel() methods
+- Model categories: Chat, Code, Vision, Embedding
+
+### Changed
+- Chat page: model dropdown sends selected model to backend
+- Miner page: multi-select checkboxes for model selection
+- Install scripts: interactive menu (1-9, 0 for custom)
+- OllamaService: configurable model (no longer hardcoded)
+- Translations updated with model selection keys (en/fa)
+- Version bumped to 1.2.0
+
+### Fixed
+- Backend chat route now properly uses user-selected model
+
 ## [1.1.0] - 2026-09-11
 
 ### Added

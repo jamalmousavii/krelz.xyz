@@ -4,10 +4,14 @@ const fs = require('fs');
 const path = require('path');
 
 class OllamaService {
-  constructor() {
+  constructor(model = 'llama3.1:8b') {
     this.url = 'http://localhost:11434';
-    this.model = 'llama3:8b';
+    this.model = model;
     this.isRunning = false;
+  }
+
+  setModel(model) {
+    this.model = model;
   }
 
   async install() {
@@ -15,8 +19,21 @@ class OllamaService {
       const installScript = `
         curl -fsSL https://ollama.com/install.sh | sh
       `;
-      
+
       exec(installScript, (error, stdout, stderr) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(stdout);
+      });
+    });
+  }
+
+  async pullModel(modelName) {
+    const model = modelName || this.model;
+    return new Promise((resolve, reject) => {
+      exec(`ollama pull ${model}`, (error, stdout, stderr) => {
         if (error) {
           reject(error);
           return;
@@ -42,10 +59,10 @@ class OllamaService {
     this.isRunning = false;
   }
 
-  async generate(prompt) {
+  async generate(prompt, model) {
     try {
       const response = await axios.post(`${this.url}/api/generate`, {
-        model: this.model,
+        model: model || this.model,
         prompt: prompt,
         stream: false,
       });

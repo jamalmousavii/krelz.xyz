@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { useLanguage } from '../i18n/LanguageContext';
 import LanguageSwitcher from '../components/LanguageSwitcher';
@@ -8,6 +8,22 @@ export default function Chat() {
   const [message, setMessage] = useState('');
   const [chat, setChat] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [models, setModels] = useState([]);
+  const [selectedModel, setSelectedModel] = useState('llama3.1:8b');
+
+  useEffect(() => {
+    fetchModels();
+  }, []);
+
+  const fetchModels = async () => {
+    try {
+      const res = await fetch('/api/models?category=chat');
+      const data = await res.json();
+      if (data.success) setModels(data.models);
+    } catch (err) {
+      console.error('Failed to load models');
+    }
+  };
 
   const sendMessage = async () => {
     if (!message.trim()) return;
@@ -21,7 +37,7 @@ export default function Chat() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage }),
+        body: JSON.stringify({ message: userMessage, model: selectedModel }),
       });
       const data = await res.json();
       if (data.success) {
@@ -52,6 +68,22 @@ export default function Chat() {
       </nav>
 
       <main className="container mx-auto px-6 py-8 max-w-3xl">
+        {/* Model Selector */}
+        <div className="mb-4">
+          <label className="text-gray-300 text-sm mb-2 block">{t('chat.selectModel')}</label>
+          <select
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
+            className="w-full bg-white/10 text-white px-4 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 appearance-none cursor-pointer"
+          >
+            {models.map((model) => (
+              <option key={model.id} value={model.id} className="bg-gray-800 text-white">
+                {model.name} {model.size} — {model.ram} RAM — {model.desc}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 h-[500px] overflow-y-auto mb-4">
           {chat.length === 0 && (
             <div className="text-center text-gray-400 py-20">

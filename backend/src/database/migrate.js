@@ -29,6 +29,8 @@ const migrate = async () => {
         gpu_model VARCHAR(100),
         ram VARCHAR(50),
         cpu VARCHAR(100),
+        models JSONB DEFAULT '["llama3.1:8b"]',
+        current_model VARCHAR(50) DEFAULT 'llama3.1:8b',
         status VARCHAR(20) DEFAULT 'offline',
         uptime DECIMAL(5,2) DEFAULT 0,
         total_tasks INTEGER DEFAULT 0,

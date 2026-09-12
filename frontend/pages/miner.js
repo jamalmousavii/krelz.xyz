@@ -1,20 +1,56 @@
 import Head from 'next/head';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 
 export default function Miner() {
   const { t, lang } = useLanguage();
   const [copied, setCopied] = useState(null);
+  const [models, setModels] = useState([]);
+  const [selectedModels, setSelectedModels] = useState(['llama3.1:8b']);
 
-  const ubuntuCmd = 'wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-ubuntu.sh && bash install-ubuntu.sh';
-  const redhatCmd = 'wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-redhat.sh && bash install-redhat.sh';
+  useEffect(() => {
+    fetchModels();
+  }, []);
+
+  const fetchModels = async () => {
+    try {
+      const res = await fetch('/api/models');
+      const data = await res.json();
+      if (data.success) setModels(data.models);
+    } catch (err) {
+      console.error('Failed to load models');
+    }
+  };
+
+  const toggleModel = (modelId) => {
+    setSelectedModels(prev =>
+      prev.includes(modelId)
+        ? prev.filter(m => m !== modelId)
+        : [...prev, modelId]
+    );
+  };
+
+  const getModelCmd = () => {
+    if (selectedModels.length === 0) return 'ollama pull llama3.1:8b';
+    return selectedModels.map(m => `ollama pull ${m}`).join(' && ');
+  };
+
+  const ubuntuCmd = `wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-ubuntu.sh && bash install-ubuntu.sh`;
+  const redhatCmd = `wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-redhat.sh && bash install-redhat.sh`;
 
   const copyCommand = (cmd, id) => {
     navigator.clipboard.writeText(cmd);
     setCopied(id);
     setTimeout(() => setCopied(null), 2000);
   };
+
+  const categories = [
+    { key: 'chat', label: '💬 Chat', icon: '💬' },
+    { key: 'code', label: '💻 Code', icon: '💻' },
+    { key: 'vision', label: '👁️ Vision', icon: '👁️' },
+    { key: 'embedding', label: '🔗 Embedding', icon: '🔗' },
+  ];
 
   return (
     <div className={`min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 ${lang === 'fa' ? 'rtl' : 'ltr'}`}>
@@ -36,6 +72,50 @@ export default function Miner() {
         <div className="max-w-3xl mx-auto">
           <h1 className="text-4xl font-bold text-white text-center mb-4">🖥️ {t('miner.heading')}</h1>
           <p className="text-center text-gray-300 mb-10 text-lg">{t('miner.installDesc')}</p>
+
+          {/* Model Selection */}
+          <div className="bg-white/10 backdrop-blur-lg rounded-xl p-8 mb-8">
+            <h2 className="text-2xl font-bold text-white mb-2">🤖 {t('miner.selectModels')}</h2>
+            <p className="text-gray-400 text-sm mb-6">{t('miner.selectModelsDesc')}</p>
+
+            {categories.map(cat => (
+              <div key={cat.key} className="mb-6">
+                <h3 className="text-white font-bold mb-3">{cat.label}</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {models.filter(m => m.category === cat.key).map(model => (
+                    <label
+                      key={model.id}
+                      className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition ${
+                        selectedModels.includes(model.id)
+                          ? 'bg-purple-600/50 border border-purple-400'
+                          : 'bg-white/5 border border-transparent hover:bg-white/10'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedModels.includes(model.id)}
+                        onChange={() => toggleModel(model.id)}
+                        className="w-4 h-4 accent-purple-500"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-white text-sm font-medium truncate">
+                          {model.name} <span className="text-purple-300">{model.size}</span>
+                        </div>
+                        <div className="text-gray-400 text-xs">{model.ram} RAM — {model.desc}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <div className="mt-4 p-3 bg-black/30 rounded-lg">
+              <p className="text-gray-400 text-xs mb-2">{t('miner.selectedModels')}:</p>
+              <code className="text-green-400 text-sm break-all">
+                {selectedModels.length > 0 ? selectedModels.join(', ') : 'None selected'}
+              </code>
+            </div>
+          </div>
 
           {/* Install Boxes */}
           <div className="bg-white/10 backdrop-blur-lg rounded-xl p-8 mb-8">

@@ -167,7 +167,7 @@ The site supports English (default) and Farsi. To add a new language:
 |-------|-----------|
 | Frontend | Next.js 14, React, Tailwind CSS |
 | Backend | Node.js, Express, PostgreSQL, Redis |
-| LLM | Ollama, llama3:8b |
+| LLM | Ollama, 60+ models (Llama, Qwen, Gemma, Mistral, DeepSeek, Phi, CodeLlama) |
 | Blockchain | BNB Chain, Solidity 0.8.20, Hardhat |
 | Server | Ubuntu 24.04, Nginx, Let's Encrypt |
 | i18n | English (default), Farsi |
