@@ -23,7 +23,7 @@ const translations = {
       startChat: 'Start Chat',
       footer: 'All rights reserved.',
       installMetaMask: 'Please install MetaMask',
-      version: 'v1.2.0',
+      version: 'v1.3.0',
     },
     chat: {
       title: 'Chat with AI - Krelz Network',
@@ -116,7 +116,7 @@ const translations = {
       startChat: 'شروع چت',
       footer: 'تمامی حقوق محفوظ است.',
       installMetaMask: 'لطفاً MetaMask را نصب کنید',
-      version: 'نسخه ۱.۲.۰',
+      version: 'نسخه ۱.۳.۰',
     },
     chat: {
       title: 'چت با AI - Krelz Network',

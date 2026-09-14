@@ -111,7 +111,7 @@ export default function Home() {
       </main>
 
       <footer className="container mx-auto px-6 py-8 text-center text-gray-400">
-        <p>&copy; 2026 Krelz Network. {t('home.footer')} {t('home.version')}</p>
+        <p>&copy; 2026 Krelz Network. {t('home.footer')} v1.3.0</p>
       </footer>
     </div>
   );
