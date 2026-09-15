@@ -205,6 +205,50 @@ GET /api/token/balance
 }
 ```
 
+## Wallet Integration (v3.6.0)
+
+### Supported Wallets
+
+| Wallet | Detection | Provider |
+|--------|-----------|----------|
+| MetaMask | `window.ethereum?.isMetaMask` | EIP-1193 |
+| Trust Wallet | `window.ethereum?.isTrust \|\| window.ethereum?.isTrustWallet` | EIP-1193 |
+
+### How it works
+
+Both wallets use the same EIP-1193 standard. The only difference is the detection flag.
+
+### Frontend flow (profile.js)
+
+```
+1. User clicks "Connect Wallet" → shows 2 buttons
+2. MetaMask button → checks window.ethereum?.isMetaMask
+3. Trust Wallet button → checks window.ethereum?.isTrust
+4. Both use: provider.request({ method: 'eth_requestAccounts' })
+5. If wallet not installed → opens download page
+6. After connection → shows wallet address + which wallet
+```
+
+### Detection Logic
+
+```javascript
+// MetaMask
+if (window.ethereum?.isMetaMask) { /* MetaMask installed */ }
+
+// Trust Wallet
+if (window.ethereum?.isTrust || window.ethereum?.isTrustWallet) { /* Trust installed */ }
+
+// Check if any wallet is connected
+const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+```
+
+### Adding a New Wallet
+
+1. Add detection check in `connectWallet(type)` function
+2. Add button in wallet UI section
+3. Add translation keys (`connectXxx`)
+4. Both use same `eth_requestAccounts` method
+
 ## Internationalization (i18n)
 
 ### How it works

@@ -34,6 +34,7 @@ export default function Profile() {
   const [miner, setMiner] = useState(null);
   const [wallet, setWallet] = useState(null);
   const [walletConnected, setWalletConnected] = useState(false);
+  const [walletChoice, setWalletChoice] = useState(null);
   const [langState, setLangState] = useState('en');
 
   // Wallet state
@@ -104,26 +105,43 @@ export default function Profile() {
         if (accounts.length > 0) {
           setWallet(accounts[0]);
           setWalletConnected(true);
+          if (window.ethereum.isMetaMask) setWalletChoice('metamask');
+          else if (window.ethereum.isTrust || window.ethereum.isTrustWallet) setWalletChoice('trust');
         }
       } catch (err) {}
     }
   };
 
-  const connectWallet = async () => {
-    if (typeof window.ethereum !== 'undefined') {
-      try {
-        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        setWallet(accounts[0]);
-        setWalletConnected(true);
-      } catch (err) {}
-    } else {
-      alert(t('home.installMetaMask'));
+  const connectWallet = async (type) => {
+    if (type === 'metamask') {
+      if (window.ethereum?.isMetaMask) {
+        try {
+          const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+          setWallet(accounts[0]);
+          setWalletConnected(true);
+          setWalletChoice('metamask');
+        } catch (err) {}
+      } else {
+        window.open('https://metamask.io/download/', '_blank');
+      }
+    } else if (type === 'trust') {
+      if (window.ethereum?.isTrust || window.ethereum?.isTrustWallet) {
+        try {
+          const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+          setWallet(accounts[0]);
+          setWalletConnected(true);
+          setWalletChoice('trust');
+        } catch (err) {}
+      } else {
+        window.open('https://trustwallet.com/download', '_blank');
+      }
     }
   };
 
   const disconnectWallet = () => {
     setWallet(null);
     setWalletConnected(false);
+    setWalletChoice(null);
   };
 
   // Coin wallet functions
@@ -329,21 +347,37 @@ export default function Profile() {
         <div id="settings" className="bg-white/10 backdrop-blur-lg rounded-xl p-5 md:p-6 mb-6">
           <h2 className="text-lg font-bold text-white mb-4">⚙️ {t('profile.settings')}</h2>
 
-          {/* MetaMask Wallet */}
+          {/* Wallet */}
           <div className="mb-5">
-            <h3 className="text-sm font-medium text-gray-300 mb-2">🔗 Wallet (MetaMask)</h3>
+            <h3 className="text-sm font-medium text-gray-300 mb-2">🔗 {t('profile.wallet')}</h3>
             <div className="bg-black/20 rounded-lg p-3">
               {walletConnected ? (
-                <div className="flex items-center justify-between">
-                  <span className="text-green-400 text-sm">🟢 {wallet.slice(0, 6)}...{wallet.slice(-4)}</span>
-                  <button onClick={disconnectWallet} className="text-red-400 hover:text-red-300 text-xs transition">
-                    {t('profile.disconnect')}
-                  </button>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-green-400 text-sm">🟢 {wallet.slice(0, 6)}...{wallet.slice(-4)}</span>
+                    <button onClick={disconnectWallet} className="text-red-400 hover:text-red-300 text-xs transition">
+                      {t('profile.disconnect')}
+                    </button>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {walletChoice === 'metamask' ? '🦊 MetaMask' : walletChoice === 'trust' ? '🛡️ Trust Wallet' : '🔗 Wallet'}
+                  </div>
                 </div>
               ) : (
-                <button onClick={connectWallet} className="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition text-sm">
-                  {t('profile.connectWallet')}
-                </button>
+                <div className="space-y-2">
+                  <button onClick={() => connectWallet('metamask')}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition text-sm ${window.ethereum?.isMetaMask ? 'bg-orange-600 hover:bg-orange-700 text-white' : 'bg-white/10 text-gray-400 hover:bg-white/20 hover:text-white'}`}>
+                    <span className="text-lg">🦊</span>
+                    <span className="flex-1 text-left">{t('profile.connectMetaMask')}</span>
+                    <span className="text-xs">{window.ethereum?.isMetaMask ? '✓' : ''}</span>
+                  </button>
+                  <button onClick={() => connectWallet('trust')}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition text-sm ${window.ethereum?.isTrust || window.ethereum?.isTrustWallet ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-white/10 text-gray-400 hover:bg-white/20 hover:text-white'}`}>
+                    <span className="text-lg">🛡️</span>
+                    <span className="flex-1 text-left">{t('profile.connectTrustWallet')}</span>
+                    <span className="text-xs">{window.ethereum?.isTrust || window.ethereum?.isTrustWallet ? '✓' : ''}</span>
+                  </button>
+                </div>
               )}
             </div>
           </div>

@@ -20,6 +20,7 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Per-Model Pricing** — 11 models from 300M to 70B parameters, priced 30-50% cheaper than DeepSeek
 - **Chat Sessions** — Persistent chat history with auto-generated subjects
 - **Profile Dashboard** — Balance, daily tokens, wallet, miner settings
+- **Wallet Integration** — MetaMask + Trust Wallet support (EIP-1193)
 - **Miner Earnings** — 90% of paid usage goes to miners
 - **Internationalization** — English (default) + Farsi with RTL support
 
