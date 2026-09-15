@@ -1,0 +1,152 @@
+const WebSocket = require('ws');
+
+class MinerWebSocket {
+  constructor(walletAddress, onTask) {
+    this.walletAddress = walletAddress;
+    this.onTask = onTask;
+    this.ws = null;
+    this.minerId = null;
+    this.connected = false;
+    this.reconnectDelay = 5000;
+    this.heartbeatInterval = null;
+  }
+
+  connect() {
+    const wsUrl = process.env.API_WS_URL || 'wss://krelz.xyz/ws';
+    this.ws = new WebSocket(wsUrl);
+
+    this.ws.on('open', () => {
+      console.log('🔌 Connected to Krelz Network');
+      this.connected = true;
+      this.reconnectDelay = 5000;
+      this.authenticate();
+      this.startHeartbeat();
+    });
+
+    this.ws.on('message', (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        this.handleMessage(msg);
+      } catch (err) {
+        console.error('Invalid WS message:', err.message);
+      }
+    });
+
+    this.ws.on('close', () => {
+      console.log('🔌 Disconnected from Krelz Network');
+      this.connected = false;
+      this.stopHeartbeat();
+      this.scheduleReconnect();
+    });
+
+    this.ws.on('error', (err) => {
+      console.error('WebSocket error:', err.message);
+    });
+  }
+
+  authenticate() {
+    this.send({
+      type: 'auth',
+      wallet_address: this.walletAddress
+    });
+  }
+
+  handleMessage(msg) {
+    switch (msg.type) {
+      case 'auth_ok':
+        this.minerId = msg.miner_id;
+        console.log(`✅ Authenticated as miner #${this.minerId}`);
+        break;
+
+      case 'auth_error':
+        console.error('Auth failed:', msg.message);
+        break;
+
+      case 'heartbeat_ok':
+        // Heartbeat acknowledged
+        break;
+
+      case 'task':
+        this.handleTask(msg);
+        break;
+
+      case 'error':
+        console.error('Server error:', msg.message);
+        break;
+    }
+  }
+
+  async handleTask(msg) {
+    const { task_id, prompt, model } = msg;
+    console.log(`📥 Received task #${task_id} (${model})`);
+
+    try {
+      const result = await this.onTask(prompt, model);
+
+      this.send({
+        type: 'task_result',
+        task_id,
+        response: result.response,
+        tokens_used: result.eval_count || 0
+      });
+
+      console.log(`✅ Task #${task_id} completed (${result.eval_count || 0} tokens)`);
+
+    } catch (err) {
+      this.send({
+        type: 'task_result',
+        task_id,
+        error: err.message
+      });
+
+      console.error(`❌ Task #${task_id} failed:`, err.message);
+    }
+  }
+
+  sendHeartbeat(status = 'online', gpuUsage = 0, ramUsage = 0) {
+    this.send({
+      type: 'heartbeat',
+      status,
+      gpu_usage: gpuUsage,
+      ram_usage: ramUsage
+    });
+  }
+
+  requestTask() {
+    this.send({ type: 'task_request' });
+  }
+
+  send(data) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(data));
+    }
+  }
+
+  startHeartbeat() {
+    this.heartbeatInterval = setInterval(() => {
+      this.sendHeartbeat('online');
+    }, 30000);
+  }
+
+  stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
+
+  scheduleReconnect() {
+    console.log(`Reconnecting in ${this.reconnectDelay / 1000}s...`);
+    setTimeout(() => this.connect(), this.reconnectDelay);
+    this.reconnectDelay = Math.min(this.reconnectDelay * 2, 60000);
+  }
+
+  disconnect() {
+    this.stopHeartbeat();
+    if (this.ws) {
+      this.ws.close();
+    }
+  }
+}
+
+module.exports = MinerWebSocket;

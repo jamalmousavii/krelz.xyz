@@ -4,6 +4,7 @@ const OllamaService = require('./services/ollama');
 const MinerService = require('./services/miner');
 const BlockchainService = require('./services/blockchain');
 const ApiService = require('./services/api');
+const MinerWebSocket = require('./services/websocket');
 
 let mainWindow;
 let tray;
@@ -11,6 +12,7 @@ let ollamaService;
 let minerService;
 let blockchainService;
 let apiService;
+let wsClient;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -48,6 +50,7 @@ async function startMining() {
   try {
     await ollamaService.start();
     await minerService.start();
+    wsClient.connect();
     mainWindow.webContents.send('mining-started');
   } catch (error) {
     console.error('Error starting mining:', error);
@@ -58,6 +61,7 @@ async function stopMining() {
   try {
     await minerService.stop();
     await ollamaService.stop();
+    wsClient.disconnect();
     mainWindow.webContents.send('mining-stopped');
   } catch (error) {
     console.error('Error stopping mining:', error);
@@ -69,6 +73,16 @@ app.whenReady().then(() => {
   minerService = new MinerService();
   blockchainService = new BlockchainService();
   apiService = new ApiService();
+
+  // WebSocket client with task handler
+  wsClient = new MinerWebSocket(
+    process.env.WALLET_ADDRESS || '',
+    async (prompt, model) => {
+      ollamaService.setModel(model);
+      const result = await ollamaService.generate(prompt, model);
+      return result;
+    }
+  );
 
   createWindow();
   createTray();

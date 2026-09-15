@@ -7,6 +7,7 @@ const translations = {
       connectWallet: 'Connect Wallet',
       back: 'Back',
       home: 'Home',
+      wallet: 'Wallet',
     },
     home: {
       title: 'Decentralized LLM Network',
@@ -23,7 +24,7 @@ const translations = {
       startChat: 'Start Chat',
       footer: 'All rights reserved.',
       installMetaMask: 'Please install MetaMask',
-      version: 'v1.4.0',
+      version: 'v2.0.0',
     },
     chat: {
       title: 'Chat with AI - Krelz Network',
@@ -100,6 +101,7 @@ const translations = {
       connectWallet: 'اتصال کیف پول',
       back: 'بازگشت',
       home: 'خانه',
+      wallet: 'کیف پول',
     },
     home: {
       title: 'شبکه LLM غیرمتمرکز',

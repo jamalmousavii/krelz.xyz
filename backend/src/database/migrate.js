@@ -91,6 +91,41 @@ const migrate = async () => {
     `);
     console.log('✅ جدول staking ایجاد شد');
     
+    // جدول موجودی کاربران
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_balances (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id),
+        available DECIMAL(20,8) DEFAULT 0,
+        total_earned DECIMAL(20,8) DEFAULT 0,
+        total_spent DECIMAL(20,8) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ جدول user_balances ایجاد شد');
+    
+    // جدول واریزی‌ها
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS deposits (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        amount DECIMAL(20,8) NOT NULL,
+        tx_hash VARCHAR(66),
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ جدول deposits ایجاد شد');
+    
+    // اضافه کردن ستون description به transactions
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE transactions ADD COLUMN IF NOT EXISTS description TEXT;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    console.log('✅ ستون description اضافه شد');
+    
     await client.query('COMMIT');
     console.log('\n✅ تمام جداول ایجاد شد');
     

@@ -1,10 +1,12 @@
 require('dotenv').config();
 
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const WSServer = require('./ws');
 
 const authRoutes = require('./routes/auth');
 const minerRoutes = require('./routes/miners');
@@ -15,7 +17,14 @@ const statsRoutes = require('./routes/stats');
 const modelRoutes = require('./routes/models');
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.API_PORT || 3000;
+
+// Initialize WebSocket server
+const wsServer = new WSServer(server);
+
+// Make wsServer available to routes
+app.set('wsServer', wsServer);
 
 // Middleware
 app.use(helmet());
@@ -50,8 +59,9 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`🚀 Krelz Backend running on port ${PORT}`);
+  console.log(`🔌 WebSocket on ws://0.0.0.0:${PORT}/ws`);
 });
 
-module.exports = app;
+module.exports = { app, server, wsServer };
