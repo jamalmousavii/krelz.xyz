@@ -5,8 +5,6 @@ import Navbar from '../components/Navbar';
 
 export default function Home() {
   const { t, lang } = useLanguage();
-  const [wallet, setWallet] = useState(null);
-  const [connected, setConnected] = useState(false);
   const [stats, setStats] = useState(null);
 
   useEffect(() => { fetchStats(); }, []);
@@ -19,18 +17,6 @@ export default function Home() {
     } catch (err) { console.error('Error fetching stats:', err); }
   };
 
-  const connectWallet = async () => {
-    if (typeof window.ethereum !== 'undefined') {
-      try {
-        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        setWallet(accounts[0]);
-        setConnected(true);
-      } catch (err) { console.error('Error connecting wallet:', err); }
-    } else {
-      alert(t('home.installMetaMask'));
-    }
-  };
-
   return (
     <div className={`min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 ${lang === 'fa' ? 'rtl' : 'ltr'}`}>
       <Head>
@@ -38,7 +24,7 @@ export default function Home() {
         <meta name="description" content="Decentralized LLM Inference Network. Earn KRELZ tokens by sharing your GPU power." />
       </Head>
 
-      <Navbar wallet={wallet} connected={connected} connectWallet={connectWallet} />
+      <Navbar />
 
       <main className="container mx-auto px-6 py-8 md:py-12">
         <div className="text-center mb-8 md:mb-12">
@@ -86,7 +72,7 @@ export default function Home() {
       </main>
 
       <footer className="container mx-auto px-6 py-6 md:py-8 text-center text-gray-400 text-sm">
-        <p>&copy; 2026 Krelz Network. {t('home.footer')} v1.5.0</p>
+        <p>&copy; 2026 Krelz Network. {t('home.footer')} v3.3.0</p>
       </footer>
     </div>
   );
