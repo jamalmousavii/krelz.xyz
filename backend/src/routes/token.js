@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../database/pool');
+const { invalidateCache } = require('../cache');
 
 // GET /api/token/balance
 router.get('/balance', async (req, res) => {
@@ -81,6 +82,8 @@ router.post('/deposit', async (req, res) => {
       deposit: result.rows[0],
       message: `Deposited ${amount} KRELZ`
     });
+    invalidateCache('/api/stats');
+    invalidateCache('/api/leaderboard');
 
   } catch (err) {
     console.error(err);

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../database/pool');
+const { invalidateCache } = require('../cache');
 
 // GET /api/miners
 router.get('/', async (req, res) => {
@@ -11,8 +12,10 @@ router.get('/', async (req, res) => {
     
     res.json({
       success: true,
-      miners: result.rows
+      miner: result.rows[0]
     });
+    invalidateCache('/api/stats');
+    invalidateCache('/api/miners');
     
   } catch (err) {
     console.error(err);

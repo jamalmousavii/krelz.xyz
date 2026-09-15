@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../database/pool');
 const axios = require('axios');
+const { invalidateCache } = require('../cache');
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 
@@ -55,6 +56,7 @@ router.post('/', async (req, res) => {
           miner_id: minerId,
           source: 'miner'
         });
+        invalidateCache('/api/stats');
         return;
 
       } catch (wsError) {
@@ -90,6 +92,7 @@ router.post('/', async (req, res) => {
         miner_id: null,
         source: 'local'
       });
+      invalidateCache('/api/stats');
 
     } catch (ollamaError) {
       await pool.query(
