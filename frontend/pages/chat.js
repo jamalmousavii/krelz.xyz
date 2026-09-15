@@ -4,6 +4,15 @@ import { useLanguage } from '../i18n/LanguageContext';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 
 const CATEGORY_ICONS = { chat: '💬', code: '💻', vision: '👁️', embedding: '🔗' };
+const PAY_COINS = [
+  { id: 'USDT', icon: '₮', color: 'text-green-400' },
+  { id: 'BNB', icon: '◆', color: 'text-yellow-400' },
+  { id: 'BTC', icon: '₿', color: 'text-orange-400' },
+  { id: 'ETH', icon: 'Ξ', color: 'text-blue-400' },
+  { id: 'TRX', icon: '◎', color: 'text-red-400' },
+  { id: 'DOGE', icon: 'Ð', color: 'text-yellow-300' },
+  { id: 'XRP', icon: '✕', color: 'text-gray-300' },
+];
 
 export default function Chat() {
   const { t, lang } = useLanguage();
@@ -12,6 +21,7 @@ export default function Chat() {
   const [loading, setLoading] = useState(false);
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState('qwen3.6:27b');
+  const [payCoin, setPayCoin] = useState('USDT');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -40,7 +50,7 @@ export default function Chat() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage, model: selectedModel }),
+        body: JSON.stringify({ message: userMessage, model: selectedModel, coin: payCoin }),
       });
       const data = await res.json();
       if (data.success) {
@@ -144,6 +154,22 @@ export default function Chat() {
             className="flex-1 bg-white/10 text-white placeholder-gray-400 px-4 md:px-6 py-3 md:py-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm md:text-base"
             disabled={loading}
           />
+
+          {/* Coin Selector */}
+          <div className="flex gap-1 bg-white/10 rounded-xl p-1">
+            {PAY_COINS.slice(0, 4).map(c => (
+              <button
+                key={c.id}
+                onClick={() => setPayCoin(c.id)}
+                className={`px-2 py-2 rounded-lg text-xs font-bold transition ${
+                  payCoin === c.id ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
+                }`}
+                title={`Pay with ${c.id}`}
+              >
+                {c.icon}
+              </button>
+            ))}
+          </div>
 
           <button
             onClick={sendMessage}

@@ -24,7 +24,7 @@ const translations = {
       startChat: 'Start Chat',
       footer: 'All rights reserved.',
       installMetaMask: 'Please install MetaMask',
-      version: 'v2.2.0',
+      version: 'v3.0.0',
     },
     chat: {
       title: 'Chat with AI - Krelz Network',

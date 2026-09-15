@@ -164,6 +164,74 @@ const migrate = async () => {
     `);
     console.log('✅ Admin user created');
     
+    // === Multi-Coin Payment Tables ===
+    
+    // User coin balances
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_coin_balances (
+        user_id INTEGER REFERENCES users(id),
+        coin VARCHAR(10) NOT NULL,
+        chain VARCHAR(20) NOT NULL,
+        available DECIMAL(20,8) DEFAULT 0,
+        total_earned DECIMAL(20,8) DEFAULT 0,
+        total_spent DECIMAL(20,8) DEFAULT 0,
+        PRIMARY KEY (user_id, coin)
+      )
+    `);
+    console.log('✅ جدول user_coin_balances ایجاد شد');
+    
+    // Coin deposits
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS coin_deposits (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        coin VARCHAR(10) NOT NULL,
+        amount DECIMAL(20,8) NOT NULL,
+        tx_hash VARCHAR(100),
+        processor_id VARCHAR(100),
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ جدول coin_deposits ایجاد شد');
+    
+    // Coin withdrawals
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS coin_withdrawals (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        coin VARCHAR(10) NOT NULL,
+        amount DECIMAL(20,8) NOT NULL,
+        to_address VARCHAR(100) NOT NULL,
+        tx_hash VARCHAR(100),
+        fee DECIMAL(20,8) DEFAULT 0,
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ جدول coin_withdrawals ایجاد شد');
+    
+    // Miner coin earnings
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS miner_coin_earnings (
+        id SERIAL PRIMARY KEY,
+        miner_id INTEGER REFERENCES miners(id),
+        coin VARCHAR(10) NOT NULL,
+        amount DECIMAL(20,8) NOT NULL,
+        task_id INTEGER REFERENCES tasks(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ جدول miner_coin_earnings ایجاد شد');
+    
+    // Multi-coin indexes
+    await client.query('CREATE INDEX IF NOT EXISTS idx_coin_deposits_user ON coin_deposits(user_id, coin)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_coin_deposits_status ON coin_deposits(status)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_coin_withdrawals_user ON coin_withdrawals(user_id, coin)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_coin_withdrawals_status ON coin_withdrawals(status)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_miner_coin_earnings_miner ON miner_coin_earnings(miner_id, coin)');
+    console.log('✅ Multi-coin indexes created');
+    
     await client.query('COMMIT');
     console.log('\n✅ تمام جداول ایجاد شد');
     

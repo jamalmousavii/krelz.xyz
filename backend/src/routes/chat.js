@@ -5,21 +5,20 @@ const axios = require('axios');
 const { invalidateCache } = require('../cache');
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
+const SUPPORTED_COINS = ['BTC', 'ETH', 'BNB', 'USDT', 'TRX', 'DOGE', 'XRP'];
 
 // POST /api/chat
 router.post('/', async (req, res) => {
   try {
-    const { message, model } = req.body;
+    const { message, model, coin } = req.body;
     const userId = req.user?.id;
+    const paymentCoin = (coin || 'USDT').toUpperCase();
 
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    // Get WebSocket server instance
     const wsServer = req.app.get('wsServer');
-
-    // Try to find an online miner for this model
     const minerId = wsServer ? wsServer.findMinerForModel(model) : null;
 
     // Create task
@@ -31,6 +30,7 @@ router.post('/', async (req, res) => {
     );
 
     const taskId = taskResult.rows[0].id;
+    let response, tokensUsed, cost;
 
     // Try WebSocket dispatch first
     if (wsServer && minerId) {
@@ -44,67 +44,102 @@ router.post('/', async (req, res) => {
           return res.status(500).json({ error: result.error, task_id: taskId });
         }
 
-        const tokensUsed = result.tokens_used || 0;
-        const cost = tokensUsed * 0.001;
-
-        res.json({
-          success: true,
-          response: result.response,
-          task_id: taskId,
-          tokens_used: tokensUsed,
-          cost,
-          miner_id: minerId,
-          source: 'miner'
-        });
-        invalidateCache('/api/stats');
-        return;
+        response = result.response;
+        tokensUsed = result.tokens_used || 0;
+        cost = tokensUsed * 0.001;
 
       } catch (wsError) {
         console.log(`WebSocket dispatch failed: ${wsError.message}, falling back to local Ollama`);
       }
     }
 
-    // Fallback: local Ollama on VPS
-    try {
-      const ollamaResponse = await axios.post(`${OLLAMA_URL}/api/generate`, {
-        model: model || 'llama3:8b',
-        prompt: message,
-        stream: false
-      });
+    // Fallback: local Ollama
+    if (!response) {
+      try {
+        const ollamaResponse = await axios.post(`${OLLAMA_URL}/api/generate`, {
+          model: model || 'llama3:8b',
+          prompt: message,
+          stream: false
+        });
 
-      const response = ollamaResponse.data.response;
-      const tokensUsed = ollamaResponse.data.eval_count || 0;
-      const cost = tokensUsed * 0.001;
+        response = ollamaResponse.data.response;
+        tokensUsed = ollamaResponse.data.eval_count || 0;
+        cost = tokensUsed * 0.001;
 
-      await pool.query(
-        `UPDATE tasks
-         SET response = $1, tokens_used = $2, cost = $3, status = 'completed', completed_at = CURRENT_TIMESTAMP
-         WHERE id = $4`,
-        [response, tokensUsed, cost, taskId]
-      );
-
-      res.json({
-        success: true,
-        response,
-        task_id: taskId,
-        tokens_used: tokensUsed,
-        cost,
-        miner_id: null,
-        source: 'local'
-      });
-      invalidateCache('/api/stats');
-
-    } catch (ollamaError) {
-      await pool.query(
-        "UPDATE tasks SET response = 'No miners or Ollama available', status = 'failed' WHERE id = $1",
-        [taskId]
-      );
-
-      res.status(503).json({
-        error: 'No miners available for this model. Please try again later.',
-        task_id: taskId
-      });
+      } catch (ollamaError) {
+        await pool.query(
+          "UPDATE tasks SET response = 'No miners or Ollama available', status = 'failed' WHERE id = $1",
+          [taskId]
+        );
+        return res.status(503).json({
+          error: 'No miners available for this model. Please try again later.',
+          task_id: taskId
+        });
+      }
     }
+
+    // Update task with result
+    await pool.query(
+      `UPDATE tasks
+       SET response = $1, tokens_used = $2, cost = $3, status = 'completed', completed_at = CURRENT_TIMESTAMP
+       WHERE id = $4`,
+      [response, tokensUsed, cost, taskId]
+    );
+
+    // Payment: deduct from user's coin balance
+    let paymentStatus = 'free';
+    if (userId && SUPPORTED_COINS.includes(paymentCoin)) {
+      const balanceResult = await pool.query(
+        'SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = $2',
+        [userId, paymentCoin]
+      );
+
+      const userBalance = parseFloat(balanceResult.rows[0]?.available || 0);
+
+      if (userBalance >= cost && cost > 0) {
+        // Deduct from user
+        await pool.query(
+          `UPDATE user_coin_balances
+           SET available = available - $1, total_spent = total_spent + $1
+           WHERE user_id = $2 AND coin = $3`,
+          [cost, userId, paymentCoin]
+        );
+
+        // 90% to miner, 10% platform
+        const minerEarning = cost * 0.9;
+
+        if (minerId) {
+          await pool.query(
+            'UPDATE miners SET total_tasks = total_tasks + 1, earnings = earnings + $1 WHERE id = $2',
+            [minerEarning, minerId]
+          );
+
+          // Track miner earning per coin
+          await pool.query(
+            `INSERT INTO miner_coin_earnings (miner_id, coin, amount, task_id)
+             VALUES ($1, $2, $3, $4)`,
+            [minerId, paymentCoin, minerEarning, taskId]
+          );
+        }
+
+        paymentStatus = 'paid';
+        invalidateCache('/api/payments/balance');
+      } else if (cost > 0) {
+        paymentStatus = 'insufficient_balance';
+      }
+    }
+
+    res.json({
+      success: true,
+      response,
+      task_id: taskId,
+      tokens_used: tokensUsed,
+      cost,
+      coin: paymentCoin,
+      payment_status: paymentStatus,
+      miner_id: minerId,
+      source: minerId ? 'miner' : 'local'
+    });
 
   } catch (err) {
     console.error(err);
