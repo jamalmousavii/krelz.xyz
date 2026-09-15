@@ -8,14 +8,12 @@ router.get('/balance', async (req, res) => {
   try {
     const userId = req.user?.id;
 
-    // Get from user_balances table
     const balanceResult = await pool.query(
       `SELECT COALESCE(available, 0) as available, COALESCE(total_earned, 0) as total_earned, COALESCE(total_spent, 0) as total_spent
        FROM user_balances WHERE user_id = $1`,
       [userId]
     );
 
-    // Get staked amount
     const stakingResult = await pool.query(
       "SELECT COALESCE(SUM(amount), 0) as staked FROM staking WHERE user_id = $1 AND status = 'active'",
       [userId]
@@ -47,7 +45,6 @@ router.post('/deposit', async (req, res) => {
       return res.status(400).json({ error: 'Invalid amount' });
     }
 
-    // Create deposit record
     const result = await pool.query(
       `INSERT INTO deposits (user_id, amount, tx_hash, status)
        VALUES ($1, $2, $3, 'pending')
@@ -55,13 +52,11 @@ router.post('/deposit', async (req, res) => {
       [userId, amount, tx_hash]
     );
 
-    // Auto-approve for now (in production, verify on-chain)
     await pool.query(
       "UPDATE deposits SET status = 'confirmed' WHERE id = $1",
       [result.rows[0].id]
     );
 
-    // Update or create user balance
     await pool.query(
       `INSERT INTO user_balances (user_id, available, total_earned)
        VALUES ($1, $2, 0)
@@ -70,20 +65,19 @@ router.post('/deposit', async (req, res) => {
       [userId, amount]
     );
 
-    // Record transaction
     await pool.query(
       `INSERT INTO transactions (from_address, to_address, amount, type, tx_hash, status)
        VALUES ('deposit', 'user', $1, 'deposit', $2, 'completed')`,
       [amount, tx_hash]
     );
 
+    invalidateCache('/api/stats');
+
     res.status(201).json({
       success: true,
       deposit: result.rows[0],
       message: `Deposited ${amount} KRELZ`
     });
-    invalidateCache('/api/stats');
-    invalidateCache('/api/leaderboard');
 
   } catch (err) {
     console.error(err);
@@ -101,7 +95,6 @@ router.post('/deduct', async (req, res) => {
       return res.status(400).json({ error: 'Invalid amount' });
     }
 
-    // Check balance
     const balanceResult = await pool.query(
       'SELECT available FROM user_balances WHERE user_id = $1',
       [userId]
@@ -111,7 +104,6 @@ router.post('/deduct', async (req, res) => {
       return res.status(400).json({ error: 'Insufficient balance' });
     }
 
-    // Deduct
     await pool.query(
       `UPDATE user_balances
        SET available = available - $1, total_spent = total_spent + $1
@@ -119,7 +111,6 @@ router.post('/deduct', async (req, res) => {
       [amount, userId]
     );
 
-    // Record transaction
     await pool.query(
       `INSERT INTO transactions (from_address, to_address, amount, type, status)
        VALUES ('user', 'platform', $1, $2, 'completed')`,
@@ -147,7 +138,6 @@ router.post('/transfer', async (req, res) => {
       return res.status(400).json({ error: 'Invalid parameters' });
     }
 
-    // Check sender balance
     const balanceResult = await pool.query(
       'SELECT available FROM user_balances WHERE user_id = $1',
       [userId]
@@ -157,13 +147,11 @@ router.post('/transfer', async (req, res) => {
       return res.status(400).json({ error: 'Insufficient balance' });
     }
 
-    // Deduct from sender
     await pool.query(
       'UPDATE user_balances SET available = available - $1 WHERE user_id = $2',
       [amount, userId]
     );
 
-    // Add to receiver
     await pool.query(
       `INSERT INTO user_balances (user_id, available)
        VALUES ($1, $2)
@@ -171,7 +159,6 @@ router.post('/transfer', async (req, res) => {
       [to_user_id, amount]
     );
 
-    // Record transaction
     await pool.query(
       `INSERT INTO transactions (from_address, to_address, amount, type, status)
        VALUES ($1, $2, $3, 'transfer', 'completed')`,
@@ -199,7 +186,6 @@ router.post('/stake', async (req, res) => {
       return res.status(400).json({ error: 'Invalid amount' });
     }
 
-    // Check balance
     const balanceResult = await pool.query(
       'SELECT available FROM user_balances WHERE user_id = $1',
       [userId]
@@ -209,19 +195,19 @@ router.post('/stake', async (req, res) => {
       return res.status(400).json({ error: 'Insufficient balance' });
     }
 
-    // Deduct from available
     await pool.query(
       'UPDATE user_balances SET available = available - $1 WHERE user_id = $2',
       [amount, userId]
     );
 
-    // Create stake
     const result = await pool.query(
       `INSERT INTO staking (user_id, amount, status)
        VALUES ($1, $2, 'active')
        RETURNING *`,
       [userId, amount]
     );
+
+    invalidateCache('/api/stats');
 
     res.status(201).json({
       success: true,
@@ -255,7 +241,6 @@ router.post('/unstake', async (req, res) => {
       return res.status(400).json({ error: 'Insufficient staked balance' });
     }
 
-    // Update stake
     await pool.query(
       `UPDATE staking
        SET amount = amount - $1,
@@ -265,11 +250,12 @@ router.post('/unstake', async (req, res) => {
       [amount, userId]
     );
 
-    // Add back to available
     await pool.query(
       'UPDATE user_balances SET available = available + $1 WHERE user_id = $2',
       [amount, userId]
     );
+
+    invalidateCache('/api/stats');
 
     res.json({
       success: true,

@@ -2,7 +2,6 @@ const { app, BrowserWindow, ipcMain, Tray, Menu } = require('electron');
 const path = require('path');
 const OllamaService = require('./services/ollama');
 const MinerService = require('./services/miner');
-const BlockchainService = require('./services/blockchain');
 const ApiService = require('./services/api');
 const MinerWebSocket = require('./services/websocket');
 
@@ -10,7 +9,6 @@ let mainWindow;
 let tray;
 let ollamaService;
 let minerService;
-let blockchainService;
 let apiService;
 let wsClient;
 
@@ -71,10 +69,8 @@ async function stopMining() {
 app.whenReady().then(() => {
   ollamaService = new OllamaService();
   minerService = new MinerService();
-  blockchainService = new BlockchainService();
   apiService = new ApiService();
 
-  // WebSocket client with task handler
   wsClient = new MinerWebSocket(
     process.env.WALLET_ADDRESS || '',
     async (prompt, model) => {
@@ -90,8 +86,6 @@ app.whenReady().then(() => {
   ipcMain.handle('start-mining', startMining);
   ipcMain.handle('stop-mining', stopMining);
   ipcMain.handle('get-stats', () => minerService.getStats());
-  ipcMain.handle('connect-wallet', () => blockchainService.connect());
-  ipcMain.handle('get-balance', () => blockchainService.getBalance());
 });
 
 app.on('window-all-closed', () => {
