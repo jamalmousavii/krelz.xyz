@@ -53,6 +53,7 @@ export default function Profile() {
   const [regRam, setRegRam] = useState('');
   const [regCpu, setRegCpu] = useState('');
   const [regLoading, setRegLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const saved = localStorage.getItem('user');
@@ -70,6 +71,7 @@ export default function Profile() {
     }
     const savedLang = localStorage.getItem('krelz-lang') || 'en';
     setLangState(savedLang);
+    setLoading(false);
   }, []);
 
   const authHeaders = () => {
@@ -237,6 +239,14 @@ export default function Profile() {
 
   const currentCoinBalance = coinBalances[activeCoin] || { available: 0, total_earned: 0, total_spent: 0 };
   const currentCoin = COINS.find(c => c.id === activeCoin);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+        <div className="text-white text-lg">Loading...</div>
+      </div>
+    );
+  }
 
   if (!user) {
     if (typeof window !== 'undefined') {
