@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-export default function GoogleLogin() {
+export default function GoogleLogin({ onSuccess }) {
   const buttonDiv = useRef(null);
 
   useEffect(() => {
@@ -35,6 +35,7 @@ export default function GoogleLogin() {
       if (data.success) {
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
+        if (onSuccess) onSuccess(data.user);
         window.location.reload();
       }
     } catch (err) {

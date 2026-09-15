@@ -4,15 +4,6 @@ import { useLanguage } from '../i18n/LanguageContext';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 
 const CATEGORY_ICONS = { chat: '💬', code: '💻', vision: '👁️', embedding: '🔗' };
-const PAY_COINS = [
-  { id: 'USDT', icon: '₮', color: 'text-green-400' },
-  { id: 'BNB', icon: '◆', color: 'text-yellow-400' },
-  { id: 'BTC', icon: '₿', color: 'text-orange-400' },
-  { id: 'ETH', icon: 'Ξ', color: 'text-blue-400' },
-  { id: 'TRX', icon: '◎', color: 'text-red-400' },
-  { id: 'DOGE', icon: 'Ð', color: 'text-yellow-300' },
-  { id: 'XRP', icon: '✕', color: 'text-gray-300' },
-];
 
 export default function Chat() {
   const { t, lang } = useLanguage();
@@ -21,7 +12,6 @@ export default function Chat() {
   const [loading, setLoading] = useState(false);
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState('qwen3.6:27b');
-  const [payCoin, setPayCoin] = useState('USDT');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -35,6 +25,9 @@ export default function Chat() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [token, setToken] = useState(null);
 
+  // Balance state
+  const [balance, setBalance] = useState(null);
+
   useEffect(() => {
     fetchModels();
     const savedToken = localStorage.getItem('token');
@@ -42,6 +35,7 @@ export default function Chat() {
       setToken(savedToken);
       setIsLoggedIn(true);
       fetchSessions(savedToken);
+      fetchBalance(savedToken);
     }
   }, []);
 
@@ -62,6 +56,14 @@ export default function Chat() {
       const data = await res.json();
       if (data.success) setModels(data.models);
     } catch (err) { console.error('Failed to load models'); }
+  };
+
+  const fetchBalance = async (tkn) => {
+    try {
+      const res = await fetch('/api/payments/balance', { headers: authHeaders(tkn) });
+      const data = await res.json();
+      if (data.success) setBalance(data.balances);
+    } catch (err) {}
   };
 
   const fetchSessions = async (tkn) => {
@@ -86,7 +88,6 @@ export default function Chat() {
       if (data.success) {
         setActiveSessionId(sessionId);
         setSubject(data.session.subject || 'New Chat');
-        // Convert messages to chat format
         const msgs = [];
         data.messages.forEach(m => {
           if (m.content) msgs.push({ role: m.role, content: m.content });
@@ -98,7 +99,6 @@ export default function Chat() {
 
   const createNewSession = async () => {
     if (!token) {
-      // No session support without login
       setActiveSessionId(null);
       setSubject('');
       setChat([]);
@@ -171,22 +171,20 @@ export default function Chat() {
         body: JSON.stringify({
           message: userMessage,
           model: selectedModel,
-          coin: payCoin,
           session_id: activeSessionId
         }),
       });
       const data = await res.json();
       if (data.success) {
         setChat(prev => [...prev, { role: 'assistant', content: data.response }]);
-        // Update session_id if new session was created
         if (data.session_id && !activeSessionId) {
           setActiveSessionId(data.session_id);
-          // Refresh sessions list
           fetchSessions(token);
         } else if (data.session_id && activeSessionId) {
-          // Refresh sessions to update message count and order
           fetchSessions(token);
         }
+        // Refresh balance after chat (cost deducted)
+        if (token) fetchBalance(token);
       } else {
         setChat(prev => [...prev, { role: 'assistant', content: t('chat.errorResponse') }]);
       }
@@ -197,6 +195,9 @@ export default function Chat() {
   };
 
   const selectedModelData = models.find(m => m.id === selectedModel);
+
+  // Get USDT balance for display
+  const usdtBalance = balance?.USDT?.available || 0;
 
   return (
     <div className={`min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 ${lang === 'fa' ? 'rtl' : 'ltr'}`}>
@@ -373,21 +374,14 @@ export default function Chat() {
                 disabled={loading}
               />
 
-              {/* Coin Selector */}
-              <div className="flex gap-1 bg-white/10 rounded-xl p-1">
-                {PAY_COINS.slice(0, 4).map(c => (
-                  <button
-                    key={c.id}
-                    onClick={() => setPayCoin(c.id)}
-                    className={`px-2 py-2 rounded-lg text-xs font-bold transition ${
-                      payCoin === c.id ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
-                    }`}
-                    title={`Pay with ${c.id}`}
-                  >
-                    {c.icon}
-                  </button>
-                ))}
-              </div>
+              {/* Token Balance Display */}
+              {isLoggedIn && (
+                <div className="flex items-center gap-2 bg-white/10 rounded-xl px-4 py-3 md:py-4">
+                  <span className="text-green-400 font-bold text-sm">₮</span>
+                  <span className="text-white text-sm font-medium">{usdtBalance.toFixed(2)}</span>
+                  <span className="text-gray-400 text-xs">USDT</span>
+                </div>
+              )}
 
               <button
                 onClick={sendMessage}

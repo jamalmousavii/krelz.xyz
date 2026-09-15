@@ -8,6 +8,8 @@ const translations = {
       back: 'Back',
       home: 'Home',
       wallet: 'Wallet',
+      login: 'Login / Sign Up',
+      loginWithGoogle: 'Login or sign up with Google',
     },
     home: {
       title: 'Decentralized LLM Network',
@@ -143,6 +145,8 @@ const translations = {
       back: 'بازگشت',
       home: 'خانه',
       wallet: 'کیف پول',
+      login: 'ورود / ثبت‌نام',
+      loginWithGoogle: 'با گوگل وارد شوید یا ثبت‌نام کنید',
     },
     home: {
       title: 'شبکه LLM غیرمتمرکز',

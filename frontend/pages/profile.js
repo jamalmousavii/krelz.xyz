@@ -239,24 +239,10 @@ export default function Profile() {
   const currentCoin = COINS.find(c => c.id === activeCoin);
 
   if (!user) {
-    return (
-      <div className={`min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 ${lang === 'fa' ? 'rtl' : 'ltr'}`}>
-        <Head><title>{t('profile.title')} - Krelz Network</title></Head>
-        <nav className="container mx-auto px-4 md:px-6 py-4">
-          <div className="flex items-center justify-between">
-            <a href="/" className="text-xl md:text-2xl font-bold text-white">🚀 Krelz Network</a>
-            <div className="flex items-center gap-3">
-              <LanguageSwitcher />
-              <a href="/" className="text-white hover:text-gray-300 text-sm">← {t('nav.back')}</a>
-            </div>
-          </div>
-        </nav>
-        <div className="container mx-auto px-4 py-20 text-center text-white">
-          <p className="text-xl mb-4">Please login first</p>
-          <a href="/" className="mt-4 inline-block bg-purple-600 px-6 py-3 rounded-lg">← {t('nav.home')}</a>
-        </div>
-      </div>
-    );
+    if (typeof window !== 'undefined') {
+      window.location.href = '/';
+    }
+    return null;
   }
 
   return (

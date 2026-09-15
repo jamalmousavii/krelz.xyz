@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import LanguageSwitcher from './LanguageSwitcher';
+import GoogleLogin from './GoogleLogin';
 
 export default function Navbar() {
   const { t } = useLanguage();
@@ -43,46 +44,61 @@ export default function Navbar() {
           <a href="/chat" className="text-gray-300 hover:text-white transition">{t('nav.chat')}</a>
           <a href="/leaderboard" className="text-gray-300 hover:text-white transition">🏆</a>
 
-          {/* Profile Dropdown */}
-          {user ? (
-            <div className="relative" ref={dropdownRef}>
-              <button
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg transition"
-              >
-                {user.avatar ? (
-                  <img src={user.avatar} alt="avatar" className="w-7 h-7 rounded-full border border-white/30" />
-                ) : (
-                  <div className="w-7 h-7 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-bold">
-                    {(user.name || user.email || '?')[0].toUpperCase()}
+          {/* Profile / Login Dropdown */}
+          <div className="relative" ref={dropdownRef}>
+            {user ? (
+              /* Logged IN — Avatar with menu */
+              <>
+                <button
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                  className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg transition"
+                >
+                  {user.avatar ? (
+                    <img src={user.avatar} alt="avatar" className="w-7 h-7 rounded-full border border-white/30" />
+                  ) : (
+                    <div className="w-7 h-7 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-bold">
+                      {(user.name || user.email || '?')[0].toUpperCase()}
+                    </div>
+                  )}
+                  <span className="text-white text-sm font-medium hidden lg:inline">{user.name || user.email}</span>
+                  <span className="text-gray-400 text-xs">▼</span>
+                </button>
+                {dropdownOpen && (
+                  <div className="absolute right-0 mt-2 w-48 bg-gray-800 border border-gray-600 rounded-xl shadow-xl overflow-hidden z-50">
+                    <a href="/profile" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-300 hover:bg-white/10 transition">
+                      📊 {t('profile.dashboard')}
+                    </a>
+                    <a href="/profile#settings" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-300 hover:bg-white/10 transition">
+                      ⚙️ {t('profile.settings')}
+                    </a>
+                    <hr className="border-gray-600" />
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2 px-4 py-3 text-sm text-red-400 hover:bg-white/10 transition"
+                    >
+                      🚪 {t('profile.logout')}
+                    </button>
                   </div>
                 )}
-                <span className="text-white text-sm font-medium hidden lg:inline">{user.name || user.email}</span>
-                <span className="text-gray-400 text-xs">▼</span>
-              </button>
-              {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-gray-800 border border-gray-600 rounded-xl shadow-xl overflow-hidden z-50">
-                  <a href="/profile" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-300 hover:bg-white/10 transition">
-                    📊 {t('profile.dashboard')}
-                  </a>
-                  <a href="/profile#settings" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-300 hover:bg-white/10 transition">
-                    ⚙️ {t('profile.settings')}
-                  </a>
-                  <hr className="border-gray-600" />
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-2 px-4 py-3 text-sm text-red-400 hover:bg-white/10 transition"
-                  >
-                    🚪 {t('profile.logout')}
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <a href="/profile" className="bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg transition text-white text-sm">
-              👤
-            </a>
-          )}
+              </>
+            ) : (
+              /* Logged OUT — Login button with Google dropdown */
+              <>
+                <button
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                  className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition text-sm font-medium"
+                >
+                  {t('nav.login')}
+                </button>
+                {dropdownOpen && (
+                  <div className="absolute right-0 mt-2 w-72 bg-gray-800 border border-gray-600 rounded-xl shadow-xl overflow-hidden z-50 p-4">
+                    <p className="text-gray-300 text-sm mb-3">{t('nav.loginWithGoogle')}</p>
+                    <GoogleLogin onSuccess={() => setDropdownOpen(false)} />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         {/* Mobile hamburger */}
@@ -100,12 +116,20 @@ export default function Navbar() {
             <a href="/miner" className="text-gray-300 hover:text-white transition py-2">{t('nav.miner')}</a>
             <a href="/chat" className="text-gray-300 hover:text-white transition py-2">{t('nav.chat')}</a>
             <a href="/leaderboard" className="text-gray-300 hover:text-white transition py-2">🏆 Leaderboard</a>
-            <a href="/profile" className="text-gray-300 hover:text-white transition py-2">👤 {t('profile.dashboard')}</a>
-            <a href="/profile#settings" className="text-gray-300 hover:text-white transition py-2">⚙️ {t('profile.settings')}</a>
-            {user && (
-              <button onClick={handleLogout} className="text-red-400 hover:text-red-300 transition py-2 text-left">
-                🚪 {t('profile.logout')}
-              </button>
+
+            {user ? (
+              <>
+                <a href="/profile" className="text-gray-300 hover:text-white transition py-2">📊 {t('profile.dashboard')}</a>
+                <a href="/profile#settings" className="text-gray-300 hover:text-white transition py-2">⚙️ {t('profile.settings')}</a>
+                <button onClick={handleLogout} className="text-red-400 hover:text-red-300 transition py-2 text-left">
+                  🚪 {t('profile.logout')}
+                </button>
+              </>
+            ) : (
+              <div className="py-2">
+                <p className="text-gray-400 text-xs mb-2">{t('nav.loginWithGoogle')}</p>
+                <GoogleLogin />
+              </div>
             )}
           </div>
         </div>
