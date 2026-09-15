@@ -2,6 +2,7 @@ import Head from 'next/head';
 import { useState, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import LanguageSwitcher from '../components/LanguageSwitcher';
+import GoogleLogin from '../components/GoogleLogin';
 
 export default function Home() {
   const { t, lang } = useLanguage();
@@ -51,15 +52,16 @@ export default function Home() {
           <div className="text-2xl font-bold text-white">🚀 Krelz Network</div>
           <div className="flex items-center gap-4">
             <LanguageSwitcher />
-            <a href="/explorer" className="text-gray-300 hover:text-white transition">{t('nav.explorer')}</a>
-            <a href="/miner" className="text-gray-300 hover:text-white transition">{t('nav.miner')}</a>
-            <a href="/chat" className="text-gray-300 hover:text-white transition">{t('nav.chat')}</a>
+            <a href="/explorer" className="text-gray-300 hover:text-white transition hidden sm:inline">{t('nav.explorer')}</a>
+            <a href="/miner" className="text-gray-300 hover:text-white transition hidden sm:inline">{t('nav.miner')}</a>
+            <a href="/chat" className="text-gray-300 hover:text-white transition hidden sm:inline">{t('nav.chat')}</a>
             <button
               onClick={connectWallet}
-              className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2 rounded-lg transition"
+              className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition text-sm"
             >
-              {connected ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : t('nav.connectWallet')}
+              {connected ? `🟢 ${wallet.slice(0, 6)}...${wallet.slice(-4)}` : t('nav.connectWallet')}
             </button>
+            <GoogleLogin />
           </div>
         </div>
       </nav>
@@ -111,7 +113,7 @@ export default function Home() {
       </main>
 
       <footer className="container mx-auto px-6 py-8 text-center text-gray-400">
-        <p>&copy; 2026 Krelz Network. {t('home.footer')} v1.3.0</p>
+        <p>&copy; 2026 Krelz Network. {t('home.footer')} v1.4.0</p>
       </footer>
     </div>
   );
