@@ -14,19 +14,13 @@ router.get('/balance', async (req, res) => {
       [userId]
     );
 
-    const stakingResult = await pool.query(
-      "SELECT COALESCE(SUM(amount), 0) as staked FROM staking WHERE user_id = $1 AND status = 'active'",
-      [userId]
-    );
-
     const balance = balanceResult.rows[0] || { available: 0, total_earned: 0, total_spent: 0 };
 
     res.json({
       success: true,
       available: parseFloat(balance.available),
       total_earned: parseFloat(balance.total_earned),
-      total_spent: parseFloat(balance.total_spent),
-      staked: parseFloat(stakingResult.rows[0].staked)
+      total_spent: parseFloat(balance.total_spent)
     });
 
   } catch (err) {
@@ -168,98 +162,6 @@ router.post('/transfer', async (req, res) => {
     res.json({
       success: true,
       message: `Transferred ${amount} KRELZ`
-    });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// POST /api/token/stake
-router.post('/stake', async (req, res) => {
-  try {
-    const userId = req.user?.id;
-    const { amount } = req.body;
-
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ error: 'Invalid amount' });
-    }
-
-    const balanceResult = await pool.query(
-      'SELECT available FROM user_balances WHERE user_id = $1',
-      [userId]
-    );
-
-    if (balanceResult.rows.length === 0 || parseFloat(balanceResult.rows[0].available) < amount) {
-      return res.status(400).json({ error: 'Insufficient balance' });
-    }
-
-    await pool.query(
-      'UPDATE user_balances SET available = available - $1 WHERE user_id = $2',
-      [amount, userId]
-    );
-
-    const result = await pool.query(
-      `INSERT INTO staking (user_id, amount, status)
-       VALUES ($1, $2, 'active')
-       RETURNING *`,
-      [userId, amount]
-    );
-
-    invalidateCache('/api/stats');
-
-    res.status(201).json({
-      success: true,
-      staking: result.rows[0]
-    });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// POST /api/token/unstake
-router.post('/unstake', async (req, res) => {
-  try {
-    const userId = req.user?.id;
-    const { amount } = req.body;
-
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ error: 'Invalid amount' });
-    }
-
-    const stakingResult = await pool.query(
-      "SELECT SUM(amount) as total FROM staking WHERE user_id = $1 AND status = 'active'",
-      [userId]
-    );
-
-    const totalStaked = parseFloat(stakingResult.rows[0].total || 0);
-
-    if (amount > totalStaked) {
-      return res.status(400).json({ error: 'Insufficient staked balance' });
-    }
-
-    await pool.query(
-      `UPDATE staking
-       SET amount = amount - $1,
-           status = CASE WHEN amount - $1 <= 0 THEN 'withdrawn' ELSE 'active' END,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE user_id = $2 AND status = 'active'`,
-      [amount, userId]
-    );
-
-    await pool.query(
-      'UPDATE user_balances SET available = available + $1 WHERE user_id = $2',
-      [amount, userId]
-    );
-
-    invalidateCache('/api/stats');
-
-    res.json({
-      success: true,
-      message: `Unstaked ${amount} KRELZ`
     });
 
   } catch (err) {

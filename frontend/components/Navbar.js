@@ -42,8 +42,6 @@ export default function Navbar() {
           <a href="/miner" className="text-gray-300 hover:text-white transition">{t('nav.miner')}</a>
           <a href="/chat" className="text-gray-300 hover:text-white transition">{t('nav.chat')}</a>
           <a href="/leaderboard" className="text-gray-300 hover:text-white transition">🏆</a>
-          <a href="/staking" className="text-gray-300 hover:text-white transition">🔒</a>
-          <a href="/wallet" className="text-gray-300 hover:text-white transition">💰</a>
 
           {/* Profile Dropdown */}
           {user ? (
@@ -102,8 +100,6 @@ export default function Navbar() {
             <a href="/miner" className="text-gray-300 hover:text-white transition py-2">{t('nav.miner')}</a>
             <a href="/chat" className="text-gray-300 hover:text-white transition py-2">{t('nav.chat')}</a>
             <a href="/leaderboard" className="text-gray-300 hover:text-white transition py-2">🏆 Leaderboard</a>
-            <a href="/staking" className="text-gray-300 hover:text-white transition py-2">🔒 Staking</a>
-            <a href="/wallet" className="text-gray-300 hover:text-white transition py-2">💰 Wallet</a>
             <a href="/profile" className="text-gray-300 hover:text-white transition py-2">👤 {t('profile.dashboard')}</a>
             <a href="/profile#settings" className="text-gray-300 hover:text-white transition py-2">⚙️ {t('profile.settings')}</a>
             {user && (
