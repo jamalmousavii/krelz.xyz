@@ -126,6 +126,44 @@ const migrate = async () => {
     `);
     console.log('✅ ستون description اضافه شد');
     
+    // Indexes
+    await client.query('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_miners_status ON miners(status)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_miners_wallet ON miners(wallet_address)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_tasks_miner_id ON tasks(miner_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_staking_user ON staking(user_id, status)');
+    console.log('✅ Indexes created');
+    
+    // API Keys table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS api_keys (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        name VARCHAR(100) NOT NULL,
+        key_hash VARCHAR(64) NOT NULL,
+        key_prefix VARCHAR(12) NOT NULL,
+        rate_limit INTEGER DEFAULT 100,
+        active BOOLEAN DEFAULT true,
+        last_used_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ جدول api_keys ایجاد شد');
+    
+    // Admin user
+    await client.query(`
+      DO $$ BEGIN
+        INSERT INTO users (email, name, role) VALUES ('admin@krelz.xyz', 'Admin', 'admin')
+        ON CONFLICT (email) DO NOTHING;
+      EXCEPTION WHEN OTHERS THEN null;
+      END $$;
+    `);
+    console.log('✅ Admin user created');
+    
     await client.query('COMMIT');
     console.log('\n✅ تمام جداول ایجاد شد');
     

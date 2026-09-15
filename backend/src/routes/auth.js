@@ -4,11 +4,13 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../database/pool');
 const { OAuth2Client } = require('google-auth-library');
+const { validate, registerRules, loginRules, googleAuthRules } = require('../middleware/validate');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const JWT_SECRET = process.env.JWT_SECRET || 'krelz-secret';
 
 // POST /api/auth/register
-router.post('/register', async (req, res) => {
+router.post('/register', registerRules, validate, async (req, res) => {
   try {
     const { email, password, role } = req.body;
 
@@ -17,16 +19,22 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Email already exists' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 12);
 
     const result = await pool.query(
       'INSERT INTO users (email, password, role) VALUES ($1, $2, $3) RETURNING id, email, role',
       [email, hashedPassword, role || 'user']
     );
 
+    // Create empty balance
+    await pool.query(
+      'INSERT INTO user_balances (user_id) VALUES ($1) ON CONFLICT DO NOTHING',
+      [result.rows[0].id]
+    );
+
     const token = jwt.sign(
-      { id: result.rows[0].id, email, role },
-      process.env.JWT_SECRET || 'krelz-secret',
+      { id: result.rows[0].id, email, role: result.rows[0].role },
+      JWT_SECRET,
       { expiresIn: '7d' }
     );
 
@@ -43,7 +51,7 @@ router.post('/register', async (req, res) => {
 });
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', loginRules, validate, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -54,25 +62,25 @@ router.post('/login', async (req, res) => {
 
     const user = result.rows[0];
 
+    if (!user.password) {
+      return res.status(401).json({ error: 'This account uses Google Login. Please sign in with Google.' });
+    }
+
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     const token = jwt.sign(
-      { id: user.id, email, role: user.role },
-      process.env.JWT_SECRET || 'krelz-secret',
+      { id: user.id, email: user.email, role: user.role },
+      JWT_SECRET,
       { expiresIn: '7d' }
     );
 
     res.json({
       success: true,
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        role: user.role
-      }
+      user: { id: user.id, email: user.email, name: user.name, role: user.role }
     });
 
   } catch (err) {
@@ -82,14 +90,10 @@ router.post('/login', async (req, res) => {
 });
 
 // POST /api/auth/google
-router.post('/google', async (req, res) => {
+router.post('/google', googleAuthRules, validate, async (req, res) => {
   try {
     const { credential } = req.body;
-    if (!credential) {
-      return res.status(400).json({ error: 'Google credential required' });
-    }
 
-    // Verify Google ID token
     const ticket = await googleClient.verifyIdToken({
       idToken: credential,
       audience: process.env.GOOGLE_CLIENT_ID,
@@ -98,22 +102,24 @@ router.post('/google', async (req, res) => {
     const payload = ticket.getPayload();
     const { sub: googleId, email, name, picture } = payload;
 
-    // Find existing user by google_id or email
     let result = await pool.query(
       'SELECT * FROM users WHERE google_id = $1 OR email = $2',
       [googleId, email]
     );
 
     if (result.rows.length === 0) {
-      // Create new user
       result = await pool.query(
         `INSERT INTO users (email, name, avatar, google_id, role)
          VALUES ($1, $2, $3, $4, 'user')
          RETURNING id, email, name, avatar, role`,
         [email, name, picture, googleId]
       );
+      // Create balance for new user
+      await pool.query(
+        'INSERT INTO user_balances (user_id) VALUES ($1) ON CONFLICT DO NOTHING',
+        [result.rows[0].id]
+      );
     } else {
-      // Update existing user with Google info
       result = await pool.query(
         `UPDATE users
          SET google_id = COALESCE(google_id, $1),
@@ -128,10 +134,9 @@ router.post('/google', async (req, res) => {
 
     const user = result.rows[0];
 
-    // Create JWT
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET || 'krelz-secret',
+      JWT_SECRET,
       { expiresIn: '7d' }
     );
 
