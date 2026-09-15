@@ -70,6 +70,7 @@ app.use(helmet({
 
 app.use(compression());
 app.use(morgan('combined'));
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '1mb' }));
 
 // --- Rate Limits ---
@@ -113,7 +114,7 @@ app.get('/health', (req, res) => {
   const cache = getCacheStats();
   res.json({
     status: 'ok',
-    version: '3.1.0',
+    version: '3.2.0',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     redis: cache.connected ? 'connected' : 'disconnected',

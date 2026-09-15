@@ -3,14 +3,153 @@ const router = express.Router();
 const pool = require('../database/pool');
 const axios = require('axios');
 const { invalidateCache } = require('../cache');
+const { authenticate, optionalAuth } = require('../middleware/auth');
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const SUPPORTED_COINS = ['BTC', 'ETH', 'BNB', 'USDT', 'TRX', 'DOGE', 'XRP'];
 
-// POST /api/chat
-router.post('/', async (req, res) => {
+// ======== SESSION CRUD ========
+
+// GET /api/chat/sessions — list user sessions
+router.get('/sessions', authenticate, async (req, res) => {
   try {
-    const { message, model, coin } = req.body;
+    const userId = req.user.id;
+    const result = await pool.query(
+      `SELECT cs.*,
+              COUNT(t.id) FILTER (WHERE t.id IS NOT NULL) AS message_count,
+              MAX(t.created_at) AS last_message_at
+       FROM chat_sessions cs
+       LEFT JOIN tasks t ON t.session_id = cs.id
+       WHERE cs.user_id = $1
+       GROUP BY cs.id
+       ORDER BY COALESCE(MAX(t.created_at), cs.updated_at) DESC`,
+      [userId]
+    );
+
+    res.json({ success: true, sessions: result.rows });
+  } catch (err) {
+    console.error('Sessions list error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/chat/sessions/:id — get session messages
+router.get('/sessions/:id', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const sessionId = parseInt(req.params.id);
+
+    const sessionResult = await pool.query(
+      'SELECT * FROM chat_sessions WHERE id = $1 AND user_id = $2',
+      [sessionId, userId]
+    );
+
+    if (sessionResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const messagesResult = await pool.query(
+      `SELECT prompt AS content, 'user' AS role, created_at
+       FROM tasks WHERE session_id = $1 AND user_id = $2
+       UNION ALL
+       SELECT response AS content, 'assistant' AS role, completed_at AS created_at
+       FROM tasks WHERE session_id = $1 AND user_id = $2 AND response IS NOT NULL
+       ORDER BY created_at ASC`,
+      [sessionId, userId]
+    );
+
+    res.json({
+      success: true,
+      session: sessionResult.rows[0],
+      messages: messagesResult.rows
+    });
+  } catch (err) {
+    console.error('Session get error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/chat/sessions — create new session
+router.post('/sessions', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { subject, model } = req.body;
+
+    const result = await pool.query(
+      `INSERT INTO chat_sessions (user_id, subject, model)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [userId, subject || 'New Chat', model || null]
+    );
+
+    res.status(201).json({ success: true, session: result.rows[0] });
+  } catch (err) {
+    console.error('Session create error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/chat/sessions/:id — update subject
+router.put('/sessions/:id', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const sessionId = parseInt(req.params.id);
+    const { subject } = req.body;
+
+    if (!subject || !subject.trim()) {
+      return res.status(400).json({ error: 'Subject is required' });
+    }
+
+    const result = await pool.query(
+      `UPDATE chat_sessions
+       SET subject = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND user_id = $3
+       RETURNING *`,
+      [subject.trim(), sessionId, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    res.json({ success: true, session: result.rows[0] });
+  } catch (err) {
+    console.error('Session update error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/chat/sessions/:id — delete session + messages
+router.delete('/sessions/:id', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const sessionId = parseInt(req.params.id);
+
+    const sessionResult = await pool.query(
+      'SELECT * FROM chat_sessions WHERE id = $1 AND user_id = $2',
+      [sessionId, userId]
+    );
+
+    if (sessionResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    await pool.query('DELETE FROM tasks WHERE session_id = $1', [sessionId]);
+    await pool.query('DELETE FROM chat_sessions WHERE id = $1', [sessionId]);
+
+    res.json({ success: true, message: 'Session deleted' });
+  } catch (err) {
+    console.error('Session delete error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ======== CHAT (with session support) ========
+
+// POST /api/chat — send message (supports session_id)
+router.post('/', optionalAuth, async (req, res) => {
+  try {
+    const { message, model, coin, session_id } = req.body;
     const userId = req.user?.id;
     const paymentCoin = (coin || 'USDT').toUpperCase();
 
@@ -18,15 +157,43 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Message is required' });
     }
 
+    // Resolve or create session
+    let sessionId = session_id || null;
+
+    if (userId) {
+      if (sessionId) {
+        // Verify session belongs to user
+        const check = await pool.query(
+          'SELECT id FROM chat_sessions WHERE id = $1 AND user_id = $2',
+          [sessionId, userId]
+        );
+        if (check.rows.length === 0) {
+          sessionId = null; // invalid session, will create new one
+        }
+      }
+
+      if (!sessionId) {
+        // Create new session with auto-generated subject
+        const subject = message.length > 50 ? message.substring(0, 50) + '...' : message;
+        const sessionResult = await pool.query(
+          `INSERT INTO chat_sessions (user_id, subject, model)
+           VALUES ($1, $2, $3)
+           RETURNING id`,
+          [userId, subject, model || 'llama3:8b']
+        );
+        sessionId = sessionResult.rows[0].id;
+      }
+    }
+
     const wsServer = req.app.get('wsServer');
     const minerId = wsServer ? wsServer.findMinerForModel(model) : null;
 
     // Create task
     const taskResult = await pool.query(
-      `INSERT INTO tasks (user_id, miner_id, prompt, model, status)
-       VALUES ($1, $2, $3, $4, 'pending')
+      `INSERT INTO tasks (user_id, miner_id, prompt, model, status, session_id)
+       VALUES ($1, $2, $3, $4, 'pending', $5)
        RETURNING id`,
-      [userId, minerId, message, model || 'llama3:8b']
+      [userId, minerId, message, model || 'llama3:8b', sessionId]
     );
 
     const taskId = taskResult.rows[0].id;
@@ -97,7 +264,6 @@ router.post('/', async (req, res) => {
       const userBalance = parseFloat(balanceResult.rows[0]?.available || 0);
 
       if (userBalance >= cost && cost > 0) {
-        // Deduct from user
         await pool.query(
           `UPDATE user_coin_balances
            SET available = available - $1, total_spent = total_spent + $1
@@ -105,7 +271,6 @@ router.post('/', async (req, res) => {
           [cost, userId, paymentCoin]
         );
 
-        // 90% to miner, 10% platform
         const minerEarning = cost * 0.9;
 
         if (minerId) {
@@ -114,7 +279,6 @@ router.post('/', async (req, res) => {
             [minerEarning, minerId]
           );
 
-          // Track miner earning per coin
           await pool.query(
             `INSERT INTO miner_coin_earnings (miner_id, coin, amount, task_id)
              VALUES ($1, $2, $3, $4)`,
@@ -133,6 +297,7 @@ router.post('/', async (req, res) => {
       success: true,
       response,
       task_id: taskId,
+      session_id: sessionId,
       tokens_used: tokensUsed,
       cost,
       coin: paymentCoin,
@@ -147,20 +312,17 @@ router.post('/', async (req, res) => {
   }
 });
 
-// GET /api/chat/history
-router.get('/history', async (req, res) => {
+// GET /api/chat/history — legacy endpoint (backward compatibility)
+router.get('/history', authenticate, async (req, res) => {
   try {
-    const userId = req.user?.id;
+    const userId = req.user.id;
 
     const result = await pool.query(
       'SELECT * FROM tasks WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
       [userId]
     );
 
-    res.json({
-      success: true,
-      tasks: result.rows
-    });
+    res.json({ success: true, tasks: result.rows });
 
   } catch (err) {
     console.error(err);

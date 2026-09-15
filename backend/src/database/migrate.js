@@ -232,6 +232,33 @@ const migrate = async () => {
     await client.query('CREATE INDEX IF NOT EXISTS idx_miner_coin_earnings_miner ON miner_coin_earnings(miner_id, coin)');
     console.log('✅ Multi-coin indexes created');
     
+    // === Chat Sessions ===
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS chat_sessions (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id),
+        subject VARCHAR(255) DEFAULT 'New Chat',
+        model VARCHAR(50),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ جدول chat_sessions ایجاد شد');
+
+    // Add session_id to tasks (if not exists)
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS session_id INTEGER REFERENCES chat_sessions(id);
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    console.log('✅ ستون session_id به tasks اضافه شد');
+
+    // Chat session indexes
+    await client.query('CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(session_id)');
+    console.log('✅ Chat session indexes created');
+
     await client.query('COMMIT');
     console.log('\n✅ تمام جداول ایجاد شد');
     
