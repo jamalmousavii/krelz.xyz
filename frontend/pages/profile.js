@@ -496,7 +496,7 @@ export default function Profile() {
                   </div>
                   <div className="flex justify-between text-xs text-gray-400">
                     <span>{task.model}</span>
-                    <span>{task.tokens_used || 0} tokens • {(task.cost || 0).toFixed(4)}</span>
+                    <span>{task.tokens_used || 0} tokens • {parseFloat(task.cost || 0).toFixed(4)}</span>
                   </div>
                 </div>
               ))}
