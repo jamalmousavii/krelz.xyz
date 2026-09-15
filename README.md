@@ -12,6 +12,17 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 | Explorer | https://krelz.xyz/explorer |
 | API Health | https://krelz.xyz/api/health |
 
+## Features
+
+- **Decentralized LLM Inference** — GPU miners serve AI models via WebSocket
+- **Multi-Coin Payments** — BTC, ETH, BNB, USDT, TRX, DOGE, XRP via NowPayments
+- **Daily Free Tokens** — 1,000 free AI inference tokens per user per day (UTC reset)
+- **Per-Model Pricing** — 11 models from 300M to 70B parameters, priced 30-50% cheaper than DeepSeek
+- **Chat Sessions** — Persistent chat history with auto-generated subjects
+- **Profile Dashboard** — Balance, daily tokens, wallet, miner settings
+- **Miner Earnings** — 90% of paid usage goes to miners
+- **Internationalization** — English (default) + Farsi with RTL support
+
 ## Quick Install (Miner)
 
 ### Ubuntu / Debian
@@ -29,31 +40,34 @@ wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/in
 The install script automatically sets up:
 - Node.js 20
 - Ollama
-- llama3:8b model
+- Selected AI models (11 available)
 - Krelz Miner
 
-## Architecture
+## AI Models & Pricing
 
-```
-┌─────────────┐     ┌──────────────┐     ┌───────────────┐
-│   Frontend   │────▶│   Nginx/SSL  │────▶│  Backend API  │
-│   (Next.js)  │     │   (Reverse)  │     │  (Express)    │
-└─────────────┘     └──────────────┘     └───────┬───────┘
-                                                  │
-                    ┌─────────────────────────────┼─────────────┐
-                    │                             │             │
-              ┌─────▼─────┐              ┌───────▼──────┐ ┌────▼────┐
-              │ PostgreSQL │              │   Ollama     │ │  Redis  │
-              │  (Docker)  │              │  llama3:8b   │ │ (Docker)│
-              └───────────┘              └──────────────┘ └─────────┘
-                                                              │
-                    ┌─────────────────────────────────────────┘
-                    │
-              ┌─────▼─────┐         ┌──────────────────┐
-              │ Miner App  │────────▶│ BSC Testnet/Main │
-              │  (Bash)    │         │ Smart Contracts  │
-              └───────────┘         └──────────────────┘
-```
+| Model | Size | Input/1M | Output/1M | vs DeepSeek |
+|-------|------|----------|-----------|-------------|
+| nomic-embed-text | 274M | $0.070 | $0.140 | -50% |
+| embeddinggemma | 300M | $0.073 | $0.146 | -48% |
+| bge-m3 | 567M | $0.076 | $0.152 | -46% |
+| llama3.1:8b | 8B | $0.079 | $0.158 | -44% |
+| qwen3-vl:8b | 8B | $0.082 | $0.164 | -42% |
+| gemma4:12b | 12B | $0.085 | $0.170 | -40% |
+| qwen3.6:27b | 27B | $0.088 | $0.176 | -38% |
+| qwen3-coder:30b | 30B | $0.091 | $0.182 | -36% |
+| qwen2.5-coder:32b | 32B | $0.094 | $0.188 | -34% |
+| llama3.3:70b | 70B | $0.097 | $0.194 | -32% |
+| deepseek-r1:70b | 70B | $0.098 | $0.196 | -30% |
+
+**Reference:** DeepSeek V4 Flash — $0.14 input / $0.28 output per 1M tokens
+
+## Daily Free Tokens
+
+Every user gets **1,000 free AI inference tokens per day**:
+- Resets at UTC 00:00
+- Does not accumulate
+- If exceeded, charges from paid balance (crypto deposits)
+- Tracked in `daily_tokens` table
 
 ## Project Structure
 
@@ -61,50 +75,72 @@ The install script automatically sets up:
 krelz.xyz/
 ├── backend/                    # API Server (Node.js/Express)
 │   ├── src/
-│   │   ├── server.js          # Entry point
+│   │   ├── server.js          # Entry point (v3.5.0)
+│   │   ├── models.js          # AI models + pricing
 │   │   ├── database/
 │   │   │   ├── pool.js        # PostgreSQL connection
-│   │   │   └── migrate.js     # DB migration
-│   │   └── routes/
-│   │       ├── auth.js        # Authentication
-│   │       ├── miners.js      # Miner management
-│   │       ├── chat.js        # LLM chat
-│   │       ├── payments.js    # Payments
-│   │       ├── token.js       # KRELZ token
-│   │       └── stats.js       # Network stats
+│   │   │   └── migrate.js     # DB migration (14 tables)
+│   │   ├── routes/
+│   │   │   ├── auth.js        # Authentication
+│   │   │   ├── miners.js      # Miner management
+│   │   │   ├── chat.js        # LLM chat + daily tokens
+│   │   │   ├── payments.js    # Multi-coin payments
+│   │   │   ├── token.js       # Balance + daily tokens
+│   │   │   ├── stats.js       # Network stats
+│   │   │   └── models.js      # Model list API
+│   │   ├── middleware/
+│   │   │   └── auth.js        # JWT auth
+│   │   └── cache.js           # Redis caching
 │   └── package.json
-├── frontend/                   # UI (Next.js + Tailwind CSS)
+├── frontend/                   # UI (Next.js 14 + Tailwind CSS)
 │   ├── pages/
 │   │   ├── index.js           # Home page
-│   │   ├── chat.js            # Chat with AI
+│   │   ├── chat.js            # Chat with AI (sessions + balance)
+│   │   ├── profile.js         # Dashboard + settings
 │   │   ├── miner.js           # Miner install
 │   │   └── explorer.js        # Network explorer
 │   ├── components/
-│   │   └── LanguageSwitcher.js # Language toggle
+│   │   ├── Navbar.js          # Navigation + auth
+│   │   ├── GoogleLogin.js     # Google OAuth
+│   │   └── LanguageSwitcher.js
 │   ├── i18n/
 │   │   ├── translations.js    # EN/FA translations
-│   │   └── LanguageContext.js  # i18n context provider
+│   │   └── LanguageContext.js
 │   └── package.json
 ├── miner-app/                  # Miner install scripts
-│   ├── install-ubuntu.sh      # Ubuntu/Debian installer
-│   ├── install-redhat.sh      # RedHat/Fedora installer
-│   └── src/                   # Miner source code
-│       ├── main.js
-│       ├── renderer/index.html
-│       └── services/
-├── contracts/                  # Smart Contracts (Solidity)
-│   ├── contracts/
-│   │   ├── KrelzToken.sol     # ERC-20 Token
-│   │   └── StakingPool.sol    # Staking Pool
-│   ├── scripts/
-│   │   └── deploy.js          # Deploy script
-│   ├── hardhat.config.js
-│   └── deploy.sh
 └── docs/                       # Documentation
-    ├── architecture.md
-    ├── tokenomics.md
-    └── api.md
 ```
+
+## Database Schema (14 Tables)
+
+| Table | Purpose |
+|-------|---------|
+| users | User accounts |
+| miners | GPU miner registrations |
+| tasks | Chat task history |
+| transactions | Token transactions |
+| staking | Staking records |
+| user_balances | KRELZ token balance |
+| deposits | Deposit history |
+| api_keys | API key management |
+| user_coin_balances | Multi-coin balances |
+| coin_deposits | Crypto deposit history |
+| coin_withdrawals | Crypto withdrawal history |
+| miner_coin_earnings | Miner earnings |
+| chat_sessions | Chat session groups |
+| daily_tokens | Daily free token tracking |
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js 14, React 18, Tailwind CSS |
+| Backend | Node.js 20, Express, PostgreSQL, Redis |
+| LLM | Ollama, 11 models (Llama, Qwen, Gemma, DeepSeek, BGE) |
+| Auth | Google OAuth 2.0, JWT |
+| Payments | NowPayments (7 cryptocurrencies) |
+| Server | Ubuntu 24.04, Nginx, Let's Encrypt |
+| i18n | English (default), Farsi (RTL) |
 
 ## Development
 
@@ -125,52 +161,6 @@ npm install
 npm run dev
 # Runs at http://localhost:3001
 ```
-
-### Smart Contracts
-
-```bash
-cd contracts
-npm install
-npx hardhat compile
-npx hardhat run scripts/deploy.js --network bscTestnet
-```
-
-## Internationalization (i18n)
-
-The site supports English (default) and Farsi. To add a new language:
-
-1. Add translations in `frontend/i18n/translations.js`
-2. The language switcher appears on all pages
-3. RTL is automatically handled for Farsi
-
-## Tokenomics
-
-| Parameter | Value |
-|-----------|-------|
-| Token Name | Krelz (KRELZ) |
-| Total Supply | 1,000,000,000 |
-| Decimals | 18 |
-| Standard | BEP-20 (BNB Chain) |
-| Platform Fee | 10% miner + 10% user |
-| Burning | 1% transactions, 2% LLM, 5% penalties |
-
-### Token Distribution
-
-- **60%** Mining rewards
-- **20%** Ecosystem
-- **10%** Team (24-month vesting)
-- **10%** Foundation
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js 14, React, Tailwind CSS |
-| Backend | Node.js, Express, PostgreSQL, Redis |
-| LLM | Ollama, 60+ models (Llama, Qwen, Gemma, Mistral, DeepSeek, Phi, CodeLlama) |
-| Blockchain | BNB Chain, Solidity 0.8.20, Hardhat |
-| Server | Ubuntu 24.04, Nginx, Let's Encrypt |
-| i18n | English (default), Farsi |
 
 ## License
 

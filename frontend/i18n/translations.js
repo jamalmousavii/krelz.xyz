@@ -26,7 +26,7 @@ const translations = {
       startChat: 'Start Chat',
       footer: 'All rights reserved.',
       installMetaMask: 'Please install MetaMask',
-      version: 'v3.0.0',
+      version: 'v3.5.0',
     },
     chat: {
       title: 'Chat with AI - Krelz Network',
@@ -134,6 +134,10 @@ const translations = {
       balance: 'Balance',
       available: 'Available',
       earned: 'Earned',
+      spent: 'Spent',
+      dailyTokens: 'Daily Free Tokens',
+      remaining: 'Remaining',
+      usedToday: 'Used Today',
     },
   },
   fa: {
@@ -271,6 +275,10 @@ const translations = {
       balance: 'موجودی',
       available: 'موجود',
       earned: 'کسب شده',
+      spent: 'مصرف شده',
+      dailyTokens: 'توکن رایگان روزانه',
+      remaining: 'باقیمانده',
+      usedToday: 'امروز مصرف شده',
     },
   },
 };

@@ -4,9 +4,49 @@ const pool = require('../database/pool');
 const axios = require('axios');
 const { invalidateCache } = require('../cache');
 const { authenticate, optionalAuth } = require('../middleware/auth');
+const MODELS = require('../models');
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const SUPPORTED_COINS = ['BTC', 'ETH', 'BNB', 'USDT', 'TRX', 'DOGE', 'XRP'];
+const DAILY_TOKEN_LIMIT = 1000;
+
+const getModelPricing = (modelId) => {
+  const found = MODELS.find(m => m.id === modelId);
+  return found ? { inputPrice: found.inputPrice, outputPrice: found.outputPrice } : { inputPrice: 0.088, outputPrice: 0.176 };
+};
+
+const checkDailyTokens = async (userId) => {
+  if (!userId) return { limit: 0, used: 0, remaining: 0 };
+
+  const today = new Date().toISOString().split('T')[0];
+
+  const result = await pool.query(
+    'SELECT tokens_used_today, last_reset_date FROM daily_tokens WHERE user_id = $1',
+    [userId]
+  );
+
+  if (result.rows.length === 0) {
+    await pool.query(
+      'INSERT INTO daily_tokens (user_id, tokens_used_today, last_reset_date) VALUES ($1, 0, $2) ON CONFLICT (user_id) DO NOTHING',
+      [userId, today]
+    );
+    return { limit: DAILY_TOKEN_LIMIT, used: 0, remaining: DAILY_TOKEN_LIMIT };
+  }
+
+  const { tokens_used_today, last_reset_date } = result.rows[0];
+
+  if (last_reset_date !== today) {
+    await pool.query(
+      'UPDATE daily_tokens SET tokens_used_today = 0, last_reset_date = $1 WHERE user_id = $2',
+      [today, userId]
+    );
+    return { limit: DAILY_TOKEN_LIMIT, used: 0, remaining: DAILY_TOKEN_LIMIT };
+  }
+
+  const used = parseFloat(tokens_used_today);
+  const remaining = Math.max(0, DAILY_TOKEN_LIMIT - used);
+  return { limit: DAILY_TOKEN_LIMIT, used, remaining };
+};
 
 // ======== SESSION CRUD ========
 
@@ -213,7 +253,8 @@ router.post('/', optionalAuth, async (req, res) => {
 
         response = result.response;
         tokensUsed = result.tokens_used || 0;
-        cost = tokensUsed * 0.001;
+        const pricing = getModelPricing(model || 'llama3.1:8b');
+        cost = (tokensUsed * pricing.outputPrice) / 1000000;
 
       } catch (wsError) {
         console.log(`WebSocket dispatch failed: ${wsError.message}, falling back to local Ollama`);
@@ -231,7 +272,8 @@ router.post('/', optionalAuth, async (req, res) => {
 
         response = ollamaResponse.data.response;
         tokensUsed = ollamaResponse.data.eval_count || 0;
-        cost = tokensUsed * 0.001;
+        const pricing = getModelPricing(model || 'llama3.1:8b');
+        cost = (tokensUsed * pricing.outputPrice) / 1000000;
 
       } catch (ollamaError) {
         await pool.query(
@@ -253,43 +295,61 @@ router.post('/', optionalAuth, async (req, res) => {
       [response, tokensUsed, cost, taskId]
     );
 
-    // Payment: deduct from user's coin balance
+    // Payment: daily tokens + user coin balance
     let paymentStatus = 'free';
-    if (userId && SUPPORTED_COINS.includes(paymentCoin)) {
-      const balanceResult = await pool.query(
-        'SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = $2',
-        [userId, paymentCoin]
-      );
+    let dailyTokensInfo = { limit: DAILY_TOKEN_LIMIT, used: 0, remaining: DAILY_TOKEN_LIMIT };
 
-      const userBalance = parseFloat(balanceResult.rows[0]?.available || 0);
+    if (userId && cost > 0) {
+      const dailyInfo = await checkDailyTokens(userId);
+      dailyTokensInfo = dailyInfo;
 
-      if (userBalance >= cost && cost > 0) {
+      const dailyTokenValue = dailyInfo.remaining * 0.001;
+      const dailyCoverage = Math.min(cost, dailyTokenValue);
+      const paidPortion = cost - dailyCoverage;
+
+      if (dailyCoverage > 0) {
+        const tokensToDeduct = dailyCoverage / 0.001;
         await pool.query(
-          `UPDATE user_coin_balances
-           SET available = available - $1, total_spent = total_spent + $1
-           WHERE user_id = $2 AND coin = $3`,
-          [cost, userId, paymentCoin]
+          'UPDATE daily_tokens SET tokens_used_today = tokens_used_today + $1 WHERE user_id = $2',
+          [tokensToDeduct, userId]
         );
+        dailyTokensInfo = { ...dailyTokensInfo, used: dailyInfo.used + tokensToDeduct, remaining: Math.max(0, dailyInfo.remaining - tokensToDeduct) };
+      }
 
-        const minerEarning = cost * 0.9;
+      if (paidPortion > 0 && SUPPORTED_COINS.includes(paymentCoin)) {
+        const balanceResult = await pool.query(
+          'SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = $2',
+          [userId, paymentCoin]
+        );
+        const userBalance = parseFloat(balanceResult.rows[0]?.available || 0);
 
-        if (minerId) {
+        if (userBalance >= paidPortion) {
           await pool.query(
-            'UPDATE miners SET total_tasks = total_tasks + 1, earnings = earnings + $1 WHERE id = $2',
-            [minerEarning, minerId]
+            `UPDATE user_coin_balances
+             SET available = available - $1, total_spent = total_spent + $1
+             WHERE user_id = $2 AND coin = $3`,
+            [paidPortion, userId, paymentCoin]
           );
 
-          await pool.query(
-            `INSERT INTO miner_coin_earnings (miner_id, coin, amount, task_id)
-             VALUES ($1, $2, $3, $4)`,
-            [minerId, paymentCoin, minerEarning, taskId]
-          );
+          const minerEarning = paidPortion * 0.9;
+          if (minerId) {
+            await pool.query(
+              'UPDATE miners SET total_tasks = total_tasks + 1, earnings = earnings + $1 WHERE id = $2',
+              [minerEarning, minerId]
+            );
+            await pool.query(
+              `INSERT INTO miner_coin_earnings (miner_id, coin, amount, task_id)
+               VALUES ($1, $2, $3, $4)`,
+              [minerId, paymentCoin, minerEarning, taskId]
+            );
+          }
+          paymentStatus = 'paid';
+          invalidateCache('/api/payments/balance');
+        } else {
+          paymentStatus = 'insufficient_balance';
         }
-
-        paymentStatus = 'paid';
-        invalidateCache('/api/payments/balance');
-      } else if (cost > 0) {
-        paymentStatus = 'insufficient_balance';
+      } else if (paidPortion <= 0) {
+        paymentStatus = 'free_daily';
       }
     }
 
@@ -303,7 +363,8 @@ router.post('/', optionalAuth, async (req, res) => {
       coin: paymentCoin,
       payment_status: paymentStatus,
       miner_id: minerId,
-      source: minerId ? 'miner' : 'local'
+      source: minerId ? 'miner' : 'local',
+      daily_tokens: dailyTokensInfo
     });
 
   } catch (err) {

@@ -3,6 +3,8 @@ const router = express.Router();
 const pool = require('../database/pool');
 const { invalidateCache } = require('../cache');
 
+const DAILY_TOKEN_LIMIT = 1000;
+
 // GET /api/token/balance
 router.get('/balance', async (req, res) => {
   try {
@@ -16,11 +18,35 @@ router.get('/balance', async (req, res) => {
 
     const balance = balanceResult.rows[0] || { available: 0, total_earned: 0, total_spent: 0 };
 
+    const today = new Date().toISOString().split('T')[0];
+    let dailyUsed = 0;
+    let dailyRemaining = DAILY_TOKEN_LIMIT;
+
+    if (userId) {
+      const dailyResult = await pool.query(
+        'SELECT tokens_used_today, last_reset_date FROM daily_tokens WHERE user_id = $1',
+        [userId]
+      );
+
+      if (dailyResult.rows.length > 0) {
+        const { tokens_used_today, last_reset_date } = dailyResult.rows[0];
+        if (last_reset_date === today) {
+          dailyUsed = parseFloat(tokens_used_today);
+          dailyRemaining = Math.max(0, DAILY_TOKEN_LIMIT - dailyUsed);
+        }
+      }
+    }
+
     res.json({
       success: true,
       available: parseFloat(balance.available),
       total_earned: parseFloat(balance.total_earned),
-      total_spent: parseFloat(balance.total_spent)
+      total_spent: parseFloat(balance.total_spent),
+      daily_tokens: {
+        limit: DAILY_TOKEN_LIMIT,
+        used: dailyUsed,
+        remaining: dailyRemaining
+      }
     });
 
   } catch (err) {

@@ -30,7 +30,7 @@ export default function Profile() {
   const { t, lang } = useLanguage();
   const [user, setUser] = useState(null);
   const [balance, setBalance] = useState(null);
-  const [tasks, setTasks] = useState([]);
+  const [dailyTokens, setDailyTokens] = useState(null);
   const [miner, setMiner] = useState(null);
   const [wallet, setWallet] = useState(null);
   const [walletConnected, setWalletConnected] = useState(false);
@@ -62,7 +62,6 @@ export default function Profile() {
         const u = JSON.parse(saved);
         setUser(u);
         fetchBalance();
-        fetchTasks();
         fetchMiner();
         checkWallet();
         fetchCoinBalances();
@@ -83,16 +82,10 @@ export default function Profile() {
     try {
       const res = await fetch('/api/token/balance', { headers: authHeaders() });
       const data = await res.json();
-      if (data.success) setBalance(data);
-    } catch (err) {}
-  };
-
-  const fetchTasks = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const res = await fetch('/api/chat/history', { headers: { Authorization: `Bearer ${token}` } });
-      const data = await res.json();
-      if (data.success) setTasks(data.tasks || []);
+      if (data.success) {
+        setBalance(data);
+        setDailyTokens(data.daily_tokens);
+      }
     } catch (err) {}
   };
 
@@ -289,14 +282,44 @@ export default function Profile() {
             </div>
           </div>
           {balance && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3 mb-4">
               <div className="bg-black/20 rounded-xl p-4 text-center">
-                <div className="text-xl font-bold text-green-400">{(balance.available || 0).toFixed(2)}</div>
+                <div className="text-xl font-bold text-green-400">{parseFloat(balance.available || 0).toFixed(2)}</div>
                 <div className="text-gray-400 text-xs">{t('profile.available')}</div>
               </div>
               <div className="bg-black/20 rounded-xl p-4 text-center">
-                <div className="text-xl font-bold text-blue-400">{(balance.total_earned || 0).toFixed(2)}</div>
+                <div className="text-xl font-bold text-blue-400">{parseFloat(balance.total_earned || 0).toFixed(2)}</div>
                 <div className="text-gray-400 text-xs">{t('profile.earned')}</div>
+              </div>
+              <div className="bg-black/20 rounded-xl p-4 text-center">
+                <div className="text-xl font-bold text-red-400">{parseFloat(balance.total_spent || 0).toFixed(2)}</div>
+                <div className="text-gray-400 text-xs">{t('profile.spent')}</div>
+              </div>
+            </div>
+          )}
+          {dailyTokens && (
+            <div className="bg-gradient-to-r from-green-500/20 to-blue-500/20 rounded-xl p-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-semibold text-white">🕐 {t('profile.dailyTokens')}</span>
+                <span className="text-sm text-gray-400">UTC 00:00</span>
+              </div>
+              <div className="flex gap-4 mb-2">
+                <div className="flex-1">
+                  <div className="text-sm text-gray-400">{t('profile.remaining')}</div>
+                  <div className="text-lg font-bold text-green-400">
+                    {dailyTokens.remaining} / {dailyTokens.limit}
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <div className="text-sm text-gray-400">{t('profile.usedToday')}</div>
+                  <div className="text-lg font-bold text-yellow-400">{dailyTokens.used}</div>
+                </div>
+              </div>
+              <div className="h-2 bg-black/30 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-green-500 to-yellow-500 transition-all"
+                  style={{ width: `${dailyTokens.limit > 0 ? (dailyTokens.used / dailyTokens.limit) * 100 : 0}%` }}
+                />
               </div>
             </div>
           )}
@@ -479,29 +502,6 @@ export default function Profile() {
               )}
             </div>
           </div>
-        </div>
-
-        {/* Section 3: Recent Tasks */}
-        <div className="bg-white/10 backdrop-blur-lg rounded-xl p-5 md:p-6 mb-6">
-          <h2 className="text-lg font-bold text-white mb-4">📋 {t('profile.recentTasks')}</h2>
-          {tasks.length === 0 ? (
-            <p className="text-gray-400 text-sm text-center py-4">{t('profile.noTasks')}</p>
-          ) : (
-            <div className="space-y-2">
-              {tasks.slice(0, 10).map((task, i) => (
-                <div key={i} className="p-3 bg-black/30 rounded-lg text-sm">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-white truncate max-w-[70%]">{task.prompt}</span>
-                    <span className={`px-2 py-0.5 rounded text-xs ${task.status === 'completed' ? 'bg-green-800 text-green-300' : 'bg-red-800 text-red-300'}`}>{task.status}</span>
-                  </div>
-                  <div className="flex justify-between text-xs text-gray-400">
-                    <span>{task.model}</span>
-                    <span>{task.tokens_used || 0} tokens • {parseFloat(task.cost || 0).toFixed(4)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Logout */}

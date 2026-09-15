@@ -259,6 +259,19 @@ const migrate = async () => {
     await client.query('CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(session_id)');
     console.log('✅ Chat session indexes created');
 
+    // === Daily Free Tokens ===
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS daily_tokens (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id),
+        tokens_used_today DECIMAL(20,8) DEFAULT 0,
+        last_reset_date DATE DEFAULT CURRENT_DATE
+      )
+    `);
+    console.log('✅ جدول daily_tokens ایجاد شد');
+
+    await client.query('CREATE INDEX IF NOT EXISTS idx_daily_tokens_user ON daily_tokens(user_id)');
+    console.log('✅ Daily tokens index created');
+
     await client.query('COMMIT');
     console.log('\n✅ تمام جداول ایجاد شد');
     
