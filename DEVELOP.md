@@ -78,12 +78,12 @@ Node.js/Express API with PostgreSQL + Redis.
 ```
 backend/
 ├── src/
-│   ├── server.js          # Entry point (v3.5.0)
+│   ├── server.js          # Entry point (v3.9.0)
 │   ├── models.js          # AI models + per-model pricing
 │   ├── cache.js           # Redis caching
 │   ├── database/
 │   │   ├── pool.js        # PostgreSQL connection
-│   │   └── migrate.js     # DB migration (14 tables)
+│   │   └── migrate.js     # DB migration (14 tables + resource columns)
 │   ├── middleware/
 │   │   └── auth.js        # JWT + Google OAuth
 │   └── routes/
@@ -99,18 +99,23 @@ backend/
 ```
 
 ### miner-app/
-Miner install scripts and source code.
+Miner install/uninstall scripts and source code.
 
 ```
 miner-app/
 ├── install-ubuntu.sh      # Ubuntu/Debian installer
 ├── install-redhat.sh      # RedHat/Fedora installer
+├── uninstall-ubuntu.sh    # Ubuntu/Debian uninstaller
+├── uninstall-redhat.sh    # RedHat/Fedora uninstaller
 └── src/                   # Miner source
-    ├── main.js
+    ├── main.js            # Electron desktop app
+    ├── cli.js             # Headless CLI entry (no Electron)
     ├── renderer/index.html
     └── services/
         ├── ollama.js      # Ollama integration
-        └── websocket.js   # WebSocket to backend
+        ├── miner.js       # CPU/RAM/GPU/Disk monitoring
+        ├── websocket.js   # WebSocket to backend (resource metrics)
+        └── api.js         # REST API (register, heartbeat)
 ```
 
 ## Database Schema (14 Tables)
@@ -131,6 +136,17 @@ miner-app/
 | miner_coin_earnings | Miner earnings per coin |
 | chat_sessions | Chat session groups |
 | **daily_tokens** | **Daily free token tracking (v3.5.0)** |
+
+### Miners Table — Resource Monitoring Columns (v3.8.0)
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| gpu_usage | numeric(5,2) | GPU VRAM usage percentage |
+| ram_usage | numeric(5,2) | RAM usage percentage |
+| cpu_usage | numeric(5,2) | CPU usage percentage |
+| disk_usage | numeric(5,2) | Disk usage percentage |
+
+**Important:** PostgreSQL `numeric` columns return as **strings** in node-postgres. Always use `parseFloat()` before `.toFixed()` or arithmetic.
 
 ## AI Models & Pricing
 
@@ -291,6 +307,71 @@ t('profile.dailyTokens') → "Daily Free Tokens" / "توکن رایگان روز
 t('profile.remaining')   → "Remaining" / "باقیمانده"
 t('profile.usedToday')   → "Used Today" / "امروز مصرف شده"
 ```
+
+## Miner CLI Mode (v3.8.0)
+
+For headless servers (no desktop/Electron), use `cli.js`:
+
+```bash
+node src/cli.js --email user@example.com --token kz_xxxxx
+```
+
+### CLI Flags
+
+| Flag | Description |
+|------|-------------|
+| `--email` | User email for auto-registration |
+| `--token` | Miner token from profile page |
+| `--help` | Show usage info |
+
+### Systemd Service
+
+The install script creates `/etc/systemd/system/krelz-miner.service`:
+
+```bash
+systemctl start krelz-miner
+systemctl stop krelz-miner
+systemctl status krelz-miner
+journalctl -u krelz-miner -f  # live logs
+```
+
+Service auto-starts on boot via `systemctl enable`.
+
+## Auth System (v3.7.0)
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/auth/register | Register (email + password) |
+| POST | /api/auth/login | Login (email + password) |
+| POST | /api/auth/google | Google OAuth |
+| POST | /api/auth/set-password | Set password (Google-only users) |
+| POST | /api/auth/change-password | Change password |
+| POST | /api/auth/forgot-password | Request password reset |
+| POST | /api/auth/reset-password | Reset with token |
+
+### Miner Token
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/miners/token | Generate/get miner token |
+| POST | /api/miners/setup | Register miner (with token) |
+
+Miner token format: `kz_` + 32 hex bytes (67 chars)
+
+## Uninstall (v3.9.0)
+
+Interactive menu:
+
+```
+1) Miner only (service + app files)
+2) Everything (miner + Ollama + all downloaded models)
+0) Cancel
+```
+
+**Option 1:** stops service, disables, removes files
+**Option 2:** Option 1 + removes Ollama binary + ~/.ollama/ models + ollama user
 
 ## VPS Deployment
 

@@ -19,8 +19,12 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Daily Free Tokens** — 1,000 free AI inference tokens per user per day (UTC reset)
 - **Per-Model Pricing** — 11 models from 300M to 70B parameters, priced 30-50% cheaper than DeepSeek
 - **Chat Sessions** — Persistent chat history with auto-generated subjects
-- **Profile Dashboard** — Balance, daily tokens, wallet, miner settings
+- **Profile Dashboard** — Balance, daily tokens, wallet, miner settings, resource monitoring
 - **Wallet Integration** — MetaMask + Trust Wallet support (EIP-1193)
+- **Miner CLI Mode** — Headless CLI for servers (no Electron needed)
+- **Resource Monitoring** — CPU, RAM, GPU VRAM, Disk usage tracking
+- **Auth System** — Google OAuth + email/password, password reset
+- **Uninstall Scripts** — Clean removal for Ubuntu/Debian and RedHat/Fedora
 - **Miner Earnings** — 90% of paid usage goes to miners
 - **Internationalization** — English (default) + Farsi with RTL support
 
@@ -42,7 +46,19 @@ The install script automatically sets up:
 - Node.js 20
 - Ollama
 - Selected AI models (11 available)
-- Krelz Miner
+- Krelz Miner (CLI mode, systemd service)
+
+### Uninstall
+
+```bash
+# Ubuntu/Debian
+wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/uninstall-ubuntu.sh && bash uninstall-ubuntu.sh
+
+# RedHat/Fedora
+wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/uninstall-redhat.sh && bash uninstall-redhat.sh
+```
+
+Choose to remove miner only or everything (miner + Ollama + models).
 
 ## AI Models & Pricing
 
@@ -76,11 +92,11 @@ Every user gets **1,000 free AI inference tokens per day**:
 krelz.xyz/
 ├── backend/                    # API Server (Node.js/Express)
 │   ├── src/
-│   │   ├── server.js          # Entry point (v3.5.0)
+│   │   ├── server.js          # Entry point (v3.9.0)
 │   │   ├── models.js          # AI models + pricing
 │   │   ├── database/
 │   │   │   ├── pool.js        # PostgreSQL connection
-│   │   │   └── migrate.js     # DB migration (14 tables)
+│   │   │   └── migrate.js     # DB migration (14 tables + resource columns)
 │   │   ├── routes/
 │   │   │   ├── auth.js        # Authentication
 │   │   │   ├── miners.js      # Miner management
