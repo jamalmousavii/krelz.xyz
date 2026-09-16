@@ -349,7 +349,7 @@ NODE_PATH=$(which node)
 $SUDO tee "$SERVICE_FILE" > /dev/null << EOF
 [Unit]
 Description=Krelz Network Miner
-After=network.target ollama.service
+After=network.target
 
 [Service]
 Type=simple
