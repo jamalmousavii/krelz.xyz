@@ -319,14 +319,13 @@ router.post('/', optionalAuth, async (req, res) => {
         const result = await wsServer.dispatchTask(minerId, taskId, message, model);
 
         if (result.error) {
-          await pool.query("UPDATE tasks SET response = $1, status = 'failed' WHERE id = $2", [result.error, taskId]);
-          return res.status(500).json({ error: result.error, task_id: taskId });
+          console.log(`Miner task failed: ${result.error}, falling back to local Ollama`);
+        } else {
+          response = result.response;
+          tokensUsed = result.tokens_used || 0;
+          const pricing = getModelPricing(model || 'llama3.1:8b');
+          cost = (tokensUsed * pricing.outputPrice) / 1000000;
         }
-
-        response = result.response;
-        tokensUsed = result.tokens_used || 0;
-        const pricing = getModelPricing(model || 'llama3.1:8b');
-        cost = (tokensUsed * pricing.outputPrice) / 1000000;
 
       } catch (wsError) {
         console.log(`WebSocket dispatch failed: ${wsError.message}, falling back to local Ollama`);

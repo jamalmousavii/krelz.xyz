@@ -86,6 +86,10 @@ class MinerWebSocket {
     try {
       const result = await this.onTask(prompt, model);
 
+      if (!result || !result.response) {
+        throw new Error('Empty response from model');
+      }
+
       this.send({
         type: 'task_result',
         task_id,
@@ -96,13 +100,12 @@ class MinerWebSocket {
       console.log(`✅ Task #${task_id} completed (${result.eval_count || 0} tokens)`);
 
     } catch (err) {
+      console.error(`❌ Task #${task_id} failed:`, err.message);
       this.send({
         type: 'task_result',
         task_id,
         error: err.message
       });
-
-      console.error(`❌ Task #${task_id} failed:`, err.message);
     }
   }
 

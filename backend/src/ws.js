@@ -109,6 +109,7 @@ class WSServer {
     }
 
     this.miners.set(minerId, {
+      id: minerId,
       ws,
       wallet_address: wallet_address || '',
       lastHeartbeat: Date.now(),
@@ -136,10 +137,12 @@ class WSServer {
     miner.status = status || 'online';
     miner.current_model = current_model;
 
+    const statusValue = status || 'online';
+
     await pool.query(
       `UPDATE miners
        SET status = $1,
-           uptime = CASE WHEN $1 = 'online' THEN LEAST(uptime + 0.1, 100) ELSE uptime END,
+           uptime = CASE WHEN $1::text = 'online' THEN LEAST(uptime + 0.1, 100) ELSE uptime END,
            current_model = COALESCE($3, current_model),
            gpu_usage = $4,
            ram_usage = $5,
@@ -147,7 +150,7 @@ class WSServer {
            disk_usage = $7,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $2`,
-      [status || 'online', miner.id, current_model,
+      [statusValue, miner.id, current_model,
        gpu_usage || 0, ram_usage || 0, cpu_usage || 0, disk_usage || 0]
     );
 
