@@ -257,13 +257,13 @@ class WSServer {
   findMinerForModel(model) {
     for (const [minerId, miner] of this.miners) {
       if (miner.status === 'online' && miner.current_model === model) {
-        return minerId;
+        return { minerId, model: miner.current_model };
       }
     }
     // Fallback: any online miner
     for (const [minerId, miner] of this.miners) {
       if (miner.status === 'online') {
-        return minerId;
+        return { minerId, model: miner.current_model };
       }
     }
     return null;

@@ -298,7 +298,9 @@ router.post('/', optionalAuth, async (req, res) => {
     }
 
     const wsServer = req.app.get('wsServer');
-    const minerId = wsServer ? wsServer.findMinerForModel(model) : null;
+    const minerResult = wsServer ? wsServer.findMinerForModel(model) : null;
+    const minerId = minerResult ? minerResult.minerId : null;
+    const minerModel = minerResult ? minerResult.model : null;
 
     // Create task
     const taskResult = await pool.query(
@@ -311,12 +313,13 @@ router.post('/', optionalAuth, async (req, res) => {
     const taskId = taskResult.rows[0].id;
     let response, tokensUsed, cost, providerUsed = null;
 
-    // Try WebSocket dispatch first
-    if (wsServer && minerId) {
+    // Try WebSocket dispatch first — use miner's available model
+    if (wsServer && minerId && minerModel) {
       try {
         await pool.query("UPDATE tasks SET status = 'processing', miner_id = $1 WHERE id = $2", [minerId, taskId]);
 
-        const result = await wsServer.dispatchTask(minerId, taskId, message, model);
+        console.log(`Dispatching task to miner ${minerId} with model ${minerModel} (requested: ${model})`);
+        const result = await wsServer.dispatchTask(minerId, taskId, message, minerModel);
 
         if (result.error) {
           console.log(`Miner task failed: ${result.error}, falling back to local Ollama`);
