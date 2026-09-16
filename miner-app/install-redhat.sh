@@ -134,6 +134,26 @@ $SUDO systemctl enable ollama 2>/dev/null || true
 $SUDO systemctl start ollama 2>/dev/null || true
 sleep 2
 
+if ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+  echo -e "  ${YELLOW}  Starting Ollama manually...${NC}"
+  nohup ollama serve > /dev/null 2>&1 &
+  sleep 3
+fi
+
+echo -ne "  ${CYAN}  Waiting for Ollama to be ready...${NC}"
+for i in $(seq 1 30); do
+  if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+    echo -e " ${GREEN}ready${NC}"
+    break
+  fi
+  if [ "$i" -eq 30 ]; then
+    echo -e " ${RED}timeout${NC}"
+    echo -e "  ${RED}  ✗ Ollama failed to start. Try: ollama serve &${NC}"
+    exit 1
+  fi
+  sleep 1
+done
+
 # --- Model Selection ---
 echo ""
 echo -e "${CYAN}========================================${NC}"
