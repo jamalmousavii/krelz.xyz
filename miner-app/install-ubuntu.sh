@@ -185,9 +185,37 @@ case $choice in
   g) SELECTED_MODELS="qwen3.6:27b llama3.3:70b deepseek-r1:70b llama3.1:8b qwen3-coder:30b qwen2.5-coder:32b qwen3-vl:8b gemma4:12b embeddinggemma nomic-embed-text bge-m3" ;;
   0)
     echo ""
-    echo -e "  Enter model names separated by space"
-    echo -e "  Available: qwen3.6:27b llama3.3:70b deepseek-r1:70b llama3.1:8b qwen3-coder:30b qwen2.5-coder:32b qwen3-vl:8b gemma4:12b embeddinggemma nomic-embed-text bge-m3"
-    read -p "  Models: " SELECTED_MODELS
+    echo -e "  ${CYAN}Select models by number:${NC}"
+    echo -e "  ${GREEN}1${NC}) qwen3.6:27b        (17 GB)"
+    echo -e "  ${GREEN}2${NC}) llama3.3:70b       (43 GB)"
+    echo -e "  ${GREEN}3${NC}) deepseek-r1:70b    (43 GB)"
+    echo -e "  ${GREEN}4${NC}) llama3.1:8b        (5 GB)"
+    echo -e "  ${GREEN}5${NC}) qwen3-coder:30b    (18 GB)"
+    echo -e "  ${GREEN}6${NC}) qwen2.5-coder:32b  (20 GB)"
+    echo -e "  ${GREEN}7${NC}) qwen3-vl:8b        (8 GB)"
+    echo -e "  ${GREEN}8${NC}) gemma4:12b         (7 GB)"
+    echo -e "  ${GREEN}9${NC}) embeddinggemma      (0.5 GB)"
+    echo -e "  ${GREEN}a${NC}) nomic-embed-text   (0.3 GB)"
+    echo -e "  ${GREEN}b${NC}) bge-m3             (1.2 GB)"
+    echo ""
+    read -p "  Numbers (e.g. 1 4 7): " custom_input
+    SELECTED_MODELS=""
+    for num in $custom_input; do
+      case $num in
+        1) SELECTED_MODELS="$SELECTED_MODELS qwen3.6:27b" ;;
+        2) SELECTED_MODELS="$SELECTED_MODELS llama3.3:70b" ;;
+        3) SELECTED_MODELS="$SELECTED_MODELS deepseek-r1:70b" ;;
+        4) SELECTED_MODELS="$SELECTED_MODELS llama3.1:8b" ;;
+        5) SELECTED_MODELS="$SELECTED_MODELS qwen3-coder:30b" ;;
+        6) SELECTED_MODELS="$SELECTED_MODELS qwen2.5-coder:32b" ;;
+        7) SELECTED_MODELS="$SELECTED_MODELS qwen3-vl:8b" ;;
+        8) SELECTED_MODELS="$SELECTED_MODELS gemma4:12b" ;;
+        9) SELECTED_MODELS="$SELECTED_MODELS embeddinggemma" ;;
+        a) SELECTED_MODELS="$SELECTED_MODELS nomic-embed-text" ;;
+        b) SELECTED_MODELS="$SELECTED_MODELS bge-m3" ;;
+      esac
+    done
+    SELECTED_MODELS=$(echo $SELECTED_MODELS | xargs)
     SELECTED_MODELS=${SELECTED_MODELS:-"qwen3.6:27b"}
     ;;
   *) SELECTED_MODELS="qwen3.6:27b" ;;
