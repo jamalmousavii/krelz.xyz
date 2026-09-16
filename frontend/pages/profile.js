@@ -56,6 +56,19 @@ export default function Profile() {
   const [regLoading, setRegLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // Miner token
+  const [minerToken, setMinerToken] = useState('');
+  const [minerTokenLoading, setMinerTokenLoading] = useState(false);
+  const [minerTokenCopied, setMinerTokenCopied] = useState(false);
+
+  // Password
+  const [hasPassword, setHasPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState('');
+  const [passwordMessage, setPasswordMessage] = useState('');
+
   useEffect(() => {
     const saved = localStorage.getItem('user');
     if (saved) {
@@ -232,6 +245,81 @@ export default function Profile() {
       if (data.success) { setMiner(data.miner); setRegGpu(''); setRegRam(''); setRegCpu(''); }
     } catch (err) {}
     setRegLoading(false);
+  };
+
+  // Miner token functions
+  const fetchMinerToken = async () => {
+    setMinerTokenLoading(true);
+    try {
+      const res = await fetch('/api/miners/token', {
+        method: 'POST',
+        headers: authHeaders()
+      });
+      const data = await res.json();
+      if (data.success) setMinerToken(data.miner_token);
+    } catch (err) {}
+    setMinerTokenLoading(false);
+  };
+
+  const copyMinerToken = () => {
+    navigator.clipboard.writeText(minerToken);
+    setMinerTokenCopied(true);
+    setTimeout(() => setMinerTokenCopied(false), 2000);
+  };
+
+  // Password functions
+  const handleSetPassword = async () => {
+    if (!newPassword || !confirmPassword) return;
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage('❌ Passwords do not match');
+      return;
+    }
+    setPasswordLoading('set');
+    setPasswordMessage('');
+    try {
+      const res = await fetch('/api/auth/set-password', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ password: newPassword })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPasswordMessage('✅ Password set successfully');
+        setHasPassword(true);
+        setNewPassword('');
+        setConfirmPassword('');
+      } else {
+        setPasswordMessage(`❌ ${data.error}`);
+      }
+    } catch (err) { setPasswordMessage('❌ Failed to set password'); }
+    setPasswordLoading('');
+  };
+
+  const handleChangePassword = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) return;
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage('❌ Passwords do not match');
+      return;
+    }
+    setPasswordLoading('change');
+    setPasswordMessage('');
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPasswordMessage('✅ Password changed successfully');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      } else {
+        setPasswordMessage(`❌ ${data.error}`);
+      }
+    } catch (err) { setPasswordMessage('❌ Failed to change password'); }
+    setPasswordLoading('');
   };
 
   const handleLogout = () => {
@@ -502,9 +590,9 @@ export default function Profile() {
                       {miner.status === 'online' ? `🟢 ${t('profile.online')}` : `🔴 ${t('profile.offline')}`}
                     </span>
                   </div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.gpuModel')}</span><span className="text-white">{miner.gpu_model}</span></div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.ram')}</span><span className="text-white">{miner.ram}</span></div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.cpu')}</span><span className="text-white">{miner.cpu}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.gpuModel')}</span><span className="text-white">{miner.gpu_model || 'N/A'}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.ram')}</span><span className="text-white">{miner.ram || 'N/A'}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.cpu')}</span><span className="text-white">{miner.cpu || 'N/A'}</span></div>
                   <div className="flex justify-between text-sm items-center">
                     <span className="text-gray-400">{t('profile.currentModel')}</span>
                     <select value={miner.current_model || 'llama3.1:8b'} onChange={(e) => switchModel(e.target.value)}
@@ -517,25 +605,65 @@ export default function Profile() {
                   <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.earnings')}</span><span className="text-green-400 font-medium">{(miner.earnings || 0).toFixed(4)}</span></div>
                 </div>
               ) : (
-                <div>
-                  <p className="text-gray-400 text-sm mb-3">{t('profile.noMiner')}</p>
-                  <p className="text-gray-500 text-xs mb-4">{t('profile.registerDesc')}</p>
-                  <div className="space-y-2">
-                    <input type="text" value={regGpu} onChange={(e) => setRegGpu(e.target.value)} placeholder={t('profile.gpuPlaceholder')}
-                      className="w-full bg-white/10 text-white placeholder-gray-500 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
-                    <input type="text" value={regRam} onChange={(e) => setRegRam(e.target.value)} placeholder={t('profile.ramPlaceholder')}
-                      className="w-full bg-white/10 text-white placeholder-gray-500 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
-                    <input type="text" value={regCpu} onChange={(e) => setRegCpu(e.target.value)} placeholder={t('profile.cpuPlaceholder')}
-                      className="w-full bg-white/10 text-white placeholder-gray-500 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
-                    <button onClick={registerMiner} disabled={regLoading || !regGpu || !regRam || !regCpu}
-                      className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50">
-                      {regLoading ? '...' : `⛏️ ${t('profile.register')}`}
-                    </button>
+                <div className="space-y-3">
+                  <p className="text-gray-400 text-sm">{t('profile.noMiner')}</p>
+                  <p className="text-gray-500 text-xs">{t('profile.minerInstallDesc')}</p>
+                  {/* Miner Token */}
+                  <div className="bg-black/30 rounded-lg p-3">
+                    <p className="text-gray-400 text-xs mb-2">🔗 {t('profile.minerToken')}</p>
+                    {minerToken ? (
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 text-green-400 text-xs break-all bg-black/30 px-2 py-1 rounded">{minerToken}</code>
+                        <button onClick={copyMinerToken}
+                          className={`px-3 py-1 rounded text-xs font-bold transition ${minerTokenCopied ? 'bg-green-600 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
+                          {minerTokenCopied ? '✓' : '📋'}
+                        </button>
+                      </div>
+                    ) : (
+                      <button onClick={fetchMinerToken} disabled={minerTokenLoading}
+                        className="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50">
+                        {minerTokenLoading ? '...' : `🔑 ${t('profile.getMinerToken')}`}
+                      </button>
+                    )}
+                    <p className="text-gray-600 text-xs mt-2">{t('profile.minerTokenDesc')}</p>
                   </div>
                 </div>
               )}
             </div>
           </div>
+        </div>
+
+        {/* Section 3: Password */}
+        <div className="bg-white/10 backdrop-blur-lg rounded-xl p-5 md:p-6 mb-6">
+          <h2 className="text-lg font-bold text-white mb-4">🔐 {t('profile.password')}</h2>
+          {!hasPassword ? (
+            <div className="space-y-3">
+              <p className="text-gray-400 text-sm">{t('profile.setPasswordDesc')}</p>
+              <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+                placeholder={t('profile.newPassword')} className="w-full bg-white/10 text-white placeholder-gray-500 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
+              <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder={t('profile.confirmPassword')} className="w-full bg-white/10 text-white placeholder-gray-500 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
+              <button onClick={handleSetPassword} disabled={passwordLoading === 'set' || !newPassword || !confirmPassword}
+                className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50">
+                {passwordLoading === 'set' ? '...' : `🔑 ${t('profile.setPassword')}`}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-gray-400 text-sm">{t('profile.changePasswordDesc')}</p>
+              <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder={t('profile.currentPassword')} className="w-full bg-white/10 text-white placeholder-gray-500 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
+              <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+                placeholder={t('profile.newPassword')} className="w-full bg-white/10 text-white placeholder-gray-500 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
+              <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder={t('profile.confirmPassword')} className="w-full bg-white/10 text-white placeholder-gray-500 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
+              <button onClick={handleChangePassword} disabled={passwordLoading === 'change' || !currentPassword || !newPassword || !confirmPassword}
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50">
+                {passwordLoading === 'change' ? '...' : `🔑 ${t('profile.changePassword')}`}
+              </button>
+            </div>
+          )}
+          {passwordMessage && <p className="text-xs text-gray-300 mt-2">{passwordMessage}</p>}
         </div>
 
         {/* Logout */}

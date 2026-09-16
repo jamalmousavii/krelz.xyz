@@ -272,6 +272,34 @@ const migrate = async () => {
     await client.query('CREATE INDEX IF NOT EXISTS idx_daily_tokens_user ON daily_tokens(user_id)');
     console.log('✅ Daily tokens index created');
 
+    // === Miner Token + Password Reset ===
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS miner_token VARCHAR(64) UNIQUE;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    console.log('✅ ستون miner_token اضافه شد');
+
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(64);
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    console.log('✅ ستون reset_token اضافه شد');
+
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    console.log('✅ ستون reset_token_expiry اضافه شد');
+
+    await client.query('CREATE INDEX IF NOT EXISTS idx_users_miner_token ON users(miner_token)');
+    console.log('✅ Miner token index created');
+
     await client.query('COMMIT');
     console.log('\n✅ تمام جداول ایجاد شد');
     

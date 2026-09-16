@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const OllamaService = require('./services/ollama');
 const MinerService = require('./services/miner');
 const ApiService = require('./services/api');
@@ -11,6 +12,15 @@ let ollamaService;
 let minerService;
 let apiService;
 let wsClient;
+
+// Read config
+let config = { models: 'llama3.1:8b', default_model: 'llama3.1:8b', miner_token: '' };
+const configPath = path.join(__dirname, '../config.json');
+if (fs.existsSync(configPath)) {
+  try {
+    config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  } catch (e) {}
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -72,7 +82,7 @@ app.whenReady().then(() => {
   apiService = new ApiService();
 
   wsClient = new MinerWebSocket(
-    process.env.WALLET_ADDRESS || '',
+    config.miner_token || process.env.WALLET_ADDRESS || '',
     async (prompt, model) => {
       ollamaService.setModel(model);
       const result = await ollamaService.generate(prompt, model);

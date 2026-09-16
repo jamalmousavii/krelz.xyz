@@ -26,18 +26,18 @@ if command -v dnf &> /dev/null; then PKG_MGR="dnf"
 elif command -v yum &> /dev/null; then PKG_MGR="yum"
 else echo -e "${RED}  ✗ No supported package manager found${NC}"; exit 1; fi
 
-echo -e "${YELLOW}[1/6] Installing prerequisites...${NC}"
+echo -e "${YELLOW}[1/8] Installing prerequisites...${NC}"
 $SUDO $PKG_MGR install -y -q curl git gcc-c++ make > /dev/null 2>&1
 echo -e "${GREEN}  ✓ Prerequisites installed${NC}"
 
-echo -e "${YELLOW}[2/6] Installing Node.js...${NC}"
+echo -e "${YELLOW}[2/8] Installing Node.js...${NC}"
 if ! command -v node &> /dev/null || [ "$(node -v | cut -d'.' -f1 | tr -d 'v')" -lt 18 ]; then
   curl -fsSL https://rpm.nodesource.com/setup_20.x | $SUDO bash - > /dev/null 2>&1
   $SUDO $PKG_MGR install -y -q nodejs > /dev/null 2>&1
 fi
 echo -e "${GREEN}  ✓ Node.js $(node -v) installed${NC}"
 
-echo -e "${YELLOW}[3/6] Installing Ollama...${NC}"
+echo -e "${YELLOW}[3/8] Installing Ollama...${NC}"
 if ! command -v ollama &> /dev/null; then
   curl -fsSL https://ollama.com/install.sh | sh > /dev/null 2>&1
 fi
@@ -112,14 +112,14 @@ echo ""
 echo -e "${CYAN}  Installing models: ${SELECTED_MODELS}${NC}"
 echo ""
 
-echo -e "${YELLOW}[4/6] Downloading models (this may take a while)...${NC}"
+echo -e "${YELLOW}[4/8] Downloading models (this may take a while)...${NC}"
 for MODEL in $SELECTED_MODELS; do
   echo -e "  ${CYAN}Pulling $MODEL...${NC}"
   ollama pull "$MODEL" 2>/dev/null || echo -e "${YELLOW}  ⚠ $MODEL may already exist or download in progress${NC}"
 done
 echo -e "${GREEN}  ✓ Models ready${NC}"
 
-echo -e "${YELLOW}[5/6] Installing Krelz Miner...${NC}"
+echo -e "${YELLOW}[5/8] Installing Krelz Miner...${NC}"
 INSTALL_DIR="$HOME/krelz-miner"
 if [ -d "$INSTALL_DIR" ]; then
   cd "$INSTALL_DIR" && git pull > /dev/null 2>&1
@@ -129,11 +129,75 @@ fi
 cd "$INSTALL_DIR/miner-app" && npm install > /dev/null 2>&1
 echo -e "${GREEN}  ✓ Miner installed at $INSTALL_DIR${NC}"
 
-echo -e "${YELLOW}[6/6] Saving configuration...${NC}"
+echo ""
+echo -e "${CYAN}========================================${NC}"
+echo -e "${CYAN}  Connect to Krelz Network${NC}"
+echo -e "${CYAN}========================================${NC}"
+echo ""
+echo -e "  Enter your account email and miner token"
+echo -e "  (Get your token from https://krelz.xyz/profile)"
+echo ""
+read -p "  Email: " USER_EMAIL
+read -p "  Miner Token: " MINER_TOKEN
+
+echo ""
+echo -e "${YELLOW}[6/8] Detecting system info...${NC}"
+
+# Detect GPU
+GPU_MODEL="Unknown"
+if command -v nvidia-smi &> /dev/null; then
+  GPU_MODEL=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits 2>/dev/null | head -1)
+  if [ -z "$GPU_MODEL" ]; then
+    GPU_MODEL="Unknown"
+  fi
+fi
+echo -e "  ${GREEN}✓ GPU: ${GPU_MODEL}${NC}"
+
+# Detect RAM
+RAM_SIZE=$(free -h | awk '/^Mem:/{print $2}' | head -1)
+if [ -z "$RAM_SIZE" ]; then
+  RAM_SIZE="Unknown"
+fi
+echo -e "  ${GREEN}✓ RAM: ${RAM_SIZE}${NC}"
+
+# Detect CPU
+CPU_MODEL=$(lscpu | grep 'Model name' | sed 's/Model name:\s*//' | head -1)
+if [ -z "$CPU_MODEL" ]; then
+  CPU_MODEL=$(cat /proc/cpuinfo | grep 'model name' | head -1 | sed 's/.*:\s*//')
+fi
+if [ -z "$CPU_MODEL" ]; then
+  CPU_MODEL="Unknown"
+fi
+echo -e "  ${GREEN}✓ CPU: ${CPU_MODEL}${NC}"
+
+echo ""
+echo -e "${YELLOW}[7/8] Registering miner...${NC}"
+
+# Register miner via API
+SETUP_RESPONSE=$(curl -s -X POST https://krelz.xyz/api/miners/setup \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"email\": \"${USER_EMAIL}\",
+    \"miner_token\": \"${MINER_TOKEN}\",
+    \"gpu_model\": \"${GPU_MODEL}\",
+    \"ram\": \"${RAM_SIZE}\",
+    \"cpu\": \"${CPU_MODEL}\",
+    \"models\": [\"$(echo $SELECTED_MODELS | sed 's/ /", "/g')\"]
+  }")
+
+if echo "$SETUP_RESPONSE" | grep -q '"success":true'; then
+  echo -e "${GREEN}  ✓ Miner registered successfully!${NC}"
+else
+  echo -e "${RED}  ⚠ Registration failed. Check your email and token.${NC}"
+  echo -e "${YELLOW}  Response: $SETUP_RESPONSE${NC}"
+fi
+
+echo -e "${YELLOW}[8/8] Saving configuration...${NC}"
 cat > "$INSTALL_DIR/miner-app/config.json" << EOF
 {
   "models": "$(echo $SELECTED_MODELS | tr ' ' ',')",
-  "default_model": "$(echo $SELECTED_MODELS | awk '{print $1}')"
+  "default_model": "$(echo $SELECTED_MODELS | awk '{print $1}')",
+  "miner_token": "${MINER_TOKEN}"
 }
 EOF
 echo -e "${GREEN}  ✓ Configuration saved${NC}"
@@ -142,6 +206,11 @@ echo ""
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  Installation Complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
+echo ""
+echo -e "  Email: ${GREEN}${USER_EMAIL}${NC}"
+echo -e "  GPU: ${GREEN}${GPU_MODEL}${NC}"
+echo -e "  RAM: ${GREEN}${RAM_SIZE}${NC}"
+echo -e "  CPU: ${GREEN}${CPU_MODEL}${NC}"
 echo ""
 echo -e "  Models installed:"
 for MODEL in $SELECTED_MODELS; do

@@ -64,38 +64,62 @@ class WSServer {
   }
 
   async handleAuth(ws, msg) {
-    const { wallet_address, miner_id } = msg;
+    const { wallet_address, miner_token } = msg;
 
-    if (!wallet_address) {
-      ws.send(JSON.stringify({ type: 'auth_error', message: 'wallet_address required' }));
+    // Must have either wallet_address or miner_token
+    if (!wallet_address && !miner_token) {
+      ws.send(JSON.stringify({ type: 'auth_error', message: 'wallet_address or miner_token required' }));
       return;
     }
 
-    // Find or register miner
-    let result = await pool.query('SELECT id FROM miners WHERE wallet_address = $1', [wallet_address]);
+    let result;
+    let minerId;
 
-    if (result.rows.length === 0) {
-      // Auto-register miner
-      result = await pool.query(
-        "INSERT INTO miners (wallet_address, status) VALUES ($1, 'online') RETURNING id",
-        [wallet_address]
-      );
+    // If miner_token provided, find user's miner via token
+    if (miner_token) {
+      const userResult = await pool.query('SELECT id FROM users WHERE miner_token = $1', [miner_token]);
+      if (userResult.rows.length === 0) {
+        ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid miner token' }));
+        return;
+      }
+      const userId = userResult.rows[0].id;
+
+      // Find or create miner for this user
+      result = await pool.query('SELECT id FROM miners WHERE user_id = $1', [userId]);
+      if (result.rows.length === 0) {
+        result = await pool.query(
+          "INSERT INTO miners (user_id, wallet_address, status) VALUES ($1, $2, 'online') RETURNING id",
+          [userId, wallet_address || '']
+        );
+      } else {
+        await pool.query("UPDATE miners SET status = 'online', updated_at = CURRENT_TIMESTAMP WHERE user_id = $1", [userId]);
+      }
+      minerId = result.rows[0].id;
+    } else {
+      // Legacy: wallet_address only
+      result = await pool.query('SELECT id FROM miners WHERE wallet_address = $1', [wallet_address]);
+      if (result.rows.length === 0) {
+        result = await pool.query(
+          "INSERT INTO miners (wallet_address, status) VALUES ($1, 'online') RETURNING id",
+          [wallet_address]
+        );
+      }
+      minerId = result.rows[0].id;
     }
 
-    const id = result.rows[0].id;
-    this.miners.set(id, {
+    this.miners.set(minerId, {
       ws,
-      wallet_address,
+      wallet_address: wallet_address || '',
       lastHeartbeat: Date.now(),
       models: [],
       status: 'online'
     });
 
     // Update DB
-    await pool.query("UPDATE miners SET status = 'online', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [id]);
+    await pool.query("UPDATE miners SET status = 'online', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [minerId]);
 
-    ws.send(JSON.stringify({ type: 'auth_ok', miner_id: id }));
-    console.log(`Miner ${id} authenticated (${wallet_address})`);
+    ws.send(JSON.stringify({ type: 'auth_ok', miner_id: minerId }));
+    console.log(`Miner ${minerId} authenticated (${wallet_address || miner_token?.slice(0, 10) + '...'})`);
   }
 
   async handleHeartbeat(ws, msg) {

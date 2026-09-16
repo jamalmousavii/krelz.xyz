@@ -45,10 +45,14 @@ class MinerWebSocket {
   }
 
   authenticate() {
-    this.send({
-      type: 'auth',
-      wallet_address: this.walletAddress
-    });
+    // Send miner_token (primary) or wallet_address (legacy)
+    const authMsg = { type: 'auth' };
+    if (this.walletAddress.startsWith('kz_')) {
+      authMsg.miner_token = this.walletAddress;
+    } else {
+      authMsg.wallet_address = this.walletAddress;
+    }
+    this.send(authMsg);
   }
 
   handleMessage(msg) {
