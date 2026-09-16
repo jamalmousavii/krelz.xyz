@@ -275,7 +275,7 @@ const migrate = async () => {
     // === Miner Token + Password Reset ===
     await client.query(`
       DO $$ BEGIN
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS miner_token VARCHAR(64) UNIQUE;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS miner_token VARCHAR(128) UNIQUE;
       EXCEPTION WHEN duplicate_column THEN null;
       END $$;
     `);

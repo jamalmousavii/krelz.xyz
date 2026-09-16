@@ -256,8 +256,14 @@ export default function Profile() {
         headers: authHeaders()
       });
       const data = await res.json();
-      if (data.success) setMinerToken(data.miner_token);
-    } catch (err) {}
+      if (data.success) {
+        setMinerToken(data.miner_token);
+      } else {
+        console.error('Miner token error:', data.error);
+      }
+    } catch (err) {
+      console.error('Miner token fetch error:', err);
+    }
     setMinerTokenLoading(false);
   };
 
