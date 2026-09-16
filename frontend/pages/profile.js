@@ -516,15 +516,15 @@ export default function Profile() {
               {/* Balance */}
               <div className="grid grid-cols-3 gap-2 mb-3">
                 <div className="text-center">
-                  <div className={`text-sm font-bold ${currentCoin?.color}`}>{currentCoinBalance.available.toFixed(4)}</div>
+                  <div className={`text-sm font-bold ${currentCoin?.color}`}>{parseFloat(currentCoinBalance.available).toFixed(4)}</div>
                   <div className="text-gray-500 text-xs">Available</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-sm font-bold text-green-400">{currentCoinBalance.total_earned.toFixed(4)}</div>
+                  <div className="text-sm font-bold text-green-400">{parseFloat(currentCoinBalance.total_earned).toFixed(4)}</div>
                   <div className="text-gray-500 text-xs">Earned</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-sm font-bold text-gray-400">{currentCoinBalance.total_spent.toFixed(4)}</div>
+                  <div className="text-sm font-bold text-gray-400">{parseFloat(currentCoinBalance.total_spent).toFixed(4)}</div>
                   <div className="text-gray-500 text-xs">Spent</div>
                 </div>
               </div>
@@ -633,9 +633,9 @@ export default function Profile() {
                       {MODELS_LIST.map(m => (<option key={m.id} value={m.id} className="bg-gray-800">{CATEGORY_ICONS[m.category]} {m.name}</option>))}
                     </select>
                   </div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.uptime')}</span><span className="text-white">{(miner.uptime || 0).toFixed(1)}%</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.uptime')}</span><span className="text-white">{parseFloat(miner.uptime || 0).toFixed(1)}%</span></div>
                   <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.totalTasks')}</span><span className="text-white">{miner.total_tasks || 0}</span></div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.earnings')}</span><span className="text-green-400 font-medium">{(miner.earnings || 0).toFixed(4)}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.earnings')}</span><span className="text-green-400 font-medium">{parseFloat(miner.earnings || 0).toFixed(4)}</span></div>
                 </div>
               ) : (
                 <div className="space-y-3">
