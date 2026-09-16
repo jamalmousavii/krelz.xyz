@@ -25,7 +25,8 @@ class WSServer {
         const msg = JSON.parse(data.toString());
         await this.handleMessage(ws, msg);
       } catch (err) {
-        ws.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }));
+        console.error('WS message error:', err.message);
+        ws.send(JSON.stringify({ type: 'error', message: err.message || 'Invalid message format' }));
       }
     });
 

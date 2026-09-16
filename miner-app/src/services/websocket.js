@@ -20,7 +20,6 @@ class MinerWebSocket {
       this.connected = true;
       this.reconnectDelay = 5000;
       this.authenticate();
-      this.startHeartbeat();
     });
 
     this.ws.on('message', (data) => {
