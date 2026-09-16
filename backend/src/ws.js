@@ -114,7 +114,8 @@ class WSServer {
       wallet_address: wallet_address || '',
       lastHeartbeat: Date.now(),
       models: [],
-      status: 'online'
+      status: 'online',
+      current_model: null
     });
 
     // Update DB

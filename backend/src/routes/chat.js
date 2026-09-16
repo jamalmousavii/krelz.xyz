@@ -300,7 +300,7 @@ router.post('/', optionalAuth, async (req, res) => {
     const wsServer = req.app.get('wsServer');
     const minerResult = wsServer ? wsServer.findMinerForModel(model) : null;
     const minerId = minerResult ? minerResult.minerId : null;
-    const minerModel = minerResult ? minerResult.model : null;
+    const minerModel = minerResult && minerResult.model ? minerResult.model : (model || 'llama3.1:8b');
 
     // Create task
     const taskResult = await pool.query(
