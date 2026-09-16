@@ -150,34 +150,64 @@ export default function Miner() {
 
           <div className="bg-white/10 backdrop-blur-lg rounded-xl p-5 md:p-8 mb-6 md:mb-8">
             <h2 className="text-xl md:text-2xl font-bold text-white mb-4">{t('miner.requirements')}</h2>
-            <ul className="text-gray-300 space-y-2 text-sm md:text-base">
-              <li>✅ {t('miner.gpu')}</li>
-              <li>✅ {t('miner.ram')}</li>
-              <li>✅ {t('miner.internet')}</li>
-              <li>✅ {t('miner.wallet')}</li>
-            </ul>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white/5 rounded-lg p-4">
+                <h3 className="text-white font-bold mb-3 text-sm md:text-base">🧑‍💻 {t('miner.userSection')}</h3>
+                <p className="text-gray-300 text-sm">{t('miner.userRequirements')}</p>
+              </div>
+              <div className="bg-white/5 rounded-lg p-4">
+                <h3 className="text-white font-bold mb-3 text-sm md:text-base">⛏️ {t('miner.minerSection')}</h3>
+                <p className="text-gray-300 text-sm">{t('miner.minerRequirements')}</p>
+              </div>
+            </div>
           </div>
 
           <div className="bg-white/10 backdrop-blur-lg rounded-xl p-5 md:p-8">
             <h2 className="text-xl md:text-2xl font-bold text-white mb-4">{t('miner.howItWorks')}</h2>
-            <ol className="text-gray-300 space-y-3 md:space-y-4 text-sm md:text-base">
-              <li className="flex items-start">
-                <span className="bg-purple-600 text-white rounded-full w-7 h-7 md:w-8 md:h-8 flex items-center justify-center mr-3 flex-shrink-0 text-sm">1</span>
-                <span>{t('miner.step1')}</span>
-              </li>
-              <li className="flex items-start">
-                <span className="bg-purple-600 text-white rounded-full w-7 h-7 md:w-8 md:h-8 flex items-center justify-center mr-3 flex-shrink-0 text-sm">2</span>
-                <span>{t('miner.step2')}</span>
-              </li>
-              <li className="flex items-start">
-                <span className="bg-purple-600 text-white rounded-full w-7 h-7 md:w-8 md:h-8 flex items-center justify-center mr-3 flex-shrink-0 text-sm">3</span>
-                <span>{t('miner.step3')}</span>
-              </li>
-              <li className="flex items-start">
-                <span className="bg-purple-600 text-white rounded-full w-7 h-7 md:w-8 md:h-8 flex items-center justify-center mr-3 flex-shrink-0 text-sm">4</span>
-                <span>{t('miner.step4')}</span>
-              </li>
-            </ol>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h3 className="text-white font-bold mb-3 text-sm md:text-base">🧑‍💻 {t('miner.userSection')}</h3>
+                <ol className="text-gray-300 space-y-3 text-sm md:text-base">
+                  <li className="flex items-start">
+                    <span className="bg-blue-600 text-white rounded-full w-7 h-7 md:w-8 md:h-8 flex items-center justify-center mr-3 flex-shrink-0 text-sm">1</span>
+                    <span>{t('miner.userStep1')}</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="bg-blue-600 text-white rounded-full w-7 h-7 md:w-8 md:h-8 flex items-center justify-center mr-3 flex-shrink-0 text-sm">2</span>
+                    <span>{t('miner.userStep2')}</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="bg-blue-600 text-white rounded-full w-7 h-7 md:w-8 md:h-8 flex items-center justify-center mr-3 flex-shrink-0 text-sm">3</span>
+                    <span>{t('miner.userStep3')}</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="bg-blue-600 text-white rounded-full w-7 h-7 md:w-8 md:h-8 flex items-center justify-center mr-3 flex-shrink-0 text-sm">4</span>
+                    <span>{t('miner.userStep4')}</span>
+                  </li>
+                </ol>
+              </div>
+              <div>
+                <h3 className="text-white font-bold mb-3 text-sm md:text-base">⛏️ {t('miner.minerSection')}</h3>
+                <ol className="text-gray-300 space-y-3 text-sm md:text-base">
+                  <li className="flex items-start">
+                    <span className="bg-purple-600 text-white rounded-full w-7 h-7 md:w-8 md:h-8 flex items-center justify-center mr-3 flex-shrink-0 text-sm">1</span>
+                    <span>{t('miner.minerStep1')}</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="bg-purple-600 text-white rounded-full w-7 h-7 md:w-8 md:h-8 flex items-center justify-center mr-3 flex-shrink-0 text-sm">2</span>
+                    <span>{t('miner.minerStep2')}</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="bg-purple-600 text-white rounded-full w-7 h-7 md:w-8 md:h-8 flex items-center justify-center mr-3 flex-shrink-0 text-sm">3</span>
+                    <span>{t('miner.minerStep3')}</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="bg-purple-600 text-white rounded-full w-7 h-7 md:w-8 md:h-8 flex items-center justify-center mr-3 flex-shrink-0 text-sm">4</span>
+                    <span>{t('miner.minerStep4')}</span>
+                  </li>
+                </ol>
+              </div>
+            </div>
           </div>
         </div>
       </main>
