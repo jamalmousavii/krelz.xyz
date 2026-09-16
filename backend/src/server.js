@@ -24,6 +24,7 @@ const leaderboardRoutes = require('./routes/leaderboard');
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.API_PORT || 3000;
+const WS_PORT = process.env.WS_PORT || 8444;
 
 // --- Sentry ---
 if (process.env.SENTRY_DSN) {
@@ -35,8 +36,9 @@ if (process.env.SENTRY_DSN) {
   console.log('🔒 Sentry error tracking enabled');
 }
 
-// Initialize WebSocket server
-const wsServer = new WSServer(server);
+// Initialize WebSocket server on separate port
+const wsServerHttp = http.createServer();
+const wsServer = new WSServer(wsServerHttp);
 app.set('wsServer', wsServer);
 
 // --- Security ---
@@ -60,7 +62,7 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'", "https://accounts.google.com"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "https:", "blob:"],
-      connectSrc: ["'self'", "https://krelz.xyz", "wss://krelz.xyz", "https://accounts.google.com"],
+        connectSrc: ["'self'", "https://krelz.xyz", "wss://krelz.xyz", "wss://krelz.xyz:8443", "https://accounts.google.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       frameSrc: ["'self'", "https://accounts.google.com"],
     },
@@ -143,9 +145,12 @@ app.use((err, req, res, next) => {
 
 server.listen(PORT, () => {
   console.log(`🚀 Krelz Backend v3.11.0 on port ${PORT}`);
-  console.log(`🔌 WebSocket on ws://0.0.0.0:${PORT}/ws`);
   console.log(`🔒 Security: CORS, CSP, Rate Limits`);
   console.log(`📦 Cache: Redis ${getCacheStats().connected ? '✅' : '❌'}`);
+});
+
+wsServerHttp.listen(WS_PORT, () => {
+  console.log(`🔌 WebSocket on ws://0.0.0.0:${WS_PORT}/ws`);
 });
 
 module.exports = { app, server, wsServer };

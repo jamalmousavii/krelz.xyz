@@ -12,7 +12,7 @@ class MinerWebSocket {
   }
 
   connect() {
-    const wsUrl = process.env.API_WS_URL || 'wss://krelz.xyz/ws';
+    const wsUrl = process.env.API_WS_URL || 'wss://krelz.xyz:8443/ws';
     this.ws = new WebSocket(wsUrl);
 
     this.ws.on('open', () => {
