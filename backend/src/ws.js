@@ -129,7 +129,7 @@ class WSServer {
       return;
     }
 
-    const { status, gpu_usage, ram_usage, current_model } = msg;
+    const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = msg;
 
     miner.lastHeartbeat = Date.now();
     miner.status = status || 'online';
@@ -140,9 +140,14 @@ class WSServer {
        SET status = $1,
            uptime = CASE WHEN $1 = 'online' THEN LEAST(uptime + 0.1, 100) ELSE uptime END,
            current_model = COALESCE($3, current_model),
+           gpu_usage = $4,
+           ram_usage = $5,
+           cpu_usage = $6,
+           disk_usage = $7,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $2`,
-      [status || 'online', miner.id, current_model]
+      [status || 'online', miner.id, current_model,
+       gpu_usage || 0, ram_usage || 0, cpu_usage || 0, disk_usage || 0]
     );
 
     ws.send(JSON.stringify({ type: 'heartbeat_ok' }));

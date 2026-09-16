@@ -4,6 +4,7 @@
 # ============================================
 # Usage:
 #   wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-redhat.sh && bash install-redhat.sh
+#   bash install-redhat.sh --email user@email.com --token kz_xxx
 # ============================================
 
 set -e
@@ -19,6 +20,17 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  Krelz Network Miner Installer (RedHat/Fedora)${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
+
+# Parse --email and --token flags
+USER_EMAIL=""
+MINER_TOKEN=""
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --email) USER_EMAIL="$2"; shift 2 ;;
+    --token) MINER_TOKEN="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
 
 if [ "$EUID" -eq 0 ]; then SUDO=""; else SUDO="sudo"; fi
 
@@ -134,11 +146,18 @@ echo -e "${CYAN}========================================${NC}"
 echo -e "${CYAN}  Connect to Krelz Network${NC}"
 echo -e "${CYAN}========================================${NC}"
 echo ""
-echo -e "  Enter your account email and miner token"
-echo -e "  (Get your token from https://krelz.xyz/profile)"
-echo ""
-read -p "  Email: " USER_EMAIL
-read -p "  Miner Token: " MINER_TOKEN
+
+# Use --email/--token if provided, otherwise prompt
+if [ -z "$USER_EMAIL" ]; then
+  echo -e "  Enter your account email and miner token"
+  echo -e "  (Get your token from https://krelz.xyz/profile)"
+  echo ""
+  read -p "  Email: " USER_EMAIL
+fi
+
+if [ -z "$MINER_TOKEN" ]; then
+  read -p "  Miner Token: " MINER_TOKEN
+fi
 
 echo ""
 echo -e "${YELLOW}[6/8] Detecting system info...${NC}"
@@ -192,7 +211,7 @@ else
   echo -e "${YELLOW}  Response: $SETUP_RESPONSE${NC}"
 fi
 
-echo -e "${YELLOW}[8/8] Saving configuration...${NC}"
+echo -e "${YELLOW}[8/8] Saving configuration + starting service...${NC}"
 cat > "$INSTALL_DIR/miner-app/config.json" << EOF
 {
   "models": "$(echo $SELECTED_MODELS | tr ' ' ',')",
@@ -201,6 +220,32 @@ cat > "$INSTALL_DIR/miner-app/config.json" << EOF
 }
 EOF
 echo -e "${GREEN}  ✓ Configuration saved${NC}"
+
+# Create systemd service
+SERVICE_FILE="/etc/systemd/system/krelz-miner.service"
+NODE_PATH=$(which node)
+$SUDO tee "$SERVICE_FILE" > /dev/null << EOF
+[Unit]
+Description=Krelz Network Miner
+After=network.target ollama.service
+
+[Service]
+Type=simple
+User=$(whoami)
+WorkingDirectory=$INSTALL_DIR/miner-app
+ExecStart=${NODE_PATH} src/cli.js
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+$SUDO systemctl daemon-reload
+$SUDO systemctl enable krelz-miner
+$SUDO systemctl start krelz-miner
+echo -e "${GREEN}  ✓ Systemd service created and started${NC}"
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
@@ -217,10 +262,9 @@ for MODEL in $SELECTED_MODELS; do
   echo -e "    ${GREEN}✓ $MODEL${NC}"
 done
 echo ""
-echo -e "  To start mining, run:"
-echo -e "  ${YELLOW}cd $INSTALL_DIR/miner-app && node src/main.js${NC}"
-echo ""
-echo -e "  Or to start Ollama service first:"
-echo -e "  ${YELLOW}ollama serve &${NC}"
-echo -e "  ${YELLOW}cd $INSTALL_DIR/miner-app && node src/main.js${NC}"
+echo -e "  Service: ${GREEN}krelz-miner${NC}"
+echo -e "  Status:  ${YELLOW}sudo systemctl status krelz-miner${NC}"
+echo -e "  Logs:    ${YELLOW}sudo journalctl -u krelz-miner -f${NC}"
+echo -e "  Stop:    ${YELLOW}sudo systemctl stop krelz-miner${NC}"
+echo -e "  Restart: ${YELLOW}sudo systemctl restart krelz-miner${NC}"
 echo ""

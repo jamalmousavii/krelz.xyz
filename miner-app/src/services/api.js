@@ -5,18 +5,19 @@ class ApiService {
     this.baseUrl = 'https://krelz.xyz/api';
   }
 
-  async register(wallet, gpu, ram, cpu) {
-    const response = await axios.post(`${this.baseUrl}/miners/register`, {
-      wallet_address: wallet,
+  async register(minerToken, gpu, ram, cpu, models) {
+    const response = await axios.post(`${this.baseUrl}/miners/setup`, {
+      miner_token: minerToken,
       gpu_model: gpu,
       ram: ram,
       cpu: cpu,
+      models: models,
     });
     return response.data;
   }
 
-  async heartbeat(data) {
-    const response = await axios.put(`${this.baseUrl}/miners/heartbeat`, data);
+  async heartbeat(minerId, data) {
+    const response = await axios.put(`${this.baseUrl}/miners/${minerId}/heartbeat`, data);
     return response.data;
   }
 

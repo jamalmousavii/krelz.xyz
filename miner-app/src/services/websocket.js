@@ -107,12 +107,15 @@ class MinerWebSocket {
     }
   }
 
-  sendHeartbeat(status = 'online', gpuUsage = 0, ramUsage = 0) {
+  sendHeartbeat(status = 'online', stats = {}) {
     this.send({
       type: 'heartbeat',
       status,
-      gpu_usage: gpuUsage,
-      ram_usage: ramUsage
+      cpu_usage: stats.cpu_usage || 0,
+      ram_usage: stats.ram_usage || 0,
+      gpu_usage: stats.gpu_usage || 0,
+      disk_usage: stats.disk_usage || 0,
+      current_model: stats.current_model
     });
   }
 
@@ -126,9 +129,11 @@ class MinerWebSocket {
     }
   }
 
-  startHeartbeat() {
+  startHeartbeat(minerService, defaultModel) {
     this.heartbeatInterval = setInterval(() => {
-      this.sendHeartbeat('online');
+      const stats = minerService ? minerService.getStats() : {};
+      stats.current_model = defaultModel;
+      this.sendHeartbeat('online', stats);
     }, 30000);
   }
 

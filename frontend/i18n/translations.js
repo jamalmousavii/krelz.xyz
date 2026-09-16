@@ -37,7 +37,7 @@ const translations = {
       startChat: 'Start Chat',
       footer: 'All rights reserved.',
       installMetaMask: 'Please install MetaMask',
-      version: 'v3.7.0',
+      version: 'v3.8.0',
     },
     chat: {
       title: 'Chat with AI - Krelz Network',
@@ -171,6 +171,7 @@ const translations = {
       changePasswordDesc: 'Change your current password.',
       currentPassword: 'Current Password',
       changePassword: 'Change Password',
+      resourceUsage: 'Resource Usage',
     },
   },
   fa: {
@@ -345,6 +346,7 @@ const translations = {
       changePasswordDesc: 'رمز عبور فعلی خود را تغییر دهید.',
       currentPassword: 'رمز عبور فعلی',
       changePassword: 'تغییر رمز عبور',
+      resourceUsage: 'مصرف منابع',
     },
   },
 };

@@ -1,78 +1,75 @@
 const si = require('systeminformation');
-const OllamaService = require('./ollama');
-const ApiService = require('./api');
+const { execSync } = require('child_process');
 
 class MinerService {
   constructor() {
-    this.ollama = new OllamaService();
-    this.api = new ApiService();
     this.isRunning = false;
     this.stats = {
-      gpu: null,
-      ram: null,
-      cpu: null,
+      cpu_usage: 0,
+      ram_usage: 0,
+      gpu_usage: 0,
+      gpu_vram_used: 0,
+      gpu_vram_total: 0,
+      disk_usage: 0,
       tasksCompleted: 0,
-      earnings: 0,
     };
   }
 
   async start() {
     this.isRunning = true;
-    await this.getSystemInfo();
-    this.reportStats();
-    console.log('Mining started');
+    this.updateStats();
+    console.log('⛏️  Resource monitoring started');
   }
 
-  async stop() {
+  stop() {
     this.isRunning = false;
-    console.log('Mining stopped');
+    console.log('⛏️  Resource monitoring stopped');
   }
 
-  async getSystemInfo() {
-    try {
-      const cpu = await si.cpu();
-      const mem = await si.mem();
-      
-      this.stats.cpu = {
-        model: cpu.brand,
-        cores: cpu.cores,
-        usage: await si.currentLoad(),
-      };
-      
-      this.stats.ram = {
-        total: mem.total,
-        used: mem.used,
-        free: mem.free,
-      };
-    } catch (error) {
-      console.error('Error getting system info:', error);
-    }
-  }
-
-  async reportStats() {
+  async updateStats() {
     if (!this.isRunning) return;
 
     try {
-      await this.api.heartbeat({
-        status: 'online',
-        gpu_usage: this.stats.cpu?.usage?.currentLoad || 0,
-        ram_usage: (this.stats.ram?.used / this.stats.ram?.total) * 100 || 0,
-        tasks_completed: this.stats.tasksCompleted,
-      });
-    } catch (error) {
-      console.error('Error reporting stats:', error);
+      const [load, mem, fsSize] = await Promise.all([
+        si.currentLoad(),
+        si.mem(),
+        si.fsSize(),
+      ]);
+
+      this.stats.cpu_usage = Math.round(load.currentLoad * 10) / 10;
+      this.stats.ram_usage = Math.round((mem.used / mem.total) * 1000) / 10;
+
+      if (fsSize.length > 0) {
+        this.stats.disk_usage = Math.round((fsSize[0].used / fsSize[0].size) * 1000) / 10;
+      }
+
+      this.detectGPU();
+    } catch (err) {
+      console.error('Error updating stats:', err.message);
     }
 
-    setTimeout(() => this.reportStats(), 60000);
+    setTimeout(() => this.updateStats(), 10000);
   }
 
-  async processTask(task) {
+  detectGPU() {
     try {
-      const result = await this.ollama.generate(task.prompt);
-      this.stats.tasksCompleted++;
-      return result;
-    } catch (error) {
-      throw new Error('Failed to process task');
+      const output = execSync(
+        'nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null',
+        { encoding: 'utf8', timeout: 5000 }
+      ).trim();
+
+      if (output) {
+        const line = output.split('\n')[0];
+        const [gpuUtil, memUsed, memTotal] = line.split(',').map(s => parseInt(s.trim(), 10));
+        this.stats.gpu_usage = gpuUtil || 0;
+        this.stats.gpu_vram_used = memUsed || 0;
+        this.stats.gpu_vram_total = memTotal || 0;
+      }
+    } catch (e) {
+      // No NVIDIA GPU or nvidia-smi not available
+      this.stats.gpu_usage = 0;
+      this.stats.gpu_vram_used = 0;
+      this.stats.gpu_vram_total = 0;
     }
   }
 

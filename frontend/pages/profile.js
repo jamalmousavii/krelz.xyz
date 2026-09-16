@@ -26,6 +26,20 @@ const MODELS_LIST = [
 
 const CATEGORY_ICONS = { chat: '💻', code: '💻', vision: '👁️', embedding: '🔗' };
 
+function ResourceBar({ label, value, color }) {
+  const safeValue = Math.min(Math.max(parseFloat(value) || 0, 0), 100);
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-gray-400 text-xs w-10">{label}</span>
+      <div className="flex-1 h-2 bg-black/40 rounded-full overflow-hidden">
+        <div className={`h-full bg-gradient-to-r ${color} transition-all duration-500`}
+          style={{ width: `${safeValue}%` }} />
+      </div>
+      <span className="text-gray-300 text-xs w-10 text-right">{safeValue.toFixed(1)}%</span>
+    </div>
+  );
+}
+
 export default function Profile() {
   const { t, lang } = useLanguage();
   const [user, setUser] = useState(null);
@@ -599,6 +613,19 @@ export default function Profile() {
                   <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.gpuModel')}</span><span className="text-white">{miner.gpu_model || 'N/A'}</span></div>
                   <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.ram')}</span><span className="text-white">{miner.ram || 'N/A'}</span></div>
                   <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.cpu')}</span><span className="text-white">{miner.cpu || 'N/A'}</span></div>
+
+                  {/* Resource Usage Bars */}
+                  {(miner.cpu_usage > 0 || miner.ram_usage > 0 || miner.gpu_usage > 0 || miner.disk_usage > 0) && (
+                    <div className="bg-black/30 rounded-lg p-3 space-y-2">
+                      <p className="text-gray-400 text-xs font-medium mb-2">📊 {t('profile.resourceUsage')}</p>
+                      <ResourceBar label="CPU" value={miner.cpu_usage} color="from-blue-500 to-cyan-500" />
+                      <ResourceBar label="RAM" value={miner.ram_usage} color="from-green-500 to-emerald-500" />
+                      {miner.gpu_usage > 0 && (
+                        <ResourceBar label="GPU" value={miner.gpu_usage} color="from-purple-500 to-pink-500" />
+                      )}
+                      <ResourceBar label="Disk" value={miner.disk_usage} color="from-yellow-500 to-orange-500" />
+                    </div>
+                  )}
                   <div className="flex justify-between text-sm items-center">
                     <span className="text-gray-400">{t('profile.currentModel')}</span>
                     <select value={miner.current_model || 'llama3.1:8b'} onChange={(e) => switchModel(e.target.value)}

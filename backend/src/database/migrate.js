@@ -300,6 +300,33 @@ const migrate = async () => {
     await client.query('CREATE INDEX IF NOT EXISTS idx_users_miner_token ON users(miner_token)');
     console.log('✅ Miner token index created');
 
+    // === Miner Resource Usage Columns ===
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE miners ADD COLUMN IF NOT EXISTS gpu_usage NUMERIC(5,2) DEFAULT 0;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE miners ADD COLUMN IF NOT EXISTS ram_usage NUMERIC(5,2) DEFAULT 0;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE miners ADD COLUMN IF NOT EXISTS cpu_usage NUMERIC(5,2) DEFAULT 0;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE miners ADD COLUMN IF NOT EXISTS disk_usage NUMERIC(5,2) DEFAULT 0;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    console.log('✅ Resource usage columns added');
+
     await client.query('COMMIT');
     console.log('\n✅ تمام جداول ایجاد شد');
     
