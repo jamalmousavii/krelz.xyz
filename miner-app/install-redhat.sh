@@ -14,6 +14,64 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
+BOLD='\033[1m'
+
+# --- Helper Functions ---
+spinner() {
+  local pid=$1
+  local msg=$2
+  local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+  local delay=0.1
+  while kill -0 "$pid" 2>/dev/null; do
+    for (( i=0; i<${#spinstr}; i++ )); do
+      printf "\r  ${CYAN}${spinstr:$i:1}${NC} %s" "$msg"
+      sleep $delay
+    done
+  done
+  printf "\r  \r"
+}
+
+run_with_spinner() {
+  local msg=$1
+  shift
+  local logfile=$(mktemp)
+  "$@" > "$logfile" 2>&1 &
+  local pid=$!
+  spinner "$pid" "$msg"
+  wait "$pid" 2>/dev/null
+  local exit_code=$?
+  rm -f "$logfile"
+  return $exit_code
+}
+
+step_start() {
+  echo -e "${YELLOW}[$1/$TOTAL_STEPS] ⏳ $2${NC}"
+}
+
+step_done() {
+  echo -e "${GREEN}  ✅ $1${NC}"
+}
+
+step_fail() {
+  echo -e "${RED}  ⚠ $1${NC}"
+}
+
+# Model size map
+declare -A MODEL_SIZES
+MODEL_SIZES[qwen3.6:27b]="17 GB"
+MODEL_SIZES[llama3.3:70b]="43 GB"
+MODEL_SIZES[deepseek-r1:70b]="43 GB"
+MODEL_SIZES[llama3.1:8b]="5 GB"
+MODEL_SIZES[qwen3-coder:30b]="18 GB"
+MODEL_SIZES[qwen2.5-coder:32b]="20 GB"
+MODEL_SIZES[qwen3-vl:8b]="8 GB"
+MODEL_SIZES[gemma4:12b]="7 GB"
+MODEL_SIZES[embeddinggemma]="0.5 GB"
+MODEL_SIZES[nomic-embed-text]="0.3 GB"
+MODEL_SIZES[bge-m3]="1.2 GB"
+
+TOTAL_STEPS=8
+SCRIPT_START=$(date +%s)
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
@@ -38,23 +96,41 @@ if command -v dnf &> /dev/null; then PKG_MGR="dnf"
 elif command -v yum &> /dev/null; then PKG_MGR="yum"
 else echo -e "${RED}  ✗ No supported package manager found${NC}"; exit 1; fi
 
-echo -e "${YELLOW}[1/8] Installing prerequisites...${NC}"
-$SUDO $PKG_MGR install -y -q curl git gcc-c++ make > /dev/null 2>&1
-echo -e "${GREEN}  ✓ Prerequisites installed${NC}"
+# --- Step 1: Prerequisites ---
+step_start 1 "Installing prerequisites..."
+STEP_START=$(date +%s)
+run_with_spinner "Installing build tools..." $SUDO $PKG_MGR install -y -q curl git gcc-c++ make
+STEP_END=$(date +%s)
+step_done "Prerequisites installed ($(($STEP_END - $STEP_START))s)"
 
-echo -e "${YELLOW}[2/8] Installing Node.js...${NC}"
+# --- Step 2: Node.js ---
+step_start 2 "Installing Node.js..."
+STEP_START=$(date +%s)
 if ! command -v node &> /dev/null || [ "$(node -v | cut -d'.' -f1 | tr -d 'v')" -lt 18 ]; then
-  curl -fsSL https://rpm.nodesource.com/setup_20.x | $SUDO bash - > /dev/null 2>&1
-  $SUDO $PKG_MGR install -y -q nodejs > /dev/null 2>&1
+  run_with_spinner "Setting up NodeSource repository..." bash -c "curl -fsSL https://rpm.nodesource.com/setup_20.x | $SUDO bash -"
+  run_with_spinner "Installing Node.js..." $SUDO $PKG_MGR install -y -q nodejs
+  NODE_VER=$(node -v)
+  STEP_END=$(date +%s)
+  step_done "Node.js ${NODE_VER} installed ($(($STEP_END - $STEP_START))s)"
+else
+  NODE_VER=$(node -v)
+  STEP_END=$(date +%s)
+  step_done "Node.js ${NODE_VER} already installed ($(($STEP_END - $STEP_START))s)"
 fi
-echo -e "${GREEN}  ✓ Node.js $(node -v) installed${NC}"
 
-echo -e "${YELLOW}[3/8] Installing Ollama...${NC}"
+# --- Step 3: Ollama ---
+step_start 3 "Installing Ollama..."
+STEP_START=$(date +%s)
 if ! command -v ollama &> /dev/null; then
-  curl -fsSL https://ollama.com/install.sh | sh > /dev/null 2>&1
+  run_with_spinner "Downloading Ollama binary..." bash -c "curl -fsSL https://ollama.com/install.sh | sh"
+  STEP_END=$(date +%s)
+  step_done "Ollama installed ($(($STEP_END - $STEP_START))s)"
+else
+  STEP_END=$(date +%s)
+  step_done "Ollama already installed ($(($STEP_END - $STEP_START))s)"
 fi
-echo -e "${GREEN}  ✓ Ollama installed${NC}"
 
+# --- Model Selection ---
 echo ""
 echo -e "${CYAN}========================================${NC}"
 echo -e "${CYAN}  Select models to install${NC}"
@@ -124,30 +200,50 @@ echo ""
 echo -e "${CYAN}  Installing models: ${SELECTED_MODELS}${NC}"
 echo ""
 
-echo -e "${YELLOW}[4/8] Downloading models (this may take a while)...${NC}"
-for MODEL in $SELECTED_MODELS; do
-  echo -e "  ${CYAN}Pulling $MODEL...${NC}"
-  ollama pull "$MODEL" 2>/dev/null || echo -e "${YELLOW}  ⚠ $MODEL may already exist or download in progress${NC}"
-done
-echo -e "${GREEN}  ✓ Models ready${NC}"
+# --- Step 4: Download Models ---
+step_start 4 "Downloading models..."
+STEP_START=$(date +%s)
+MODEL_COUNT=$(echo $SELECTED_MODELS | wc -w)
+MODEL_CURRENT=0
 
-echo -e "${YELLOW}[5/8] Installing Krelz Miner...${NC}"
+for MODEL in $SELECTED_MODELS; do
+  MODEL_CURRENT=$((MODEL_CURRENT + 1))
+  SIZE="${MODEL_SIZES[$MODEL]:-unknown}"
+  echo -e "  ${CYAN}[${MODEL_CURRENT}/${MODEL_COUNT}]${NC} 📦 ${BOLD}${MODEL}${NC} (${SIZE})"
+  ollama pull "$MODEL" || echo -e "  ${YELLOW}  ⚠ ${MODEL} may already exist or download in progress${NC}"
+  echo ""
+done
+
+STEP_END=$(date +%s)
+ELAPSED=$(($STEP_END - $STEP_START))
+MINUTES=$(($ELAPSED / 60))
+SECONDS=$(($ELAPSED % 60))
+if [ $MINUTES -gt 0 ]; then
+  step_done "Models ready (${MINUTES}m ${SECONDS}s)"
+else
+  step_done "Models ready (${SECONDS}s)"
+fi
+
+# --- Step 5: Install Miner ---
+step_start 5 "Installing Krelz Miner..."
+STEP_START=$(date +%s)
 INSTALL_DIR="$HOME/krelz-miner"
 if [ -d "$INSTALL_DIR" ]; then
-  cd "$INSTALL_DIR" && git pull > /dev/null 2>&1
+  run_with_spinner "Updating repository..." bash -c "cd '$INSTALL_DIR' && git pull"
 else
-  git clone https://github.com/jamalmousavii/krelz.xyz.git "$INSTALL_DIR" > /dev/null 2>&1
+  run_with_spinner "Cloning repository..." git clone https://github.com/jamalmousavii/krelz.xyz.git "$INSTALL_DIR"
 fi
-cd "$INSTALL_DIR/miner-app" && npm install > /dev/null 2>&1
-echo -e "${GREEN}  ✓ Miner installed at $INSTALL_DIR${NC}"
+run_with_spinner "Installing npm dependencies..." bash -c "cd '$INSTALL_DIR/miner-app' && npm install"
+STEP_END=$(date +%s)
+step_done "Miner installed at $INSTALL_DIR ($(($STEP_END - $STEP_START))s)"
 
+# --- Email & Token ---
 echo ""
 echo -e "${CYAN}========================================${NC}"
 echo -e "${CYAN}  Connect to Krelz Network${NC}"
 echo -e "${CYAN}========================================${NC}"
 echo ""
 
-# Use --email/--token if provided, otherwise prompt
 if [ -z "$USER_EMAIL" ]; then
   echo -e "  Enter your account email and miner token"
   echo -e "  (Get your token from https://krelz.xyz/profile)"
@@ -159,40 +255,35 @@ if [ -z "$MINER_TOKEN" ]; then
   read -p "  Miner Token: " MINER_TOKEN
 fi
 
-echo ""
-echo -e "${YELLOW}[6/8] Detecting system info...${NC}"
+# --- Step 6: Detect System ---
+step_start 6 "Detecting system info..."
+STEP_START=$(date +%s)
 
-# Detect GPU
 GPU_MODEL="Unknown"
 if command -v nvidia-smi &> /dev/null; then
   GPU_MODEL=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits 2>/dev/null | head -1)
-  if [ -z "$GPU_MODEL" ]; then
-    GPU_MODEL="Unknown"
-  fi
+  [ -z "$GPU_MODEL" ] && GPU_MODEL="Unknown"
 fi
 echo -e "  ${GREEN}✓ GPU: ${GPU_MODEL}${NC}"
 
-# Detect RAM
 RAM_SIZE=$(free -h | awk '/^Mem:/{print $2}' | head -1)
-if [ -z "$RAM_SIZE" ]; then
-  RAM_SIZE="Unknown"
-fi
+[ -z "$RAM_SIZE" ] && RAM_SIZE="Unknown"
 echo -e "  ${GREEN}✓ RAM: ${RAM_SIZE}${NC}"
 
-# Detect CPU
 CPU_MODEL=$(lscpu | grep 'Model name' | sed 's/Model name:\s*//' | head -1)
 if [ -z "$CPU_MODEL" ]; then
   CPU_MODEL=$(cat /proc/cpuinfo | grep 'model name' | head -1 | sed 's/.*:\s*//')
 fi
-if [ -z "$CPU_MODEL" ]; then
-  CPU_MODEL="Unknown"
-fi
+[ -z "$CPU_MODEL" ] && CPU_MODEL="Unknown"
 echo -e "  ${GREEN}✓ CPU: ${CPU_MODEL}${NC}"
 
-echo ""
-echo -e "${YELLOW}[7/8] Registering miner...${NC}"
+STEP_END=$(date +%s)
+step_done "System info detected ($(($STEP_END - $STEP_START))s)"
 
-# Register miner via API
+# --- Step 7: Register Miner ---
+step_start 7 "Registering miner..."
+STEP_START=$(date +%s)
+
 SETUP_RESPONSE=$(curl -s -X POST https://krelz.xyz/api/miners/setup \
   -H "Content-Type: application/json" \
   -d "{
@@ -204,14 +295,18 @@ SETUP_RESPONSE=$(curl -s -X POST https://krelz.xyz/api/miners/setup \
     \"models\": [\"$(echo $SELECTED_MODELS | sed 's/ /", "/g')\"]
   }")
 
+STEP_END=$(date +%s)
 if echo "$SETUP_RESPONSE" | grep -q '"success":true'; then
-  echo -e "${GREEN}  ✓ Miner registered successfully!${NC}"
+  step_done "Miner registered ($(($STEP_END - $STEP_START))s)"
 else
-  echo -e "${RED}  ⚠ Registration failed. Check your email and token.${NC}"
-  echo -e "${YELLOW}  Response: $SETUP_RESPONSE${NC}"
+  step_fail "Registration failed. Check email and token."
+  echo -e "  ${YELLOW}Response: $SETUP_RESPONSE${NC}"
 fi
 
-echo -e "${YELLOW}[8/8] Saving configuration + starting service...${NC}"
+# --- Step 8: Systemd Service ---
+step_start 8 "Saving config + starting service..."
+STEP_START=$(date +%s)
+
 cat > "$INSTALL_DIR/miner-app/config.json" << EOF
 {
   "models": "$(echo $SELECTED_MODELS | tr ' ' ',')",
@@ -219,9 +314,8 @@ cat > "$INSTALL_DIR/miner-app/config.json" << EOF
   "miner_token": "${MINER_TOKEN}"
 }
 EOF
-echo -e "${GREEN}  ✓ Configuration saved${NC}"
+echo -e "  ${GREEN}✓ Configuration saved${NC}"
 
-# Create systemd service
 SERVICE_FILE="/etc/systemd/system/krelz-miner.service"
 NODE_PATH=$(which node)
 $SUDO tee "$SERVICE_FILE" > /dev/null << EOF
@@ -242,24 +336,32 @@ Environment=NODE_ENV=production
 WantedBy=multi-user.target
 EOF
 
-$SUDO systemctl daemon-reload
-$SUDO systemctl enable krelz-miner
-$SUDO systemctl start krelz-miner
-echo -e "${GREEN}  ✓ Systemd service created and started${NC}"
+run_with_spinner "Enabling service..." $SUDO systemctl daemon-reload
+run_with_spinner "Starting service..." bash -c "$SUDO systemctl enable krelz-miner && $SUDO systemctl start krelz-miner"
+
+STEP_END=$(date +%s)
+step_done "Service started ($(($STEP_END - $STEP_START))s)"
+
+# --- Summary ---
+SCRIPT_END=$(date +%s)
+TOTAL_ELAPSED=$(($SCRIPT_END - $SCRIPT_START))
+TOTAL_MINUTES=$(($TOTAL_ELAPSED / 60))
+TOTAL_SECONDS=$(($TOTAL_ELAPSED % 60))
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  Installation Complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo -e "  Email: ${GREEN}${USER_EMAIL}${NC}"
-echo -e "  GPU: ${GREEN}${GPU_MODEL}${NC}"
-echo -e "  RAM: ${GREEN}${RAM_SIZE}${NC}"
-echo -e "  CPU: ${GREEN}${CPU_MODEL}${NC}"
+echo -e "  Email:  ${GREEN}${USER_EMAIL}${NC}"
+echo -e "  GPU:    ${GREEN}${GPU_MODEL}${NC}"
+echo -e "  RAM:    ${GREEN}${RAM_SIZE}${NC}"
+echo -e "  CPU:    ${GREEN}${CPU_MODEL}${NC}"
 echo ""
 echo -e "  Models installed:"
 for MODEL in $SELECTED_MODELS; do
-  echo -e "    ${GREEN}✓ $MODEL${NC}"
+  SIZE="${MODEL_SIZES[$MODEL]:-?}"
+  echo -e "    ${GREEN}✓ $MODEL${NC} (${SIZE})"
 done
 echo ""
 echo -e "  Service: ${GREEN}krelz-miner${NC}"
@@ -267,4 +369,6 @@ echo -e "  Status:  ${YELLOW}sudo systemctl status krelz-miner${NC}"
 echo -e "  Logs:    ${YELLOW}sudo journalctl -u krelz-miner -f${NC}"
 echo -e "  Stop:    ${YELLOW}sudo systemctl stop krelz-miner${NC}"
 echo -e "  Restart: ${YELLOW}sudo systemctl restart krelz-miner${NC}"
+echo ""
+echo -e "  ${BOLD}Total time: ${TOTAL_MINUTES}m ${TOTAL_SECONDS}s${NC}"
 echo ""
