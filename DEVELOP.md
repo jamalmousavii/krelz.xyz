@@ -78,7 +78,7 @@ Node.js/Express API with PostgreSQL + Redis.
 ```
 backend/
 ├── src/
-│   ├── server.js          # Entry point (v3.10.0)
+│   ├── server.js          # Entry point (v3.11.0)
 │   ├── models.js          # AI models + per-model pricing
 │   ├── cache.js           # Redis caching
 │   ├── database/
@@ -382,6 +382,53 @@ When a chat request uses a model not installed on VPS Ollama, the backend auto-s
 3. If not → find same family (e.g., `llama3.1:8b` → `llama3:8b`)
 4. If no family match → use first available model
 5. Log which model was actually used
+
+## Free Cloud AI — Round-Robin Routing (v3.11.0)
+
+A free model that routes across multiple cloud providers using round-robin with automatic failover.
+
+### Providers
+
+| Provider | API URL | Free Tier | Rate Limit |
+|----------|---------|-----------|------------|
+| Groq | `api.groq.com/openai/v1` | Llama 3.1 8B, 3.3 70B | 30 RPM, 14,400 RPD |
+| OpenRouter | `openrouter.ai/api/v1` | 25+ free models (`:free` suffix) | 20 RPM, 50 RPD |
+| Cerebras | `api.cerebras.ai/v1` | Llama 3.1 8B, 3.3 70B | ~1M tokens/day |
+| Cloudflare | `api.cloudflare.com/...` | Llama 3.1 8B, 3.3 70B | 10K neurons/day |
+
+### How it works
+
+1. User selects "🌐 Free Cloud AI" in chat
+2. Backend uses round-robin index to pick next provider
+3. If provider responds → return response
+4. If provider fails (rate limit, timeout) → cooldown 60s, try next
+5. Provider label shown: "⚡ via Groq"
+
+### Model mapping
+
+```
+Krelz Model    → Groq                → OpenRouter              → Cerebras          → Cloudflare
+llama3.1:8b    → llama-3.1-8b-instant → meta-llama/llama-3.1... → llama-3.1-8b       → @cf/meta/llama-3.1...
+llama3.3:70b   → llama-3.3-70b-vers.  → meta-llama/llama-3.3... → llama-3.3-70b      → @cf/meta/llama-3.3...
+free-cloud-ai  → llama-3.1-8b-instant → meta-llama/llama-3.1... → llama-3.1-8b       → @cf/meta/llama-3.1...
+```
+
+### Environment variables
+
+```
+GROQ_API_KEY=
+OPENROUTER_API_KEY=
+CEREBRAS_API_KEY=
+CLOUDFLARE_API_TOKEN=
+CLOUDFLARE_ACCOUNT_ID=
+```
+
+### Cooldown system
+
+When a provider returns 429 (rate limited):
+- Provider enters 60-second cooldown
+- Next request skips it and tries the next provider
+- After cooldown, provider is available again
 
 ## Install Script Self-Cleanup (v3.10.0)
 

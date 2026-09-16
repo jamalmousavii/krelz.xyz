@@ -26,7 +26,9 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Auth System** — Google OAuth + email/password, password reset
 - **Uninstall Scripts** — Clean removal for Ubuntu/Debian and RedHat/Fedora
 - **Smart Model Fallback** — Auto-selects closest available model when exact model not found
+- **Free Cloud AI** — Round-robin routing across Groq, OpenRouter, Cerebras, Cloudflare (free tiers)
 - **Install Self-Cleanup** — Install scripts auto-delete after successful installation
+- **Daily Free Tokens in Chat** — Shows remaining free tokens next to chat input
 - **Miner Earnings** — 90% of paid usage goes to miners
 - **Internationalization** — English (default) + Farsi with RTL support
 
@@ -94,7 +96,7 @@ Every user gets **1,000 free AI inference tokens per day**:
 krelz.xyz/
 ├── backend/                    # API Server (Node.js/Express)
 │   ├── src/
-│   │   ├── server.js          # Entry point (v3.10.0)
+│   │   ├── server.js          # Entry point (v3.11.0)
 │   │   ├── models.js          # AI models + pricing
 │   │   ├── database/
 │   │   │   ├── pool.js        # PostgreSQL connection

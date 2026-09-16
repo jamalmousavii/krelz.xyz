@@ -37,7 +37,7 @@ const translations = {
       startChat: 'Start Chat',
       footer: 'All rights reserved.',
       installMetaMask: 'Please install MetaMask',
-      version: 'v3.10.0',
+      version: 'v3.11.0',
     },
     chat: {
       title: 'Chat with AI - Krelz Network',
@@ -58,6 +58,7 @@ const translations = {
       noSessions: 'No chats yet',
       untitled: 'New Chat',
       subjectPlaceholder: 'Chat subject...',
+      freeTokens: 'Free Tokens',
     },
     miner: {
       title: 'Miner - Krelz Network',
@@ -233,6 +234,7 @@ const translations = {
       noSessions: 'هنوز چتی ندارید',
       untitled: 'چت جدید',
       subjectPlaceholder: 'موضوع چت...',
+      freeTokens: 'توکن رایگان',
     },
     miner: {
       title: 'ماینر - Krelz Network',

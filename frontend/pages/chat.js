@@ -27,6 +27,7 @@ export default function Chat() {
 
   // Balance state
   const [balance, setBalance] = useState(null);
+  const [dailyTokens, setDailyTokens] = useState(null);
 
   useEffect(() => {
     fetchModels();
@@ -36,6 +37,7 @@ export default function Chat() {
       setIsLoggedIn(true);
       fetchSessions(savedToken);
       fetchBalance(savedToken);
+      fetchDailyTokens(savedToken);
     }
   }, []);
 
@@ -63,6 +65,14 @@ export default function Chat() {
       const res = await fetch('/api/payments/balance', { headers: authHeaders(tkn) });
       const data = await res.json();
       if (data.success) setBalance(data.balances);
+    } catch (err) {}
+  };
+
+  const fetchDailyTokens = async (tkn) => {
+    try {
+      const res = await fetch('/api/token/balance', { headers: authHeaders(tkn) });
+      const data = await res.json();
+      if (data.success && data.daily_tokens) setDailyTokens(data.daily_tokens);
     } catch (err) {}
   };
 
@@ -176,7 +186,7 @@ export default function Chat() {
       });
       const data = await res.json();
       if (data.success) {
-        setChat(prev => [...prev, { role: 'assistant', content: data.response }]);
+        setChat(prev => [...prev, { role: 'assistant', content: data.response, provider_name: data.provider_name || null }]);
         if (data.session_id && !activeSessionId) {
           setActiveSessionId(data.session_id);
           fetchSessions(token);
@@ -185,6 +195,7 @@ export default function Chat() {
         }
         // Refresh balance after chat (cost deducted)
         if (token) fetchBalance(token);
+        if (token) fetchDailyTokens(token);
       } else {
         setChat(prev => [...prev, { role: 'assistant', content: t('chat.errorResponse') }]);
       }
@@ -310,6 +321,11 @@ export default function Chat() {
                   <div className={`inline-block max-w-[85%] md:max-w-[80%] p-3 md:p-4 rounded-2xl text-sm md:text-base ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-green-600 text-white'}`}>
                     {msg.content}
                   </div>
+                  {msg.role === 'assistant' && msg.provider_name && (
+                    <div className={`text-xs text-gray-500 mt-1 ${lang === 'fa' ? 'text-right' : 'text-left'}`}>
+                      ⚡ via {msg.provider_name}
+                    </div>
+                  )}
                 </div>
               ))}
               {loading && (
@@ -374,12 +390,12 @@ export default function Chat() {
                 disabled={loading}
               />
 
-              {/* Token Balance Display */}
+              {/* Daily Free Tokens Display */}
               {isLoggedIn && (
                 <div className="flex items-center gap-2 bg-white/10 rounded-xl px-4 py-3 md:py-4">
-                  <span className="text-green-400 font-bold text-sm">₮</span>
-                  <span className="text-white text-sm font-medium">{usdtBalance.toFixed(2)}</span>
-                  <span className="text-gray-400 text-xs">USDT</span>
+                  <span className="text-green-400 font-bold text-sm">⚡</span>
+                  <span className="text-white text-sm font-medium">{dailyTokens?.remaining ?? '---'}</span>
+                  <span className="text-gray-400 text-xs">{t('chat.freeTokens')}</span>
                 </div>
               )}
 

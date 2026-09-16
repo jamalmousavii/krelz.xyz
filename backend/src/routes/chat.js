@@ -10,6 +10,78 @@ const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const SUPPORTED_COINS = ['BTC', 'ETH', 'BNB', 'USDT', 'TRX', 'DOGE', 'XRP'];
 const DAILY_TOKEN_LIMIT = 1000;
 
+// Free Cloud AI — Round-robin providers
+let roundRobinIndex = 0;
+const FREE_PROVIDERS = [
+  {
+    name: 'Groq',
+    url: 'https://api.groq.com/openai/v1/chat/completions',
+    key: process.env.GROQ_API_KEY,
+    models: { 'llama3.1:8b': 'llama-3.1-8b-instant', 'llama3.3:70b': 'llama-3.3-70b-versatile', 'qwen3.6:27b': 'qwen/qwen3.6-27b', 'free-cloud-ai': 'llama-3.1-8b-instant' },
+    cooldownUntil: 0
+  },
+  {
+    name: 'OpenRouter',
+    url: 'https://openrouter.ai/api/v1/chat/completions',
+    key: process.env.OPENROUTER_API_KEY,
+    models: { 'llama3.1:8b': 'meta-llama/llama-3.1-8b-instruct:free', 'deepseek-r1:70b': 'deepseek/deepseek-r1:free', 'free-cloud-ai': 'meta-llama/llama-3.1-8b-instruct:free' },
+    cooldownUntil: 0
+  },
+  {
+    name: 'Cerebras',
+    url: 'https://api.cerebras.ai/v1/chat/completions',
+    key: process.env.CEREBRAS_API_KEY,
+    models: { 'llama3.1:8b': 'llama-3.1-8b', 'llama3.3:70b': 'llama-3.3-70b', 'free-cloud-ai': 'llama-3.1-8b' },
+    cooldownUntil: 0
+  },
+  {
+    name: 'Cloudflare',
+    url: `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/meta/llama-3.1-8b-instruct`,
+    key: process.env.CLOUDFLARE_API_TOKEN,
+    models: { 'llama3.1:8b': '@cf/meta/llama-3.1-8b-instruct', 'llama3.3:70b': '@cf/meta/llama-3.3-70b-instruct-fp8-fast', 'free-cloud-ai': '@cf/meta/llama-3.1-8b-instruct' },
+    cooldownUntil: 0
+  }
+];
+
+function getNextProvider() {
+  const start = roundRobinIndex;
+  const now = Date.now();
+  do {
+    const provider = FREE_PROVIDERS[roundRobinIndex];
+    roundRobinIndex = (roundRobinIndex + 1) % FREE_PROVIDERS.length;
+    if (provider.key && (!provider.cooldownUntil || now > provider.cooldownUntil)) {
+      return provider;
+    }
+  } while (roundRobinIndex !== start);
+  return null;
+}
+
+async function callExternalProvider(provider, model, message) {
+  const mappedModel = provider.models[model] || provider.models['free-cloud-ai'];
+  if (!mappedModel) return null;
+
+  const isCloudflare = provider.name === 'Cloudflare';
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (isCloudflare) {
+    headers['Authorization'] = `Bearer ${provider.key}`;
+  } else {
+    headers['Authorization'] = `Bearer ${provider.key}`;
+  }
+
+  const body = isCloudflare
+    ? { messages: [{ role: 'user', content: message }], stream: false }
+    : { model: mappedModel, messages: [{ role: 'user', content: message }], stream: false };
+
+  const res = await axios.post(provider.url, body, { headers, timeout: 30000 });
+  const data = res.data;
+
+  if (isCloudflare) {
+    return data.result?.response || null;
+  }
+  return data.choices?.[0]?.message?.content || null;
+}
+
 const getModelPricing = (modelId) => {
   const found = MODELS.find(m => m.id === modelId);
   return found ? { inputPrice: found.inputPrice, outputPrice: found.outputPrice } : { inputPrice: 0.088, outputPrice: 0.176 };
@@ -237,7 +309,7 @@ router.post('/', optionalAuth, async (req, res) => {
     );
 
     const taskId = taskResult.rows[0].id;
-    let response, tokensUsed, cost;
+    let response, tokensUsed, cost, providerUsed = null;
 
     // Try WebSocket dispatch first
     if (wsServer && minerId) {
@@ -291,14 +363,44 @@ router.post('/', optionalAuth, async (req, res) => {
         cost = (tokensUsed * pricing.outputPrice) / 1000000;
 
       } catch (ollamaError) {
-        await pool.query(
-          "UPDATE tasks SET response = 'No miners or Ollama available', status = 'failed' WHERE id = $1",
-          [taskId]
-        );
-        return res.status(503).json({
-          error: 'No miners available for this model. Please try again later.',
-          task_id: taskId
-        });
+        // Fallback: try free external providers (round-robin)
+        let externalError = null;
+        for (let i = 0; i < FREE_PROVIDERS.length; i++) {
+          const provider = getNextProvider();
+          if (!provider) break;
+
+          try {
+            const externalResponse = await callExternalProvider(provider, model, message);
+            if (externalResponse) {
+              response = externalResponse;
+              providerUsed = provider.name;
+              tokensUsed = 0;
+              const pricing = getModelPricing(model || 'llama3.1:8b');
+              cost = 0;
+              console.log(`Free Cloud AI: used ${provider.name} for model "${model}"`);
+              break;
+            }
+          } catch (providerError) {
+            externalError = providerError;
+            // Rate limit → cooldown
+            if (providerError.response?.status === 429) {
+              provider.cooldownUntil = Date.now() + 60000;
+              console.log(`${provider.name} rate limited, cooldown 60s`);
+            }
+            continue;
+          }
+        }
+
+        if (!response) {
+          await pool.query(
+            "UPDATE tasks SET response = 'No providers available', status = 'failed' WHERE id = $1",
+            [taskId]
+          );
+          return res.status(503).json({
+            error: 'No miners or free providers available. Please try again later.',
+            task_id: taskId
+          });
+        }
       }
     }
 
@@ -378,7 +480,8 @@ router.post('/', optionalAuth, async (req, res) => {
       coin: paymentCoin,
       payment_status: paymentStatus,
       miner_id: minerId,
-      source: minerId ? 'miner' : 'local',
+      source: minerId ? 'miner' : providerUsed ? 'external' : 'local',
+      provider_name: providerUsed,
       daily_tokens: dailyTokensInfo
     });
 

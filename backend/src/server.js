@@ -114,7 +114,7 @@ app.get('/health', (req, res) => {
   const cache = getCacheStats();
   res.json({
     status: 'ok',
-    version: '3.10.0',
+    version: '3.11.0',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     redis: cache.connected ? 'connected' : 'disconnected',
