@@ -32,7 +32,8 @@ router.get('/mine', authenticate, async (req, res) => {
 
     const result = await pool.query(
       `SELECT id, wallet_address, gpu_model, ram, cpu, models, current_model,
-              status, uptime, total_tasks, earnings, created_at
+              status, uptime, total_tasks, earnings, created_at,
+              gpu_usage, ram_usage, cpu_usage, disk_usage
        FROM miners WHERE user_id = $1`,
       [userId]
     );
