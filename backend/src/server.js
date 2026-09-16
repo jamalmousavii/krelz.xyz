@@ -142,7 +142,7 @@ app.use((err, req, res, next) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`🚀 Krelz Backend v2.2.0 on port ${PORT}`);
+  console.log(`🚀 Krelz Backend v3.11.0 on port ${PORT}`);
   console.log(`🔌 WebSocket on ws://0.0.0.0:${PORT}/ws`);
   console.log(`🔒 Security: CORS, CSP, Rate Limits`);
   console.log(`📦 Cache: Redis ${getCacheStats().connected ? '✅' : '❌'}`);

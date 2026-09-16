@@ -354,7 +354,7 @@ router.post('/', optionalAuth, async (req, res) => {
           model: ollamaModel,
           prompt: message,
           stream: false
-        });
+        }, { timeout: 30000 });
 
         response = ollamaResponse.data.response;
         tokensUsed = ollamaResponse.data.eval_count || 0;

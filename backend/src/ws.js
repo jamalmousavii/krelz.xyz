@@ -142,7 +142,7 @@ class WSServer {
     await pool.query(
       `UPDATE miners
        SET status = $1,
-           uptime = CASE WHEN $1::text = 'online' THEN LEAST(uptime + 0.1, 100) ELSE uptime END,
+           uptime = CASE WHEN $8 = 'online' THEN LEAST(uptime + 0.1, 100) ELSE uptime END,
            current_model = COALESCE($3, current_model),
            gpu_usage = $4,
            ram_usage = $5,
@@ -151,7 +151,7 @@ class WSServer {
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $2`,
       [statusValue, miner.id, current_model,
-       gpu_usage || 0, ram_usage || 0, cpu_usage || 0, disk_usage || 0]
+       gpu_usage || 0, ram_usage || 0, cpu_usage || 0, disk_usage || 0, statusValue]
     );
 
     ws.send(JSON.stringify({ type: 'heartbeat_ok' }));
