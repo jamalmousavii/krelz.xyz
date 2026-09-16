@@ -78,7 +78,7 @@ Node.js/Express API with PostgreSQL + Redis.
 ```
 backend/
 ├── src/
-│   ├── server.js          # Entry point (v3.9.0)
+│   ├── server.js          # Entry point (v3.10.0)
 │   ├── models.js          # AI models + per-model pricing
 │   ├── cache.js           # Redis caching
 │   ├── database/
@@ -372,6 +372,24 @@ Interactive menu:
 
 **Option 1:** stops service, disables, removes files
 **Option 2:** Option 1 + removes Ollama binary + ~/.ollama/ models + ollama user
+
+## Smart Model Fallback (v3.10.0)
+
+When a chat request uses a model not installed on VPS Ollama, the backend auto-selects the closest available model:
+
+1. Fetch available models from `GET /api/tags`
+2. If exact model found → use it
+3. If not → find same family (e.g., `llama3.1:8b` → `llama3:8b`)
+4. If no family match → use first available model
+5. Log which model was actually used
+
+## Install Script Self-Cleanup (v3.10.0)
+
+Install scripts auto-delete themselves after successful installation:
+
+```bash
+rm -f "$0"  # Last line of install-ubuntu.sh / install-redhat.sh
+```
 
 ## VPS Deployment
 

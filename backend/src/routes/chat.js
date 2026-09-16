@@ -264,8 +264,23 @@ router.post('/', optionalAuth, async (req, res) => {
     // Fallback: local Ollama
     if (!response) {
       try {
+        let ollamaModel = model || 'llama3:8b';
+
+        // Smart fallback: check available models
+        try {
+          const tagsRes = await axios.get(`${OLLAMA_URL}/api/tags`);
+          const available = tagsRes.data.models.map(m => m.name);
+          if (!available.includes(ollamaModel)) {
+            const exactMatch = available.find(m => m.startsWith(ollamaModel.split(':')[0]));
+            ollamaModel = exactMatch || available[0] || ollamaModel;
+            console.log(`Model "${model}" not available locally, using "${ollamaModel}"`);
+          }
+        } catch (tagErr) {
+          console.log('Could not list Ollama models, trying requested model');
+        }
+
         const ollamaResponse = await axios.post(`${OLLAMA_URL}/api/generate`, {
-          model: model || 'llama3:8b',
+          model: ollamaModel,
           prompt: message,
           stream: false
         });
