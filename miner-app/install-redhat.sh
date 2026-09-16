@@ -130,6 +130,10 @@ else
   step_done "Ollama already installed ($(($STEP_END - $STEP_START))s)"
 fi
 
+$SUDO systemctl enable ollama 2>/dev/null || true
+$SUDO systemctl start ollama 2>/dev/null || true
+sleep 2
+
 # --- Model Selection ---
 echo ""
 echo -e "${CYAN}========================================${NC}"
