@@ -608,27 +608,27 @@ export default function Profile() {
                 <div className="space-y-3">
                   <p className="text-gray-400 text-sm">{t('profile.noMiner')}</p>
                   <p className="text-gray-500 text-xs">{t('profile.minerInstallDesc')}</p>
-                  {/* Miner Token */}
-                  <div className="bg-black/30 rounded-lg p-3">
-                    <p className="text-gray-400 text-xs mb-2">🔗 {t('profile.minerToken')}</p>
-                    {minerToken ? (
-                      <div className="flex items-center gap-2">
-                        <code className="flex-1 text-green-400 text-xs break-all bg-black/30 px-2 py-1 rounded">{minerToken}</code>
-                        <button onClick={copyMinerToken}
-                          className={`px-3 py-1 rounded text-xs font-bold transition ${minerTokenCopied ? 'bg-green-600 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
-                          {minerTokenCopied ? '✓' : '📋'}
-                        </button>
-                      </div>
-                    ) : (
-                      <button onClick={fetchMinerToken} disabled={minerTokenLoading}
-                        className="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50">
-                        {minerTokenLoading ? '...' : `🔑 ${t('profile.getMinerToken')}`}
-                      </button>
-                    )}
-                    <p className="text-gray-600 text-xs mt-2">{t('profile.minerTokenDesc')}</p>
-                  </div>
                 </div>
               )}
+              {/* Miner Token — always visible */}
+              <div className="bg-black/30 rounded-lg p-3 mt-3">
+                <p className="text-gray-400 text-xs mb-2">🔗 {t('profile.minerToken')}</p>
+                {minerToken ? (
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-green-400 text-xs break-all bg-black/30 px-2 py-1 rounded">{minerToken}</code>
+                    <button onClick={copyMinerToken}
+                      className={`px-3 py-1 rounded text-xs font-bold transition ${minerTokenCopied ? 'bg-green-600 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
+                      {minerTokenCopied ? '✓' : '📋'}
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={fetchMinerToken} disabled={minerTokenLoading}
+                    className="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50">
+                    {minerTokenLoading ? '...' : `🔑 ${t('profile.getMinerToken')}`}
+                  </button>
+                )}
+                <p className="text-gray-600 text-xs mt-2">{t('profile.minerTokenDesc')}</p>
+              </div>
             </div>
           </div>
         </div>
