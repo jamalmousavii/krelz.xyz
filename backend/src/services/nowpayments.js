@@ -21,6 +21,9 @@ class NowPaymentsService {
     if (!API_KEY) {
       console.log('⚠️ NowPayments API key not configured');
     }
+    if (!IPN_SECRET) {
+      console.log('⚠️ NOWPAYMENTS_IPN_SECRET not configured — webhook verification will be skipped');
+    }
   }
 
   // Get auth headers
@@ -62,11 +65,6 @@ class NowPaymentsService {
 
   // Verify IPN callback signature
   verifyIPN(payload, signature) {
-    if (!IPN_SECRET) {
-      console.log('⚠️ IPN secret not configured, skipping verification');
-      return true;
-    }
-
     const sortedPayload = Object.keys(payload)
       .sort()
       .reduce((acc, key) => {

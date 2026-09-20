@@ -10,6 +10,9 @@ class WSServer {
     this.taskIdCounter = 1;
 
     this.wss.on('connection', (ws) => this.handleConnection(ws));
+    this.wss.on('error', (err) => {
+      console.error('❌ WebSocket server error:', err.message);
+    });
 
     // Cleanup dead miners every 60s
     setInterval(() => this.cleanupMiners(), 60000);

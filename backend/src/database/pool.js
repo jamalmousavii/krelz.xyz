@@ -1,4 +1,8 @@
 const { Pool } = require('pg');
+const { types } = require('pg');
+
+// Parse numeric/decimal as float instead of string
+types.setTypeParser(1700, (val) => val === null ? null : parseFloat(val));
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://krelz:krelz_secure_password@localhost:5432/krelz'

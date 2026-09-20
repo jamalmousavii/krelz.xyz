@@ -8,7 +8,11 @@ const { OAuth2Client } = require('google-auth-library');
 const { validate, registerRules, loginRules, googleAuthRules } = require('../middleware/validate');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-const JWT_SECRET = process.env.JWT_SECRET || 'krelz-secret';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('❌ JWT_SECRET environment variable is required');
+  process.exit(1);
+}
 
 // POST /api/auth/register
 router.post('/register', registerRules, validate, async (req, res) => {

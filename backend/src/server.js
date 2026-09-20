@@ -5,11 +5,12 @@ const express = require('express');
 const http = require('http');
 const cors = require('cors');
 const helmet = require('helmet');
-const morgan = require('morgan');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
+const pinoHttp = require('pino-http');
 const WSServer = require('./ws');
 const { cacheMiddleware, getCacheStats } = require('./cache');
+const { logger } = require('./logger');
 
 const authRoutes = require('./routes/auth');
 const minerRoutes = require('./routes/miners');
@@ -26,22 +27,44 @@ const server = http.createServer(app);
 const PORT = process.env.API_PORT || 3000;
 const WS_PORT = process.env.WS_PORT || 8444;
 
-// --- Sentry ---
+const httpLogger = pinoHttp({
+  logger,
+  customLogLevel: (req, res, err) => {
+    if (res.statusCode >= 400 && res.statusCode < 500) return 'warn';
+    if (res.statusCode >= 500 || err) return 'error';
+    return 'info';
+  },
+  customSuccessMessage: (req, res) => `${req.method} ${req.url} ${res.statusCode}`,
+  customErrorMessage: (req, res, err) => `${req.method} ${req.url} ${res.statusCode} - ${err.message}`,
+  serializers: {
+    req: (req) => ({
+      method: req.method,
+      url: req.url,
+      headers: {
+        'user-agent': req.headers['user-agent'],
+        'x-forwarded-for': req.headers['x-forwarded-for'],
+      },
+      remoteAddress: req.ip,
+    }),
+    res: (res) => ({
+      statusCode: res.statusCode,
+    }),
+  },
+});
+
 if (process.env.SENTRY_DSN) {
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
     environment: process.env.NODE_ENV || 'development',
     tracesSampleRate: 0.1,
   });
-  console.log('🔒 Sentry error tracking enabled');
+  logger.info('Sentry error tracking enabled');
 }
 
-// Initialize WebSocket server on separate port
 const wsServerHttp = http.createServer();
 const wsServer = new WSServer(wsServerHttp);
 app.set('wsServer', wsServer);
 
-// --- Security ---
 const allowedOrigins = [
   'https://krelz.xyz',
   'http://localhost:3000',
@@ -71,11 +94,10 @@ app.use(helmet({
 }));
 
 app.use(compression());
-app.use(morgan('combined'));
+app.use(httpLogger);
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '1mb' }));
 
-// --- Rate Limits ---
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
@@ -100,7 +122,6 @@ const chatLimiter = rateLimit({
 });
 app.use('/api/chat', chatLimiter);
 
-// --- Routes (with cache where needed) ---
 app.use('/api/auth', authRoutes);
 app.use('/api/miners', cacheMiddleware(10), minerRoutes);
 app.use('/api/chat', chatRoutes);
@@ -111,27 +132,34 @@ app.use('/api/models', cacheMiddleware(60), modelRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/leaderboard', cacheMiddleware(60), leaderboardRoutes);
 
-// Health check
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
   const cache = getCacheStats();
+  let dbStatus = 'unknown';
+  try {
+    const pool = require('./database/pool');
+    await pool.query('SELECT 1');
+    dbStatus = 'connected';
+  } catch (e) {
+    dbStatus = 'disconnected';
+  }
+
   res.json({
     status: 'ok',
     version: '3.11.0',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     redis: cache.connected ? 'connected' : 'disconnected',
+    postgres: dbStatus,
     sentry: !!process.env.SENTRY_DSN,
   });
 });
 
-// 404 handler
 app.use('/api/*', (req, res) => {
   res.status(404).json({ error: 'API endpoint not found' });
 });
 
-// Error handling (with Sentry)
 app.use((err, req, res, next) => {
-  console.error(`[ERROR] ${err.message}`);
+  logger.error({ err, url: req.url, method: req.method }, 'Request error');
 
   if (process.env.SENTRY_DSN) {
     Sentry.captureException(err);
@@ -144,13 +172,12 @@ app.use((err, req, res, next) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`🚀 Krelz Backend v3.11.0 on port ${PORT}`);
-  console.log(`🔒 Security: CORS, CSP, Rate Limits`);
-  console.log(`📦 Cache: Redis ${getCacheStats().connected ? '✅' : '❌'}`);
+  logger.info({ port: PORT }, 'Krelz Backend started');
+  logger.info({ redis: getCacheStats().connected ? 'connected' : 'disconnected' }, 'Cache status');
 });
 
 wsServerHttp.listen(WS_PORT, () => {
-  console.log(`🔌 WebSocket on ws://0.0.0.0:${WS_PORT}/ws`);
+  logger.info({ port: WS_PORT }, 'WebSocket server started');
 });
 
 module.exports = { app, server, wsServer };
