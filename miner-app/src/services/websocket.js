@@ -12,8 +12,13 @@ class MinerWebSocket {
   }
 
   connect() {
-    const wsUrl = process.env.API_WS_URL || 'wss://krelz.xyz:8443/ws';
-    this.ws = new WebSocket(wsUrl);
+    const wsUrl = process.env.API_WS_URL || 'wss://krelz.xyz:443/ws';
+    this.ws = new WebSocket(wsUrl, {
+      rejectUnauthorized: false,
+      checkServerIdentity: () => undefined,
+      // SNI must match the TLS cert (issued for krelz.xyz)
+      servername: 'krelz.xyz',
+    });
 
     this.ws.on('open', () => {
       console.log('🔌 Connected to Krelz Network');
@@ -31,7 +36,7 @@ class MinerWebSocket {
       }
     });
 
-    this.ws.on('close', () => {
+    this.ws.on('close', (code, reason) => {
       console.log('🔌 Disconnected from Krelz Network');
       this.connected = false;
       this.stopHeartbeat();

@@ -135,7 +135,7 @@ class WSServer {
       return;
     }
 
-    const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = msg;
+const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = msg;
 
     miner.lastHeartbeat = Date.now();
     miner.status = status || 'online';
@@ -143,20 +143,30 @@ class WSServer {
 
     const statusValue = status || 'online';
 
-    await pool.query(
-      `UPDATE miners
-       SET status = $1,
-           uptime = CASE WHEN $8 = 'online' THEN LEAST(uptime + 0.1, 100) ELSE uptime END,
-           current_model = COALESCE($3, current_model),
-           gpu_usage = $4,
-           ram_usage = $5,
-           cpu_usage = $6,
-           disk_usage = $7,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $2`,
-      [statusValue, miner.id, current_model,
-       gpu_usage || 0, ram_usage || 0, cpu_usage || 0, disk_usage || 0, statusValue]
-    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `UPDATE miners
+         SET status = $1,
+             uptime = CASE WHEN $8 = 'online' THEN LEAST(uptime + 0.1, 100) ELSE uptime END,
+             current_model = COALESCE($3, current_model),
+             gpu_usage = $4,
+             ram_usage = $5,
+             cpu_usage = $6,
+             disk_usage = $7,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2`,
+        [statusValue, miner.id, current_model,
+         gpu_usage || 0, ram_usage || 0, cpu_usage || 0, disk_usage || 0, statusValue]
+      );
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error(`Heartbeat DB error for miner ${miner.id}:`, err.message);
+    } finally {
+      client.release();
+    }
 
     ws.send(JSON.stringify({ type: 'heartbeat_ok' }));
   }
@@ -274,9 +284,12 @@ class WSServer {
   }
 
   cleanupMiners() {
+    console.log('>>> Cleanup miners running, miners count:', this.miners.size);
     const now = Date.now();
     for (const [minerId, miner] of this.miners) {
-      if (now - miner.lastHeartbeat > 120000) {
+      const timeSinceHeartbeat = now - miner.lastHeartbeat;
+      console.log(`>>> Cleanup check miner ${minerId}: lastHeartbeat ${timeSinceHeartbeat}ms ago`);
+      if (timeSinceHeartbeat > 120000) {
         this.miners.delete(minerId);
         pool.query("UPDATE miners SET status = 'offline' WHERE id = $1", [minerId]);
         console.log(`Miner ${minerId} marked offline (no heartbeat)`);
