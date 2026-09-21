@@ -115,7 +115,7 @@ class MinerWebSocket {
   }
 
   sendHeartbeat(status = 'online', stats = {}) {
-    this.send({
+    const payload = {
       type: 'heartbeat',
       status,
       cpu_usage: stats.cpu_usage || 0,
@@ -123,7 +123,9 @@ class MinerWebSocket {
       gpu_usage: stats.gpu_usage || 0,
       disk_usage: stats.disk_usage || 0,
       current_model: stats.current_model
-    });
+    };
+    console.log(`💓 Sending heartbeat (model: ${stats.current_model || '?'}, ws: ${this.ws ? this.ws.readyState : 'none'})`);
+    this.send(payload);
   }
 
   requestTask() {
@@ -137,6 +139,7 @@ class MinerWebSocket {
   }
 
   startHeartbeat(minerService, defaultModel) {
+    console.log(`💓 Heartbeat started (every 30s, model: ${defaultModel})`);
     this.heartbeatInterval = setInterval(() => {
       const stats = minerService ? minerService.getStats() : {};
       stats.current_model = defaultModel;
