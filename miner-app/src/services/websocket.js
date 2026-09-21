@@ -1,9 +1,11 @@
 const WebSocket = require('ws');
 
 class MinerWebSocket {
-  constructor(walletAddress, onTask) {
+  constructor(walletAddress, onTask, opts = {}) {
     this.walletAddress = walletAddress;
     this.onTask = onTask;
+    this.machineId = opts.machineId || process.env.MINER_MACHINE_ID || null;
+    this.minerName = opts.minerName || process.env.MINER_NAME || null;
     this.ws = null;
     this.minerId = null;
     this.connected = false;
@@ -50,12 +52,15 @@ class MinerWebSocket {
 
   authenticate() {
     // Send miner_token (primary) or wallet_address (legacy)
+    // machine_id identifies this machine for multi-miner accounts (v3.12.0+)
     const authMsg = { type: 'auth' };
     if (this.walletAddress.startsWith('kz_')) {
       authMsg.miner_token = this.walletAddress;
     } else {
       authMsg.wallet_address = this.walletAddress;
     }
+    if (this.machineId) authMsg.machine_id = this.machineId;
+    if (this.minerName) authMsg.name = this.minerName;
     this.send(authMsg);
   }
 

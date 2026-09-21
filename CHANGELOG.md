@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.12.0] - 2026-09-21
+
+### Added
+- Multi-miner accounts: unlimited miners per user (one row per `machine_id`), no cap
+- `machine_id` + `name` columns on miners table (migration with backfill)
+- `DELETE /api/miners/mine/:id` — soft delete (history preserved)
+- `PUT /api/miners/mine/:id` — rename miner
+- `GET /api/miners/mine` now returns `miners` array (plus legacy `miner` field)
+- `PUT /api/miners/mine/model` accepts `miner_id` for per-miner model switch
+- WS auth accepts `machine_id`/`name`; removed miners get `auth_error`
+- Install scripts: miner name prompt (`--name` flag), persistent `machine_id` in config.json
+- Profile dashboard: miner cards list with rename/remove/per-miner model + EN/FA translations
+- Version bumped to 3.12.0
+
+### Fixed
+- Second machine with same email/token no longer overwrites the first miner
+
 ## [1.2.0] - 2026-09-12
 
 ### Added

@@ -25,7 +25,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/miners/mine — get current user's miner
+// GET /api/miners/mine — get current user's miners (all, incl. offline)
 router.get('/mine', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -33,13 +33,17 @@ router.get('/mine', authenticate, async (req, res) => {
     const result = await pool.query(
       `SELECT id, wallet_address, gpu_model, ram, cpu, models, current_model,
               status, uptime, total_tasks, earnings, created_at,
-              gpu_usage, ram_usage, cpu_usage, disk_usage
-       FROM miners WHERE user_id = $1`,
+              gpu_usage, ram_usage, cpu_usage, disk_usage,
+              machine_id, name
+       FROM miners WHERE user_id = $1 AND (status IS NULL OR status != 'removed')
+       ORDER BY created_at ASC`,
       [userId]
     );
 
     res.json({
       success: true,
+      miners: result.rows,
+      // Legacy: first miner (backward compat for old clients)
       miner: result.rows[0] || null
     });
 
@@ -49,20 +53,66 @@ router.get('/mine', authenticate, async (req, res) => {
   }
 });
 
-// PUT /api/miners/mine/model — switch current model
+// PUT /api/miners/mine/model — switch current model (miner_id required for multi-miner)
 router.put('/mine/model', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { model } = req.body;
+    const { model, miner_id } = req.body;
 
     if (!model) {
       return res.status(400).json({ error: 'Model is required' });
     }
 
+    let result;
+    if (miner_id) {
+      // Scoped: only the user's own miner
+      result = await pool.query(
+        `UPDATE miners SET current_model = $1, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2 AND user_id = $3 AND (status IS NULL OR status != 'removed')
+         RETURNING id, current_model`,
+        [model, miner_id, userId]
+      );
+    } else {
+      // Legacy: first miner of the user
+      result = await pool.query(
+        `UPDATE miners SET current_model = $1, updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $2 AND (status IS NULL OR status != 'removed')
+         RETURNING id, current_model`,
+        [model, userId]
+      );
+    }
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Miner not found' });
+    }
+
+    res.json({ success: true, miner: result.rows[0] });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/miners/mine/:id — rename a miner (own miners only)
+router.put('/mine/:id', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const minerId = parseInt(req.params.id);
+    const { name } = req.body;
+
+    if (!minerId) {
+      return res.status(400).json({ error: 'Miner id is required' });
+    }
+    if (!name || !name.trim() || name.trim().length > 100) {
+      return res.status(400).json({ error: 'Valid name required (max 100 chars)' });
+    }
+
     const result = await pool.query(
-      `UPDATE miners SET current_model = $1, updated_at = CURRENT_TIMESTAMP
-       WHERE user_id = $2 RETURNING id, current_model`,
-      [model, userId]
+      `UPDATE miners SET name = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND user_id = $3 AND (status IS NULL OR status != 'removed')
+       RETURNING id, name`,
+      [name.trim(), minerId, userId]
     );
 
     if (result.rows.length === 0) {
@@ -70,6 +120,46 @@ router.put('/mine/model', authenticate, async (req, res) => {
     }
 
     res.json({ success: true, miner: result.rows[0] });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/miners/mine/:id — remove a miner (soft delete, own miners only)
+// History (tasks/earnings) is preserved; miner stops receiving dispatches.
+router.delete('/mine/:id', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const minerId = parseInt(req.params.id);
+
+    if (!minerId) {
+      return res.status(400).json({ error: 'Miner id is required' });
+    }
+
+    const result = await pool.query(
+      `UPDATE miners SET status = 'removed', updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1 AND user_id = $2 AND (status IS NULL OR status != 'removed')
+       RETURNING id`,
+      [minerId, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Miner not found' });
+    }
+
+    // Drop live WS connection if connected (force re-auth which will be rejected)
+    const wsServer = req.app.get('wsServer');
+    if (wsServer && wsServer.miners && wsServer.miners.get(minerId)) {
+      try {
+        const entry = wsServer.miners.get(minerId);
+        wsServer.miners.delete(minerId);
+        if (entry.ws) entry.ws.close();
+      } catch (e) {}
+    }
+
+    res.json({ success: true, message: 'Miner removed. Task/earning history is preserved.' });
 
   } catch (err) {
     console.error(err);
@@ -102,9 +192,10 @@ router.post('/token', authenticate, async (req, res) => {
 });
 
 // POST /api/miners/setup — register miner via install script (email + token + system info)
+// Multi-miner: same user can register unlimited miners (one row per machine_id).
 router.post('/setup', async (req, res) => {
   try {
-    const { email, miner_token, gpu_model, ram, cpu, models } = req.body;
+    const { email, miner_token, gpu_model, ram, cpu, models, machine_id, name } = req.body;
 
     if (!email || !miner_token) {
       return res.status(400).json({ error: 'Email and miner token are required' });
@@ -121,8 +212,35 @@ router.post('/setup', async (req, res) => {
     }
 
     const userId = userResult.rows[0].id;
+    const modelsJson = JSON.stringify(models || ['llama3.1:8b']);
 
-    // Check if miner already exists for this user
+    // Multi-miner path: machine_id identifies the machine (no cap on count)
+    if (machine_id) {
+      const existing = await pool.query(
+        'SELECT id FROM miners WHERE user_id = $1 AND machine_id = $2',
+        [userId, machine_id]
+      );
+      if (existing.rows.length > 0) {
+        // Same machine re-install: update + revive if it was removed
+        const result = await pool.query(
+          `UPDATE miners SET gpu_model = $1, ram = $2, cpu = $3, models = $4,
+                  name = COALESCE($5, name), status = 'online', updated_at = CURRENT_TIMESTAMP
+           WHERE user_id = $6 AND machine_id = $7 RETURNING *`,
+          [gpu_model, ram, cpu, modelsJson, name || null, userId, machine_id]
+        );
+        return res.json({ success: true, miner: result.rows[0] });
+      }
+
+      // New machine for this user: create additional miner row (unlimited)
+      const result = await pool.query(
+        `INSERT INTO miners (user_id, wallet_address, gpu_model, ram, cpu, models, machine_id, name, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'online') RETURNING *`,
+        [userId, '', gpu_model || '', ram || '', cpu || '', modelsJson, machine_id, name || null]
+      );
+      return res.status(201).json({ success: true, miner: result.rows[0] });
+    }
+
+    // Legacy path (no machine_id): single miner per user (backward compat)
     const minerExists = await pool.query('SELECT id FROM miners WHERE user_id = $1', [userId]);
     if (minerExists.rows.length > 0) {
       // Update existing miner

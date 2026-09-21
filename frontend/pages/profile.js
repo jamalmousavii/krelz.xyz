@@ -46,6 +46,11 @@ export default function Profile() {
   const [balance, setBalance] = useState(null);
   const [dailyTokens, setDailyTokens] = useState(null);
   const [miner, setMiner] = useState(null);
+  // Multi-miner list (v3.12.0+); `miner` kept for backward compat (first miner)
+  const [miners, setMiners] = useState([]);
+  const [editingMinerId, setEditingMinerId] = useState(null);
+  const [minerNameInput, setMinerNameInput] = useState('');
+  const [minerMsg, setMinerMsg] = useState('');
   const [wallet, setWallet] = useState(null);
   const [walletConnected, setWalletConnected] = useState(false);
   const [walletChoice, setWalletChoice] = useState(null);
@@ -121,7 +126,11 @@ export default function Profile() {
     try {
       const res = await fetch('/api/miners/mine', { headers: authHeaders() });
       const data = await res.json();
-      if (data.success) setMiner(data.miner);
+      if (data.success) {
+        const list = data.miners || (data.miner ? [data.miner] : []);
+        setMiners(list);
+        setMiner(list[0] || null);
+      }
     } catch (err) {}
   };
 
@@ -234,16 +243,58 @@ export default function Profile() {
     setWalletLoading(false);
   };
 
-  const switchModel = async (modelId) => {
+  const switchModel = async (modelId, minerId) => {
     try {
       const res = await fetch('/api/miners/mine/model', {
         method: 'PUT',
         headers: authHeaders(),
-        body: JSON.stringify({ model: modelId })
+        body: JSON.stringify({ model: modelId, miner_id: minerId || undefined })
       });
       const data = await res.json();
-      if (data.success) setMiner(prev => ({ ...prev, current_model: modelId }));
+      if (data.success) {
+        const updatedId = minerId || data.miner?.id;
+        setMiners(prev => prev.map(m => m.id === updatedId ? { ...m, current_model: modelId } : m));
+        setMiner(prev => (prev && (!minerId || prev.id === minerId)) ? { ...prev, current_model: modelId } : prev);
+      }
     } catch (err) {}
+  };
+
+  const renameMiner = async (minerId) => {
+    if (!minerNameInput.trim()) return;
+    try {
+      const res = await fetch(`/api/miners/mine/${minerId}`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({ name: minerNameInput.trim() })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMiners(prev => prev.map(m => m.id === minerId ? { ...m, name: minerNameInput.trim() } : m));
+        setEditingMinerId(null);
+        setMinerNameInput('');
+      } else {
+        setMinerMsg(`❌ ${data.error}`);
+      }
+    } catch (err) { setMinerMsg('❌ Rename failed'); }
+  };
+
+  const deleteMiner = async (minerId, minerName) => {
+    if (!window.confirm(t('profile.confirmRemoveMiner'))) return;
+    try {
+      const res = await fetch(`/api/miners/mine/${minerId}`, {
+        method: 'DELETE',
+        headers: authHeaders()
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMiners(prev => prev.filter(m => m.id !== minerId));
+        setMiner(prev => (prev && prev.id === minerId ? null : prev));
+        setMinerMsg(`✅ ${minerName || ''} ${t('profile.minerRemoved')}`);
+        fetchMiner();
+      } else {
+        setMinerMsg(`❌ ${data.error}`);
+      }
+    } catch (err) { setMinerMsg('❌ Remove failed'); }
   };
 
   const registerMiner = async () => {
@@ -598,44 +649,74 @@ export default function Profile() {
             </div>
           </div>
 
-          {/* Miner Settings */}
+          {/* Miner Settings — multi-miner list (v3.12.0+) */}
           <div>
-            <h3 className="text-sm font-medium text-gray-300 mb-2">⛏️ {t('profile.minerSettings')}</h3>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-300">⛏️ {t('profile.minerSettings')} {miners.length > 0 && <span className="text-gray-500">({miners.length})</span>}</h3>
+            </div>
+            {minerMsg && <p className="text-xs text-gray-300 mb-2">{minerMsg}</p>}
             <div className="bg-black/20 rounded-lg p-4">
-              {miner ? (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-400 text-sm">{t('profile.minerStatus')}</span>
-                    <span className={`text-sm font-medium ${miner.status === 'online' ? 'text-green-400' : 'text-red-400'}`}>
-                      {miner.status === 'online' ? `🟢 ${t('profile.online')}` : `🔴 ${t('profile.offline')}`}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.gpuModel')}</span><span className="text-white">{miner.gpu_model || 'N/A'}</span></div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.ram')}</span><span className="text-white">{miner.ram || 'N/A'}</span></div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.cpu')}</span><span className="text-white">{miner.cpu || 'N/A'}</span></div>
-
-                  {/* Resource Usage Bars */}
-                  {(miner.cpu_usage > 0 || miner.ram_usage > 0 || miner.gpu_usage > 0 || miner.disk_usage > 0) && (
-                    <div className="bg-black/30 rounded-lg p-3 space-y-2">
-                      <p className="text-gray-400 text-xs font-medium mb-2">📊 {t('profile.resourceUsage')}</p>
-                      <ResourceBar label="CPU" value={miner.cpu_usage} color="from-blue-500 to-cyan-500" />
-                      <ResourceBar label="RAM" value={miner.ram_usage} color="from-green-500 to-emerald-500" />
-                      {miner.gpu_usage > 0 && (
-                        <ResourceBar label="GPU" value={miner.gpu_usage} color="from-purple-500 to-pink-500" />
+              {miners.length > 0 ? (
+                <div className="space-y-4">
+                  {miners.map((m) => (
+                  <div key={m.id} className="bg-black/20 rounded-lg p-3 space-y-3 border border-white/5">
+                    <div className="flex items-center justify-between">
+                      {editingMinerId === m.id ? (
+                        <div className="flex items-center gap-2 flex-1">
+                          <input type="text" value={minerNameInput} onChange={(e) => setMinerNameInput(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') renameMiner(m.id); if (e.key === 'Escape') setEditingMinerId(null); }}
+                            placeholder={t('profile.minerNamePlaceholder')}
+                            className="flex-1 bg-white/10 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
+                          <button onClick={() => renameMiner(m.id)} className="text-green-400 hover:text-green-300 text-sm">✓</button>
+                          <button onClick={() => setEditingMinerId(null)} className="text-gray-400 hover:text-white text-sm">✕</button>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="text-white text-sm font-medium truncate">{m.name || `${t('profile.miner')} #${m.id}`}</span>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <button onClick={() => { setEditingMinerId(m.id); setMinerNameInput(m.name || ''); }}
+                              className="text-gray-400 hover:text-white text-xs" title={t('profile.rename')}>✏️</button>
+                            <button onClick={() => deleteMiner(m.id, m.name)}
+                              className="text-red-400 hover:text-red-300 text-xs" title={t('profile.remove')}>🗑️</button>
+                          </div>
+                        </>
                       )}
-                      <ResourceBar label="Disk" value={miner.disk_usage} color="from-yellow-500 to-orange-500" />
                     </div>
-                  )}
-                  <div className="flex justify-between text-sm items-center">
-                    <span className="text-gray-400">{t('profile.currentModel')}</span>
-                    <select value={miner.current_model || 'llama3.1:8b'} onChange={(e) => switchModel(e.target.value)}
-                      className="bg-white/10 text-white text-sm px-2 py-1 rounded border border-white/20 focus:outline-none focus:ring-1 focus:ring-purple-500">
-                      {MODELS_LIST.map(m => (<option key={m.id} value={m.id} className="bg-gray-800">{CATEGORY_ICONS[m.category]} {m.name}</option>))}
-                    </select>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400 text-sm">{t('profile.minerStatus')}</span>
+                      <span className={`text-sm font-medium ${m.status === 'online' ? 'text-green-400' : 'text-red-400'}`}>
+                        {m.status === 'online' ? `🟢 ${t('profile.online')}` : `🔴 ${t('profile.offline')}`}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.gpuModel')}</span><span className="text-white">{m.gpu_model || 'N/A'}</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.ram')}</span><span className="text-white">{m.ram || 'N/A'}</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.cpu')}</span><span className="text-white">{m.cpu || 'N/A'}</span></div>
+
+                    {/* Resource Usage Bars */}
+                    {(m.cpu_usage > 0 || m.ram_usage > 0 || m.gpu_usage > 0 || m.disk_usage > 0) && (
+                      <div className="bg-black/30 rounded-lg p-3 space-y-2">
+                        <p className="text-gray-400 text-xs font-medium mb-2">📊 {t('profile.resourceUsage')}</p>
+                        <ResourceBar label="CPU" value={m.cpu_usage} color="from-blue-500 to-cyan-500" />
+                        <ResourceBar label="RAM" value={m.ram_usage} color="from-green-500 to-emerald-500" />
+                        {m.gpu_usage > 0 && (
+                          <ResourceBar label="GPU" value={m.gpu_usage} color="from-purple-500 to-pink-500" />
+                        )}
+                        <ResourceBar label="Disk" value={m.disk_usage} color="from-yellow-500 to-orange-500" />
+                      </div>
+                    )}
+                    <div className="flex justify-between text-sm items-center">
+                      <span className="text-gray-400">{t('profile.currentModel')}</span>
+                      <select value={m.current_model || 'llama3.1:8b'} onChange={(e) => switchModel(e.target.value, m.id)}
+                        className="bg-white/10 text-white text-sm px-2 py-1 rounded border border-white/20 focus:outline-none focus:ring-1 focus:ring-purple-500">
+                        {MODELS_LIST.map(md => (<option key={md.id} value={md.id} className="bg-gray-800">{CATEGORY_ICONS[md.category]} {md.name}</option>))}
+                      </select>
+                    </div>
+                    <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.uptime')}</span><span className="text-white">{parseFloat(m.uptime || 0).toFixed(1)}%</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.totalTasks')}</span><span className="text-white">{m.total_tasks || 0}</span></div>
+                    <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.earnings')}</span><span className="text-green-400 font-medium">{parseFloat(m.earnings || 0).toFixed(4)}</span></div>
                   </div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.uptime')}</span><span className="text-white">{parseFloat(miner.uptime || 0).toFixed(1)}%</span></div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.totalTasks')}</span><span className="text-white">{miner.total_tasks || 0}</span></div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.earnings')}</span><span className="text-green-400 font-medium">{parseFloat(miner.earnings || 0).toFixed(4)}</span></div>
+                  ))}
+                  <p className="text-gray-500 text-xs">{t('profile.addMinerDesc')}</p>
                 </div>
               ) : (
                 <div className="space-y-3">

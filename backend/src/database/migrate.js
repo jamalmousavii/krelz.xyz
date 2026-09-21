@@ -327,6 +327,35 @@ const migrate = async () => {
     `);
     console.log('✅ Resource usage columns added');
 
+    // === Multi-Miner Support (v3.12.0): machine_id + name ===
+    // Allows unlimited miners per user (one row per machine).
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE miners ADD COLUMN IF NOT EXISTS machine_id VARCHAR(64);
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE miners ADD COLUMN IF NOT EXISTS name VARCHAR(100);
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    // Backfill existing miners (no machine_id yet) with a stable generated id
+    await client.query(`
+      UPDATE miners
+      SET machine_id = 'm_' || md5(random()::text || id::text)
+      WHERE machine_id IS NULL
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_miners_user_machine ON miners(user_id, machine_id);
+      EXCEPTION WHEN duplicate_table THEN null;
+      END $$;
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_miners_machine ON miners(machine_id)');
+    console.log('✅ Multi-miner columns added (machine_id, name)');
+
     await client.query('COMMIT');
     console.log('\n✅ تمام جداول ایجاد شد');
     

@@ -30,6 +30,7 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Install Self-Cleanup** — Install scripts auto-delete after successful installation
 - **Daily Free Tokens in Chat** — Shows remaining free tokens next to chat input
 - **Miner Earnings** — 90% of paid usage goes to miners
+- **Multi-Miner Accounts** — unlimited miners per user (one row per machine), add/remove/rename from profile, no cap
 - **Internationalization** — English (default) + Farsi with RTL support
 
 ## Quick Install (Miner)
@@ -51,6 +52,12 @@ The install script automatically sets up:
 - Ollama
 - Selected AI models (11 available)
 - Krelz Miner (CLI mode, systemd service)
+
+### Add another miner (same account, unlimited)
+Use the **same email + miner token** (from profile page) on the new machine.
+Give it a different **Miner Name** when asked — each machine gets its own
+`machine_id` row, dashboard card, model setting and earnings. Remove any miner
+anytime from profile (history is preserved, soft delete).
 
 ### Uninstall
 
@@ -96,7 +103,7 @@ Every user gets **1,000 free AI inference tokens per day**:
 krelz.xyz/
 ├── backend/                    # API Server (Node.js/Express)
 │   ├── src/
-│   │   ├── server.js          # Entry point (v3.11.0)
+│   │   ├── server.js          # Entry point (v3.12.0)
 │   │   ├── models.js          # AI models + pricing
 │   │   ├── database/
 │   │   │   ├── pool.js        # PostgreSQL connection
@@ -137,7 +144,7 @@ krelz.xyz/
 | Table | Purpose |
 |-------|---------|
 | users | User accounts |
-| miners | GPU miner registrations |
+| miners | GPU miner registrations (multi-miner: `machine_id` + `name` per machine) |
 | tasks | Chat task history |
 | transactions | Token transactions |
 | staking | Staking records |

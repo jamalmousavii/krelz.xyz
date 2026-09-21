@@ -79,13 +79,15 @@ echo -e "${GREEN}  Krelz Network Miner Installer (RedHat/Fedora)${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
-# Parse --email and --token flags
+# Parse --email, --token and --name flags
 USER_EMAIL=""
 MINER_TOKEN=""
+MINER_NAME=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --email) USER_EMAIL="$2"; shift 2 ;;
     --token) MINER_TOKEN="$2"; shift 2 ;;
+    --name) MINER_NAME="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
@@ -307,6 +309,29 @@ if [ -z "$MINER_TOKEN" ]; then
   read -p "  Miner Token: " MINER_TOKEN
 fi
 
+# --- Miner name (shown in dashboard, multi-miner support) ---
+if [ -z "$MINER_NAME" ]; then
+  DEFAULT_NAME=$(hostname 2>/dev/null || echo "miner")
+  read -p "  Miner Name [${DEFAULT_NAME}]: " MINER_NAME
+  MINER_NAME=${MINER_NAME:-$DEFAULT_NAME}
+fi
+
+# --- Machine ID (stable per machine, identifies this miner for your account) ---
+# Reuse from previous install if present, else generate once
+INSTALL_DIR="$HOME/krelz-miner"
+if [ -f "$INSTALL_DIR/miner-app/config.json" ]; then
+  EXISTING_ID=$(grep -o '"machine_id"[[:space:]]*:[[:space:]]*"[^"]*"' "$INSTALL_DIR/miner-app/config.json" 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+  [ -n "$EXISTING_ID" ] && [ "$EXISTING_ID" != "machine_id" ] && MACHINE_ID="$EXISTING_ID"
+fi
+if [ -z "$MACHINE_ID" ]; then
+  if [ -f /proc/sys/kernel/random/uuid ]; then
+    MACHINE_ID="m_$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
+  else
+    MACHINE_ID="m_$(date +%s)_$RANDOM"
+  fi
+fi
+echo -e "  ${GREEN}✓ Machine ID: ${MACHINE_ID}${NC}"
+
 # --- Step 6: Detect System ---
 step_start 6 "Detecting system info..."
 STEP_START=$(date +%s)
@@ -341,6 +366,8 @@ SETUP_RESPONSE=$(curl -s -X POST https://krelz.xyz/api/miners/setup \
   -d "{
     \"email\": \"${USER_EMAIL}\",
     \"miner_token\": \"${MINER_TOKEN}\",
+    \"machine_id\": \"${MACHINE_ID}\",
+    \"name\": \"${MINER_NAME}\",
     \"gpu_model\": \"${GPU_MODEL}\",
     \"ram\": \"${RAM_SIZE}\",
     \"cpu\": \"${CPU_MODEL}\",
@@ -363,7 +390,9 @@ cat > "$INSTALL_DIR/miner-app/config.json" << EOF
 {
   "models": "$(echo $SELECTED_MODELS | tr ' ' ',')",
   "default_model": "$(echo $SELECTED_MODELS | awk '{print $1}')",
-  "miner_token": "${MINER_TOKEN}"
+  "miner_token": "${MINER_TOKEN}",
+  "machine_id": "${MACHINE_ID}",
+  "name": "${MINER_NAME}"
 }
 EOF
 echo -e "  ${GREEN}✓ Configuration saved${NC}"

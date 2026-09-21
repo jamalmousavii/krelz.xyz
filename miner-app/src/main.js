@@ -14,7 +14,7 @@ let apiService;
 let wsClient;
 
 // Read config
-let config = { models: 'llama3.1:8b', default_model: 'llama3.1:8b', miner_token: '' };
+let config = { models: 'llama3.1:8b', default_model: 'llama3.1:8b', miner_token: '', machine_id: '', name: '' };
 const configPath = path.join(__dirname, '../config.json');
 if (fs.existsSync(configPath)) {
   try {
@@ -87,7 +87,8 @@ app.whenReady().then(() => {
       ollamaService.setModel(model);
       const result = await ollamaService.generate(prompt, model);
       return result;
-    }
+    },
+    { machineId: config.machine_id || null, minerName: config.name || null }
   );
 
   createWindow();

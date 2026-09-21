@@ -360,6 +360,41 @@ Service auto-starts on boot via `systemctl enable`.
 
 Miner token format: `kz_` + 32 hex bytes (67 chars)
 
+## Multi-Miner Accounts (v3.12.0)
+
+One user can run **unlimited miners** (one row per machine), add/remove/rename
+from profile. No cap.
+
+### Identity
+- `machine_id` (e.g. `m_<uuid-hex>`) — stable per machine, generated on first
+  install, persisted in `miner-app/config.json`, reused on reinstall.
+  Dedup key together with `user_id` (`UNIQUE(user_id, machine_id)`).
+- `name` (default: hostname) — display name, editable in profile.
+- Old miners without `machine_id` keep working via the legacy single-miner path.
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/miners/setup | Upsert by `(user_id, machine_id)`; accepts `machine_id`, `name` |
+| GET | /api/miners/mine | Array `miners` (+ legacy `miner` = first, backward compat) |
+| PUT | /api/miners/mine/model | Switch model; body `{ model, miner_id? }` |
+| PUT | /api/miners/mine/:id | Rename (own miners only) |
+| DELETE | /api/miners/mine/:id | Soft delete → `status='removed'` (history preserved) |
+
+### Lifecycle rules
+- Removed miners are excluded from dispatch (only `status='online'` gets tasks).
+- WS auth rejects `removed` rows (`auth_error`); reinstalling the same machine
+  via `/setup` revives it (sets back to `online`).
+- In-memory WS registry and heartbeat/cleanup are already keyed by `miner.id`,
+  so no changes were needed there.
+
+### Miner app changes
+- `websocket.js`: constructor takes `{ machineId, minerName }`, sent in `auth`.
+- `cli.js` / `main.js`: read `machine_id`/`name` from `config.json`.
+- Install scripts: prompt for name (`--name` flag supported), reuse persisted
+  `machine_id` across reinstalls, send both in `/setup` POST.
+
 ## Uninstall (v3.9.0)
 
 Interactive menu:

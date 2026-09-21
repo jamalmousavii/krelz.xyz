@@ -5,7 +5,7 @@ const MinerService = require('./services/miner');
 const MinerWebSocket = require('./services/websocket');
 
 const configPath = path.join(__dirname, '../config.json');
-let config = { models: 'llama3.1:8b', default_model: 'llama3.1:8b', miner_token: '' };
+let config = { models: 'llama3.1:8b', default_model: 'llama3.1:8b', miner_token: '', machine_id: '', name: '' };
 if (fs.existsSync(configPath)) {
   try {
     config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
@@ -32,7 +32,8 @@ const ws = new MinerWebSocket(
     ollama.setModel(model);
     const result = await ollama.generate(prompt, model);
     return result;
-  }
+  },
+  { machineId: config.machine_id || null, minerName: config.name || null }
 );
 
 async function start() {
