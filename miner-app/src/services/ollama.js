@@ -44,15 +44,39 @@ class OllamaService {
   }
 
   async start() {
-    return new Promise((resolve, reject) => {
-      exec('ollama serve &', (error) => {
-        if (error) {
-          console.log('Ollama may already be running');
-        }
+    // If Ollama already responds, nothing to do.
+    try {
+      await axios.get(`${this.url}/api/tags`, { timeout: 3000 });
+      this.isRunning = true;
+      console.log('Ollama already running');
+      return;
+    } catch (e) {
+      // Not running — start it below.
+    }
+
+    // NOTE: never use exec('ollama serve &') — the backgrounded child
+    // inherits the stdio pipes so exec's callback never fires and the
+    // miner hangs forever at "Starting Ollama...". Spawn detached with
+    // ignored stdio instead, then poll for readiness.
+    const { spawn } = require('child_process');
+    try {
+      const child = spawn('ollama', ['serve'], { detached: true, stdio: 'ignore' });
+      child.unref();
+    } catch (err) {
+      throw new Error('Failed to start Ollama: ' + err.message);
+    }
+
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      try {
+        await axios.get(`${this.url}/api/tags`, { timeout: 2000 });
         this.isRunning = true;
-        resolve();
-      });
-    });
+        return;
+      } catch (e) {
+        // Still starting — keep polling.
+      }
+    }
+    throw new Error('Ollama failed to start (timeout waiting for :11434)');
   }
 
   async stop() {
