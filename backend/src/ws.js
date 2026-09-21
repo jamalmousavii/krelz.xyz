@@ -243,7 +243,9 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
   }
 
   // Dispatch task to a specific miner
-  async dispatchTask(minerId, taskId, prompt, model, timeoutMs = 60000) {
+  // NOTE: CPU-only miners need ~2-3 min for an 8B model (model load + inference),
+  // so the timeout must stay well above the 60s it used to be.
+  async dispatchTask(minerId, taskId, prompt, model, timeoutMs = 180000) {
     return new Promise((resolve, reject) => {
       const miner = this.miners.get(minerId);
       if (!miner) {
