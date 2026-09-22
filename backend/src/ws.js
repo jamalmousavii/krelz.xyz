@@ -145,6 +145,21 @@ class WSServer {
       minerId = result.rows[0].id;
     }
 
+    // If this miner already has a live entry (stale/zombie connection),
+    // close the old socket first so the map always points at the newest
+    // connection. Otherwise dispatches and heartbeats split across two
+    // sockets and the live miner gets "Not authenticated".
+    const existing = this.miners.get(minerId);
+    if (existing && existing.ws && existing.ws !== ws) {
+      try {
+        if (existing.ws.readyState === 1) {
+          existing.ws.send(JSON.stringify({ type: 'error', message: 'Replaced by newer connection' }));
+          existing.ws.close();
+        }
+      } catch (e) {}
+      console.log(`Miner ${minerId} previous connection replaced`);
+    }
+
     this.miners.set(minerId, {
       id: minerId,
       ws,

@@ -6,6 +6,7 @@ class MinerWebSocket {
     this.onTask = onTask;
     this.machineId = opts.machineId || process.env.MINER_MACHINE_ID || null;
     this.minerName = opts.minerName || process.env.MINER_NAME || null;
+    this.lastReauthAt = 0;
     this.ws = null;
     this.minerId = null;
     this.connected = false;
@@ -85,6 +86,20 @@ class MinerWebSocket {
 
       case 'error':
         console.error('Server error:', msg.message);
+        // Backend forgot this connection (e.g. server restart or entry
+        // replaced): re-authenticate so heartbeats/tasks flow again.
+        // Guarded to avoid an auth loop (max once per 10s, only if we
+        // had a valid session before).
+        if (
+          msg.message === 'Not authenticated' &&
+          this.minerId &&
+          this.ws && this.ws.readyState === WebSocket.OPEN &&
+          Date.now() - this.lastReauthAt > 10000
+        ) {
+          this.lastReauthAt = Date.now();
+          console.log('🔄 Re-authenticating...');
+          this.authenticate();
+        }
         break;
     }
   }
