@@ -30,7 +30,7 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Install Self-Cleanup** — Install scripts auto-delete after successful installation
 - **Daily Free Tokens in Chat** — Shows remaining free tokens next to chat input
 - **Miner Earnings** — 90% of paid usage goes to miners
-- **Multi-Miner Accounts** — unlimited miners per user (one row per machine), add/remove/rename from profile, no cap
+- **Multi-Miner Accounts** — unlimited miners per user, each with its own unique token; add/remove/rename from profile, no cap
 - **Internationalization** — English (default) + Farsi with RTL support
 
 ## Quick Install (Miner)
@@ -54,10 +54,14 @@ The install script automatically sets up:
 - Krelz Miner (CLI mode, systemd service)
 
 ### Add another miner (same account, unlimited)
-Use the **same email + miner token** (from profile page) on the new machine.
-Give it a different **Miner Name** when asked — each machine gets its own
-`machine_id` row, dashboard card, model setting and earnings. Remove any miner
-anytime from profile (history is preserved, soft delete).
+Each server-miner gets its **own unique token** (the token IS the miner identity).
+1. Profile → Miner Settings → **+ Add Miner** (optional name) → copy its token
+2. On the new machine, install with **that token**:
+```bash
+wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-ubuntu.sh && bash install-ubuntu.sh --token kz_... --name my-second-miner
+```
+3. The new miner appears as its own card (status, model, earnings). Remove any
+miner anytime from profile (history is preserved, soft delete).
 
 ### Uninstall
 
@@ -144,7 +148,7 @@ krelz.xyz/
 | Table | Purpose |
 |-------|---------|
 | users | User accounts |
-| miners | GPU miner registrations (multi-miner: `machine_id` + `name` per machine) |
+| miners | GPU miner registrations (multi-miner: unique `miner_token` per row) |
 | tasks | Chat task history |
 | transactions | Token transactions |
 | staking | Staking records |

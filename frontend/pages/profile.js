@@ -75,10 +75,15 @@ export default function Profile() {
   const [regLoading, setRegLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Miner token
+  // Miner token (legacy account token)
   const [minerToken, setMinerToken] = useState('');
   const [minerTokenLoading, setMinerTokenLoading] = useState(false);
   const [minerTokenCopied, setMinerTokenCopied] = useState(false);
+  // Multi-miner (v3.13.0+): add miner + per-card token copy
+  const [newMinerName, setNewMinerName] = useState('');
+  const [newMinerToken, setNewMinerToken] = useState('');
+  const [newMinerLoading, setNewMinerLoading] = useState(false);
+  const [copiedMinerId, setCopiedMinerId] = useState(null);
 
   // Password
   const [hasPassword, setHasPassword] = useState(false);
@@ -336,6 +341,33 @@ export default function Profile() {
     navigator.clipboard.writeText(minerToken);
     setMinerTokenCopied(true);
     setTimeout(() => setMinerTokenCopied(false), 2000);
+  };
+
+  const copyText = (text, minerId) => {
+    navigator.clipboard.writeText(text);
+    setCopiedMinerId(minerId);
+    setTimeout(() => setCopiedMinerId(null), 2000);
+  };
+
+  // Multi-miner (v3.13.0+): create a new miner with its own unique token
+  const createMiner = async () => {
+    setNewMinerLoading(true);
+    try {
+      const res = await fetch('/api/miners', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ name: newMinerName.trim() || undefined })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setNewMinerToken(data.miner.miner_token);
+        setNewMinerName('');
+        fetchMiner();
+      } else {
+        setMinerMsg(`❌ ${data.error}`);
+      }
+    } catch (err) { setMinerMsg('❌ Create failed'); }
+    setNewMinerLoading(false);
   };
 
   // Password functions
@@ -714,9 +746,43 @@ export default function Profile() {
                     <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.uptime')}</span><span className="text-white">{parseFloat(m.uptime || 0).toFixed(1)}%</span></div>
                     <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.totalTasks')}</span><span className="text-white">{m.total_tasks || 0}</span></div>
                     <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.earnings')}</span><span className="text-green-400 font-medium">{parseFloat(m.earnings || 0).toFixed(4)}</span></div>
+                    {m.miner_token && (
+                      <div className="flex items-center gap-2 pt-1">
+                        <code className="flex-1 text-green-400 text-xs break-all bg-black/30 px-2 py-1 rounded">{m.miner_token}</code>
+                        <button onClick={() => copyText(m.miner_token, m.id)}
+                          className={`px-3 py-1 rounded text-xs font-bold transition ${copiedMinerId === m.id ? 'bg-green-600 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
+                          {copiedMinerId === m.id ? '✓' : '📋'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                   ))}
-                  <p className="text-gray-500 text-xs">{t('profile.addMinerDesc')}</p>
+                  {/* Add miner (v3.13.0+): each server gets its own unique token */}
+                  <div className="bg-black/20 rounded-lg p-3 space-y-2 border border-white/5">
+                    <p className="text-white text-sm font-medium">➕ {t('profile.addMiner')}</p>
+                    <p className="text-gray-500 text-xs">{t('profile.addMinerDesc')}</p>
+                    <div className="flex gap-2">
+                      <input type="text" value={newMinerName} onChange={(e) => setNewMinerName(e.target.value)}
+                        placeholder={t('profile.minerNamePlaceholder')}
+                        className="flex-1 bg-white/10 text-white placeholder-gray-500 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
+                      <button onClick={createMiner} disabled={newMinerLoading}
+                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition text-sm font-bold disabled:opacity-50">
+                        {newMinerLoading ? '...' : `+ ${t('profile.create')}`}
+                      </button>
+                    </div>
+                    {newMinerToken && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <code className="flex-1 text-green-400 text-xs break-all bg-black/30 px-2 py-1 rounded">{newMinerToken}</code>
+                          <button onClick={() => copyText(newMinerToken, 'new')}
+                            className={`px-3 py-1 rounded text-xs font-bold transition ${copiedMinerId === 'new' ? 'bg-green-600 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
+                            {copiedMinerId === 'new' ? '✓' : '📋'}
+                          </button>
+                        </div>
+                        <code className="block text-gray-300 text-xs break-all bg-black/30 px-2 py-1 rounded">wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-ubuntu.sh && bash install-ubuntu.sh --token {newMinerToken}</code>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-3">

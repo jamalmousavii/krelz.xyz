@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.13.0] - 2026-09-22
+
+### Added
+- Per-miner unique tokens: each server-miner gets its own token (unlimited per user)
+- `POST /api/miners` — create miner + token from profile (Add Miner button)
+- Per-card token display + copy in profile dashboard
+- `miner_token` column on miners table (migration with backfill + unique index)
+
+### Changed
+- `/setup` and WS `auth` bind directly by per-miner token (token IS identity)
+- Legacy account token works only with exactly 1 active miner, else 409 with guidance
+- Removed miners rejected at WS auth in all paths; legacy paths never revive removed rows
+- Version bumped to 3.13.0
+
+### Fixed
+- Second machine no longer overwrites the first miner; connection fights between same-identity clients resolved (newest-wins + miner self re-auth)
+
 ## [3.12.0] - 2026-09-21
 
 ### Added

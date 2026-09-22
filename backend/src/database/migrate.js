@@ -356,6 +356,28 @@ const migrate = async () => {
     await client.query('CREATE INDEX IF NOT EXISTS idx_miners_machine ON miners(machine_id)');
     console.log('✅ Multi-miner columns added (machine_id, name)');
 
+    // === Per-Miner Unique Tokens (v3.13.0): one token per miner row ===
+    // Each server-miner gets its own token; token IS the miner identity.
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE miners ADD COLUMN IF NOT EXISTS miner_token VARCHAR(128);
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    // Backfill existing rows (no extension needed: md5 yields 32 hex chars)
+    await client.query(`
+      UPDATE miners
+      SET miner_token = 'kz_' || md5(random()::text || id::text || clock_timestamp()::text)
+      WHERE miner_token IS NULL
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_miners_token ON miners(miner_token);
+      EXCEPTION WHEN duplicate_table THEN null;
+      END $$;
+    `);
+    console.log('✅ Per-miner token column added (miner_token)');
+
     await client.query('COMMIT');
     console.log('\n✅ تمام جداول ایجاد شد');
     

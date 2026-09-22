@@ -87,8 +87,7 @@ app.whenReady().then(() => {
       ollamaService.setModel(model);
       const result = await ollamaService.generate(prompt, model);
       return result;
-    },
-    { machineId: config.machine_id || null, minerName: config.name || null }
+    }
   );
 
   createWindow();

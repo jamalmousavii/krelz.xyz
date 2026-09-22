@@ -25,6 +25,33 @@ router.get('/', async (req, res) => {
   }
 });
 
+// POST /api/miners — create a new miner for the current user (v3.13.0+).
+// Each server-miner gets its own unique token (unlimited per user, no cap).
+router.post('/', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { name } = req.body;
+
+    if (name && (typeof name !== 'string' || name.trim().length > 100)) {
+      return res.status(400).json({ error: 'Valid name required (max 100 chars)' });
+    }
+
+    const minerToken = 'kz_' + crypto.randomBytes(32).toString('hex');
+
+    const result = await pool.query(
+      `INSERT INTO miners (user_id, wallet_address, name, miner_token, status)
+       VALUES ($1, '', $2, $3, 'offline') RETURNING *`,
+      [userId, (name || '').trim() || null, minerToken]
+    );
+
+    res.status(201).json({ success: true, miner: result.rows[0] });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // GET /api/miners/mine — get current user's miners (all, incl. offline)
 router.get('/mine', authenticate, async (req, res) => {
   try {
@@ -34,7 +61,7 @@ router.get('/mine', authenticate, async (req, res) => {
       `SELECT id, wallet_address, gpu_model, ram, cpu, models, current_model,
               status, uptime, total_tasks, earnings, created_at,
               gpu_usage, ram_usage, cpu_usage, disk_usage,
-              machine_id, name
+              machine_id, name, miner_token
        FROM miners WHERE user_id = $1 AND (status IS NULL OR status != 'removed')
        ORDER BY created_at ASC`,
       [userId]
@@ -191,79 +218,65 @@ router.post('/token', authenticate, async (req, res) => {
   }
 });
 
-// POST /api/miners/setup — register miner via install script (email + token + system info)
-// Multi-miner: same user can register unlimited miners (one row per machine_id).
+// POST /api/miners/setup — register miner via install script (v3.13.0+).
+// Token-first model: each server-miner has its own unique token, and the
+// token IS the miner identity. Unlimited miners per user, no cap.
 router.post('/setup', async (req, res) => {
   try {
     const { email, miner_token, gpu_model, ram, cpu, models, machine_id, name } = req.body;
 
-    if (!email || !miner_token) {
-      return res.status(400).json({ error: 'Email and miner token are required' });
+    if (!miner_token) {
+      return res.status(400).json({ error: 'Miner token is required' });
     }
 
-    // Verify user by email + miner_token
-    const userResult = await pool.query(
-      'SELECT id FROM users WHERE email = $1 AND miner_token = $2',
-      [email, miner_token]
-    );
-
-    if (userResult.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid email or miner token' });
-    }
-
-    const userId = userResult.rows[0].id;
     const modelsJson = JSON.stringify(models || ['llama3.1:8b']);
 
-    // Multi-miner path: machine_id identifies the machine (no cap on count)
-    if (machine_id) {
-      const existing = await pool.query(
-        'SELECT id FROM miners WHERE user_id = $1 AND machine_id = $2',
-        [userId, machine_id]
-      );
-      if (existing.rows.length > 0) {
-        // Same machine re-install: update + revive if it was removed
-        const result = await pool.query(
-          `UPDATE miners SET gpu_model = $1, ram = $2, cpu = $3, models = $4,
-                  name = COALESCE($5, name), status = 'online', updated_at = CURRENT_TIMESTAMP
-           WHERE user_id = $6 AND machine_id = $7 RETURNING *`,
-          [gpu_model, ram, cpu, modelsJson, name || null, userId, machine_id]
-        );
-        return res.json({ success: true, miner: result.rows[0] });
-      }
-
-      // New machine for this user: create additional miner row (unlimited)
-      const result = await pool.query(
-        `INSERT INTO miners (user_id, wallet_address, gpu_model, ram, cpu, models, machine_id, name, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'online') RETURNING *`,
-        [userId, '', gpu_model || '', ram || '', cpu || '', modelsJson, machine_id, name || null]
-      );
-      return res.status(201).json({ success: true, miner: result.rows[0] });
-    }
-
-    // Legacy path (no machine_id): oldest active miner (backward compat).
-    // Never touches removed rows (prevents accidental revive).
-    const minerExists = await pool.query(
-      `SELECT id FROM miners WHERE user_id = $1 AND (status IS NULL OR status != 'removed')
-       ORDER BY id ASC LIMIT 1`,
-      [userId]
+    // 1) Per-miner token: binds directly to its row (revives if removed).
+    const minerResult = await pool.query(
+      'SELECT id, user_id, status FROM miners WHERE miner_token = $1',
+      [miner_token]
     );
-    if (minerExists.rows.length > 0) {
-      // Update existing miner
+    if (minerResult.rows.length > 0) {
+      const minerId = minerResult.rows[0].id;
       const result = await pool.query(
-        `UPDATE miners SET gpu_model = $1, ram = $2, cpu = $3, models = $4, status = 'online', updated_at = CURRENT_TIMESTAMP
-         WHERE id = $5 RETURNING *`,
-        [gpu_model, ram, cpu, JSON.stringify(models || ['llama3.1:8b']), minerExists.rows[0].id]
+        `UPDATE miners SET gpu_model = $1, ram = $2, cpu = $3, models = $4,
+                machine_id = COALESCE($5, machine_id), name = COALESCE($6, name),
+                status = 'online', updated_at = CURRENT_TIMESTAMP
+         WHERE id = $7 RETURNING *`,
+        [gpu_model, ram, cpu, modelsJson, machine_id || null, (name || '').trim() || null, minerId]
       );
       return res.json({ success: true, miner: result.rows[0] });
     }
 
-    // Create new miner
-    const result = await pool.query(
-      'INSERT INTO miners (user_id, wallet_address, gpu_model, ram, cpu, models, status) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-      [userId, '', gpu_model || '', ram || '', cpu || '', JSON.stringify(models || ['llama3.1:8b']), 'online']
-    );
+    // 2) Legacy account token (users.miner_token): only unambiguous when the
+    // user has exactly 1 active miner; otherwise require the per-miner token.
+    if (email) {
+      const userResult = await pool.query(
+        'SELECT id FROM users WHERE email = $1 AND miner_token = $2',
+        [email, miner_token]
+      );
+      if (userResult.rows.length > 0) {
+        const userId = userResult.rows[0].id;
+        const owned = await pool.query(
+          `SELECT id FROM miners WHERE user_id = $1 AND (status IS NULL OR status != 'removed')
+           ORDER BY id ASC`,
+          [userId]
+        );
+        if (owned.rows.length === 1) {
+          const result = await pool.query(
+            `UPDATE miners SET gpu_model = $1, ram = $2, cpu = $3, models = $4, status = 'online', updated_at = CURRENT_TIMESTAMP
+             WHERE id = $5 RETURNING *`,
+            [gpu_model, ram, cpu, modelsJson, owned.rows[0].id]
+          );
+          return res.json({ success: true, miner: result.rows[0] });
+        }
+        if (owned.rows.length > 1) {
+          return res.status(409).json({ error: 'Multiple miners found. Use the per-miner token from your profile for this machine.' });
+        }
+      }
+    }
 
-    res.status(201).json({ success: true, miner: result.rows[0] });
+    return res.status(401).json({ error: 'Invalid miner token' });
 
   } catch (err) {
     console.error(err);

@@ -32,8 +32,7 @@ const ws = new MinerWebSocket(
     ollama.setModel(model);
     const result = await ollama.generate(prompt, model);
     return result;
-  },
-  { machineId: config.machine_id || null, minerName: config.name || null }
+  }
 );
 
 async function start() {

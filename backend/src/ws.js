@@ -1,4 +1,5 @@
 const { WebSocketServer } = require('ws');
+const crypto = require('crypto');
 const pool = require('./database/pool');
 
 class WSServer {
@@ -68,7 +69,7 @@ class WSServer {
   }
 
   async handleAuth(ws, msg) {
-    const { wallet_address, miner_token, machine_id, name } = msg;
+    const { wallet_address, miner_token } = msg;
 
     // Must have either wallet_address or miner_token
     if (!wallet_address && !miner_token) {
@@ -80,55 +81,48 @@ class WSServer {
     let minerId;
 
     // If miner_token provided, find user's miner via token
+    // v3.13.0 token-first model: each server-miner has its own unique token,
+    // and the token IS the miner identity (unlimited miners per user).
     if (miner_token) {
-      const userResult = await pool.query('SELECT id FROM users WHERE miner_token = $1', [miner_token]);
-      if (userResult.rows.length === 0) {
-        ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid miner token' }));
-        return;
-      }
-      const userId = userResult.rows[0].id;
-
-      if (machine_id) {
-        // Multi-miner path: one row per (user_id, machine_id)
-        result = await pool.query(
-          'SELECT id, status FROM miners WHERE user_id = $1 AND machine_id = $2',
-          [userId, machine_id]
-        );
-        if (result.rows.length === 0) {
-          result = await pool.query(
-            "INSERT INTO miners (user_id, wallet_address, machine_id, name, status) VALUES ($1, $2, $3, $4, 'online') RETURNING id",
-            [userId, wallet_address || '', machine_id, name || null]
-          );
-        } else {
-          if (result.rows[0].status === 'removed') {
-            ws.send(JSON.stringify({ type: 'auth_error', message: 'This miner was removed. Re-add it from your profile to use it again.' }));
-            return;
-          }
-          await pool.query("UPDATE miners SET status = 'online', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [result.rows[0].id]);
+      const minerRow = await pool.query(
+        'SELECT id, status FROM miners WHERE miner_token = $1',
+        [miner_token]
+      );
+      if (minerRow.rows.length > 0) {
+        if (minerRow.rows[0].status === 'removed') {
+          ws.send(JSON.stringify({ type: 'auth_error', message: 'This miner was removed. Re-add it from your profile to use it again.' }));
+          return;
         }
-        minerId = result.rows[0].id;
+        minerId = minerRow.rows[0].id;
+        await pool.query("UPDATE miners SET status = 'online', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [minerId]);
       } else {
-        // Legacy token path (no machine_id): oldest active miner (backward compat).
-        // Never touches removed rows (prevents accidental revive).
-        result = await pool.query(
-          `SELECT id, status FROM miners WHERE user_id = $1 AND (status IS NULL OR status != 'removed')
-           ORDER BY id ASC LIMIT 1`,
+        // Legacy account token (users.miner_token): unambiguous only when the
+        // user has exactly 1 active miner.
+        const userResult = await pool.query('SELECT id FROM users WHERE miner_token = $1', [miner_token]);
+        if (userResult.rows.length === 0) {
+          ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid miner token' }));
+          return;
+        }
+        const userId = userResult.rows[0].id;
+        const owned = await pool.query(
+          `SELECT id FROM miners WHERE user_id = $1 AND (status IS NULL OR status != 'removed')
+           ORDER BY id ASC`,
           [userId]
         );
-        if (result.rows.length === 0) {
-          const removedCheck = await pool.query('SELECT id FROM miners WHERE user_id = $1 LIMIT 1', [userId]);
-          if (removedCheck.rows.length > 0) {
-            ws.send(JSON.stringify({ type: 'auth_error', message: 'This miner was removed. Re-add it from your profile to use it again.' }));
-            return;
-          }
-          result = await pool.query(
-            "INSERT INTO miners (user_id, wallet_address, status) VALUES ($1, $2, 'online') RETURNING id",
-            [userId, wallet_address || '']
-          );
+        if (owned.rows.length === 1) {
+          minerId = owned.rows[0].id;
+          await pool.query("UPDATE miners SET status = 'online', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [minerId]);
+        } else if (owned.rows.length > 1) {
+          ws.send(JSON.stringify({ type: 'auth_error', message: 'Multiple miners found. Use the per-miner token from your profile for this machine.' }));
+          return;
         } else {
-          await pool.query("UPDATE miners SET status = 'online', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [result.rows[0].id]);
+          const freshToken = 'kz_' + crypto.randomBytes(32).toString('hex');
+          result = await pool.query(
+            "INSERT INTO miners (user_id, wallet_address, miner_token, status) VALUES ($1, $2, $3, 'online') RETURNING id",
+            [userId, wallet_address || '', freshToken]
+          );
+          minerId = result.rows[0].id;
         }
-        minerId = result.rows[0].id;
       }
     } else {
       // Legacy: wallet_address only
