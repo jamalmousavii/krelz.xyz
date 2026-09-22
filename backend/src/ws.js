@@ -108,30 +108,39 @@ class WSServer {
         }
         minerId = result.rows[0].id;
       } else {
-        // Legacy path (no machine_id): single miner per user (backward compat)
-        result = await pool.query('SELECT id, status FROM miners WHERE user_id = $1', [userId]);
+        // Legacy token path (no machine_id): oldest active miner (backward compat).
+        // Never touches removed rows (prevents accidental revive).
+        result = await pool.query(
+          `SELECT id, status FROM miners WHERE user_id = $1 AND (status IS NULL OR status != 'removed')
+           ORDER BY id ASC LIMIT 1`,
+          [userId]
+        );
         if (result.rows.length === 0) {
+          const removedCheck = await pool.query('SELECT id FROM miners WHERE user_id = $1 LIMIT 1', [userId]);
+          if (removedCheck.rows.length > 0) {
+            ws.send(JSON.stringify({ type: 'auth_error', message: 'This miner was removed. Re-add it from your profile to use it again.' }));
+            return;
+          }
           result = await pool.query(
             "INSERT INTO miners (user_id, wallet_address, status) VALUES ($1, $2, 'online') RETURNING id",
             [userId, wallet_address || '']
           );
         } else {
-          if (result.rows[0].status === 'removed') {
-            ws.send(JSON.stringify({ type: 'auth_error', message: 'This miner was removed. Re-add it from your profile to use it again.' }));
-            return;
-          }
-          await pool.query("UPDATE miners SET status = 'online', updated_at = CURRENT_TIMESTAMP WHERE user_id = $1", [userId]);
+          await pool.query("UPDATE miners SET status = 'online', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [result.rows[0].id]);
         }
         minerId = result.rows[0].id;
       }
     } else {
       // Legacy: wallet_address only
-      result = await pool.query('SELECT id FROM miners WHERE wallet_address = $1', [wallet_address]);
+      result = await pool.query('SELECT id, status FROM miners WHERE wallet_address = $1', [wallet_address]);
       if (result.rows.length === 0) {
         result = await pool.query(
           "INSERT INTO miners (wallet_address, status) VALUES ($1, 'online') RETURNING id",
           [wallet_address]
         );
+      } else if (result.rows[0].status === 'removed') {
+        ws.send(JSON.stringify({ type: 'auth_error', message: 'This miner was removed. Re-add it from your profile to use it again.' }));
+        return;
       }
       minerId = result.rows[0].id;
     }

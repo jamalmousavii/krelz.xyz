@@ -240,14 +240,19 @@ router.post('/setup', async (req, res) => {
       return res.status(201).json({ success: true, miner: result.rows[0] });
     }
 
-    // Legacy path (no machine_id): single miner per user (backward compat)
-    const minerExists = await pool.query('SELECT id FROM miners WHERE user_id = $1', [userId]);
+    // Legacy path (no machine_id): oldest active miner (backward compat).
+    // Never touches removed rows (prevents accidental revive).
+    const minerExists = await pool.query(
+      `SELECT id FROM miners WHERE user_id = $1 AND (status IS NULL OR status != 'removed')
+       ORDER BY id ASC LIMIT 1`,
+      [userId]
+    );
     if (minerExists.rows.length > 0) {
       // Update existing miner
       const result = await pool.query(
         `UPDATE miners SET gpu_model = $1, ram = $2, cpu = $3, models = $4, status = 'online', updated_at = CURRENT_TIMESTAMP
-         WHERE user_id = $5 RETURNING *`,
-        [gpu_model, ram, cpu, JSON.stringify(models || ['llama3.1:8b']), userId]
+         WHERE id = $5 RETURNING *`,
+        [gpu_model, ram, cpu, JSON.stringify(models || ['llama3.1:8b']), minerExists.rows[0].id]
       );
       return res.json({ success: true, miner: result.rows[0] });
     }
