@@ -1,5 +1,27 @@
 # Changelog
 
+## [3.15.0] - 2026-09-23
+
+### Added
+- Chat-first homepage: landing page IS the chat — centered "🚀 Krelz Network" + model dropdown + input card (no credit display in chat input)
+- After starting a chat: left history sidebar (sessions with rename/delete/new chat when logged in), messages area, input pinned to bottom
+- `/miners` page — full miner management (guide modal, add-miner flow, per-miner cards with rename/delete/status/GPU/RAM/resource bars/model select/uptime/tasks/earnings, token show/hide/regenerate)
+- `/settings` page — Web3 wallet connect/disconnect, language toggle, crypto wallet (7 coins, deposit/withdraw/history), password set/change
+- Shared `frontend/utils/auth.js` `authHeaders` helper
+- Chat errors now surface API `data.error` instead of generic "Error receiving response"
+
+### Changed
+- `/chat` now redirects to `/` (chat lives on homepage)
+- `/profile` slimmed to dashboard only (identity, balance 3-cards, daily tokens progress, logout, quick-nav to /miners and /settings)
+- Light sky-blue theme across ALL pages: Navbar, LanguageSwitcher, ErrorBoundary, index, profile, miners, settings, miner, explorer, leaderboard, admin
+- Navbar restructured: Chat / Explorer / Miner / Leaderboard links + user dropdown with Dashboard / Miners / Settings / Logout; auth forms (login/signup/forgot/reset) + GoogleLogin
+- `html` bg `#f0f9ff`, theme-color `#e0f2fe`
+- Version bumped to 3.15.0 (server.js health, logger, package.json)
+
+### Notes
+- Install scripts self-delete (`rm -f "$0"`) was already present since v3.10.0 — verified, no change needed
+- Chat inference bug (27b model on 4GB miner + dead fallbacks) still open — deferred
+
 ## [3.14.0] - 2026-09-23
 
 ### Added

@@ -56,11 +56,15 @@ Next.js 14 frontend with Tailwind CSS and i18n support.
 ```
 frontend/
 ├── pages/
-│   ├── index.js           # Home page
-│   ├── chat.js            # Chat with AI (sessions, daily tokens balance)
-│   ├── profile.js         # Dashboard + settings + daily tokens UI
+│   ├── index.js           # Chat homepage (chat-first, v3.15.0)
+│   ├── chat.js            # Redirects to /
+│   ├── profile.js         # Dashboard (balance, daily tokens)
+│   ├── miners.js          # Miner management page (v3.15.0)
+│   ├── settings.js         # Settings page (v3.15.0)
 │   ├── miner.js           # Miner install
-│   └── explorer.js        # Network explorer
+│   ├── explorer.js        # Network explorer
+│   ├── leaderboard.js     # Top miners/users
+│   └── admin.js           # Admin panel
 ├── components/
 │   ├── Navbar.js          # Navigation + auth dropdown
 │   ├── GoogleLogin.js     # Google OAuth
@@ -78,7 +82,7 @@ Node.js/Express API with PostgreSQL + Redis.
 ```
 backend/
 ├── src/
-│   ├── server.js          # Entry point (v3.11.0)
+│   ├── server.js          # Entry point (v3.15.0)
 │   ├── models.js          # AI models + per-model pricing
 │   ├── cache.js           # Redis caching
 │   ├── database/

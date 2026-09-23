@@ -36,3 +36,7 @@ secrets/
 
 # Private repo
 ../krelz-private/
+
+# Next.js
+frontend/.next/
+

@@ -6,7 +6,7 @@ export default function Document() {
       <Head>
         <meta charSet="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <meta name="theme-color" content="#1e1b4b" />
+        <meta name="theme-color" content="#e0f2fe" />
         <meta name="description" content="Krelz Network - Decentralized LLM Inference Network. Earn KRELZ tokens by sharing your GPU power for AI inference." />
         <meta name="keywords" content="decentralized AI, LLM inference, GPU mining, KRELZ, blockchain AI, earn crypto, open source AI" />
         <meta name="author" content="Krelz Network" />

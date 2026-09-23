@@ -7,7 +7,7 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 | Service | URL |
 |---------|-----|
 | Website | https://krelz.xyz |
-| Chat AI | https://krelz.xyz/chat |
+| Chat AI | https://krelz.xyz (homepage = chat) |
 | Miner Install | https://krelz.xyz/miner |
 | Explorer | https://krelz.xyz/explorer |
 | API Health | https://krelz.xyz/api/health |
@@ -28,10 +28,13 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Smart Model Fallback** — Auto-selects closest available model when exact model not found
 - **Free Cloud AI** — Round-robin routing across Groq, OpenRouter, Cerebras, Cloudflare (free tiers)
 - **Install Self-Cleanup** — Install scripts auto-delete after successful installation
-- **Daily Free Tokens in Chat** — Shows remaining free tokens next to chat input
 - **Miner Earnings** — 90% of paid usage goes to miners
-- **Multi-Miner Accounts** — unlimited miners per user, each with its own unique token; add/remove/rename from profile, no cap
+- **Multi-Miner Accounts** — unlimited miners per user, each with its own unique token; add/remove/rename from `/miners`, no cap
 - **Internationalization** — English (default) + Farsi with RTL support
+- **Chat-First Homepage (v3.15.0)** — Landing page IS the chat: centered model picker + input; after start, history sidebar left + input bottom
+- **Split Pages (v3.15.0)** — Dashboard (`/profile`), Miners (`/miners`), Settings (`/settings`) separated
+- **Light Sky Theme (v3.15.0)** — Sky-blue light UI across all pages
+- **Install Self-Cleanup** — Install scripts auto-delete after successful installation (`rm -f "$0"`)
 
 ## Quick Install (Miner)
 
@@ -107,7 +110,7 @@ Every user gets **1,000 free AI inference tokens per day**:
 krelz.xyz/
 ├── backend/                    # API Server (Node.js/Express)
 │   ├── src/
-│   │   ├── server.js          # Entry point (v3.14.0)
+│   │   ├── server.js          # Entry point (v3.15.0)
 │   │   ├── models.js          # AI models + pricing
 │   │   ├── database/
 │   │   │   ├── pool.js        # PostgreSQL connection
@@ -126,11 +129,15 @@ krelz.xyz/
 │   └── package.json
 ├── frontend/                   # UI (Next.js 14 + Tailwind CSS)
 │   ├── pages/
-│   │   ├── index.js           # Home page
-│   │   ├── chat.js            # Chat with AI (sessions + balance)
-│   │   ├── profile.js         # Dashboard + settings
-│   │   ├── miner.js           # Miner install
-│   │   └── explorer.js        # Network explorer
+│   │   ├── index.js           # Chat homepage (chat-first, v3.15.0)
+│   │   ├── chat.js            # Redirects to / (chat is homepage now)
+│   │   ├── profile.js         # Dashboard (balance, daily tokens)
+│   │   ├── miners.js          # Miner management (add/remove/rename, v3.15.0)
+│   │   ├── settings.js        # Settings (wallet, language, password, v3.15.0)
+│   │   ├── miner.js           # Miner install guide
+│   │   ├── explorer.js        # Network explorer
+│   │   ├── leaderboard.js     # Top miners/users
+│   │   └── admin.js           # Admin panel
 │   ├── components/
 │   │   ├── Navbar.js          # Navigation + auth
 │   │   ├── GoogleLogin.js     # Google OAuth

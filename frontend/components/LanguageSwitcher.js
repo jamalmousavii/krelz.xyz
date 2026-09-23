@@ -4,13 +4,13 @@ export default function LanguageSwitcher() {
   const { lang, changeLang } = useLanguage();
 
   return (
-    <div className="flex items-center gap-1 bg-white/10 rounded-lg p-1">
+    <div className="flex items-center gap-1 bg-sky-100 rounded-lg p-1 border border-sky-200">
       <button
         onClick={() => changeLang('en')}
         className={`px-3 py-1 rounded-md text-sm font-bold transition ${
           lang === 'en'
-            ? 'bg-purple-600 text-white'
-            : 'text-gray-300 hover:text-white'
+            ? 'bg-sky-500 text-white'
+            : 'text-gray-600 hover:text-sky-700'
         }`}
       >
         EN
@@ -19,8 +19,8 @@ export default function LanguageSwitcher() {
         onClick={() => changeLang('fa')}
         className={`px-3 py-1 rounded-md text-sm font-bold transition ${
           lang === 'fa'
-            ? 'bg-purple-600 text-white'
-            : 'text-gray-300 hover:text-white'
+            ? 'bg-sky-500 text-white'
+            : 'text-gray-600 hover:text-sky-700'
         }`}
       >
         فا
