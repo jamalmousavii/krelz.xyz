@@ -72,7 +72,7 @@ export default function Home() {
       </main>
 
       <footer className="container mx-auto px-6 py-6 md:py-8 text-center text-gray-400 text-sm">
-        <p>&copy; 2026 Krelz Network. {t('home.footer')} v3.13.0</p>
+        <p>&copy; 2026 Krelz Network. {t('home.footer')} v3.14.0</p>
       </footer>
     </div>
   );

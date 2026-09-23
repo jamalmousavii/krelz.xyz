@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.14.0] - 2026-09-23
+
+### Added
+- Miner guide modal: shows on first profile visit and every time before Add Miner (install + connect steps, EN/FA)
+- Two-step Add Miner: name prompt (default `miner1`) → create → show token + install command
+- Single-use token display: `token_used_at` column; token hidden from profile after first `/setup` or WS auth
+- `PUT /api/miners/mine/:id/token` — rotate token for reinstalling the same machine (clears `token_used_at`)
+- "Generate new token" button per miner card when token already used
+- Add Miner button always visible (even with 0 miners)
+
+### Changed
+- `POST /api/miners` empty/missing name defaults to `miner1` (was NULL)
+- `GET /api/miners/mine` returns `miner_token: null` when already connected (single-use display)
+- Removed legacy account-token section from profile (per-miner tokens only)
+- Cache invalidated on create/delete/rotate/setup/WS-auth
+- Version bumped to 3.14.0
+
 ## [3.13.0] - 2026-09-22
 
 ### Added

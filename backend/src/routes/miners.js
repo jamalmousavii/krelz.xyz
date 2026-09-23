@@ -27,23 +27,27 @@ router.get('/', async (req, res) => {
 
 // POST /api/miners — create a new miner for the current user (v3.13.0+).
 // Each server-miner gets its own unique token (unlimited per user, no cap).
+// v3.14.0: empty name defaults to "miner1"; token is single-use for display.
 router.post('/', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
     const { name } = req.body;
 
-    if (name && (typeof name !== 'string' || name.trim().length > 100)) {
+    if (name !== undefined && name !== null && name !== '' && (typeof name !== 'string' || name.trim().length > 100)) {
       return res.status(400).json({ error: 'Valid name required (max 100 chars)' });
     }
 
     const minerToken = 'kz_' + crypto.randomBytes(32).toString('hex');
+    const minerName = (name || '').trim() || 'miner1';
 
     const result = await pool.query(
       `INSERT INTO miners (user_id, wallet_address, name, miner_token, status)
        VALUES ($1, '', $2, $3, 'offline') RETURNING *`,
-      [userId, (name || '').trim() || null, minerToken]
+      [userId, minerName, minerToken]
     );
 
+    invalidateCache('/api/miners');
+    invalidateCache('/api/stats');
     res.status(201).json({ success: true, miner: result.rows[0] });
 
   } catch (err) {
@@ -53,6 +57,7 @@ router.post('/', authenticate, async (req, res) => {
 });
 
 // GET /api/miners/mine — get current user's miners (all, incl. offline)
+// v3.14.0: hide miner_token after first successful connect (token_used_at set).
 router.get('/mine', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -61,17 +66,25 @@ router.get('/mine', authenticate, async (req, res) => {
       `SELECT id, wallet_address, gpu_model, ram, cpu, models, current_model,
               status, uptime, total_tasks, earnings, created_at,
               gpu_usage, ram_usage, cpu_usage, disk_usage,
-              machine_id, name, miner_token
+              machine_id, name, miner_token, token_used_at,
+              CASE WHEN token_used_at IS NOT NULL THEN NULL ELSE miner_token END AS visible_token
        FROM miners WHERE user_id = $1 AND (status IS NULL OR status != 'removed')
        ORDER BY created_at ASC`,
       [userId]
     );
 
+    // Return rows with miner_token null when already used (single-use display)
+    const miners = result.rows.map(r => ({
+      ...r,
+      miner_token: r.token_used_at ? null : r.miner_token,
+      visible_token: undefined
+    }));
+
     res.json({
       success: true,
-      miners: result.rows,
+      miners,
       // Legacy: first miner (backward compat for old clients)
-      miner: result.rows[0] || null
+      miner: miners[0] || null
     });
 
   } catch (err) {
@@ -154,6 +167,39 @@ router.put('/mine/:id', authenticate, async (req, res) => {
   }
 });
 
+// PUT /api/miners/mine/:id/token — rotate token for reinstall same machine (v3.14.0)
+// Generates a new unique token, clears token_used_at so it can be shown again.
+router.put('/mine/:id/token', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const minerId = parseInt(req.params.id);
+
+    if (!minerId) {
+      return res.status(400).json({ error: 'Miner id is required' });
+    }
+
+    const newToken = 'kz_' + crypto.randomBytes(32).toString('hex');
+
+    const result = await pool.query(
+      `UPDATE miners SET miner_token = $1, token_used_at = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND user_id = $3 AND (status IS NULL OR status != 'removed')
+       RETURNING id, name, miner_token`,
+      [newToken, minerId, userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Miner not found' });
+    }
+
+    invalidateCache('/api/miners');
+    res.json({ success: true, miner: result.rows[0] });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // DELETE /api/miners/mine/:id — remove a miner (soft delete, own miners only)
 // History (tasks/earnings) is preserved; miner stops receiving dispatches.
 router.delete('/mine/:id', authenticate, async (req, res) => {
@@ -186,6 +232,8 @@ router.delete('/mine/:id', authenticate, async (req, res) => {
       } catch (e) {}
     }
 
+    invalidateCache('/api/miners');
+    invalidateCache('/api/stats');
     res.json({ success: true, message: 'Miner removed. Task/earning history is preserved.' });
 
   } catch (err) {
@@ -241,10 +289,13 @@ router.post('/setup', async (req, res) => {
       const result = await pool.query(
         `UPDATE miners SET gpu_model = $1, ram = $2, cpu = $3, models = $4,
                 machine_id = COALESCE($5, machine_id), name = COALESCE($6, name),
-                status = 'online', updated_at = CURRENT_TIMESTAMP
+                status = 'online', token_used_at = COALESCE(token_used_at, CURRENT_TIMESTAMP),
+                updated_at = CURRENT_TIMESTAMP
          WHERE id = $7 RETURNING *`,
         [gpu_model, ram, cpu, modelsJson, machine_id || null, (name || '').trim() || null, minerId]
       );
+      invalidateCache('/api/miners');
+      invalidateCache('/api/stats');
       return res.json({ success: true, miner: result.rows[0] });
     }
 

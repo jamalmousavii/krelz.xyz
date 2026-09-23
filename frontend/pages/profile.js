@@ -84,6 +84,12 @@ export default function Profile() {
   const [newMinerToken, setNewMinerToken] = useState('');
   const [newMinerLoading, setNewMinerLoading] = useState(false);
   const [copiedMinerId, setCopiedMinerId] = useState(null);
+  // v3.14.0: guide modal + rename/add step + per-card regen token
+  const [showGuideModal, setShowGuideModal] = useState(false);
+  const [guideForAdd, setGuideForAdd] = useState(false); // true when opened before Add Miner
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [regenTokenId, setRegenTokenId] = useState(null); // miner id whose new token is shown
+  const [regenTokenVal, setRegenTokenVal] = useState('');
 
   // Password
   const [hasPassword, setHasPassword] = useState(false);
@@ -104,6 +110,11 @@ export default function Profile() {
         checkWallet();
         fetchCoinBalances();
         fetchWalletHistory();
+        // v3.14.0: first visit with no miners → show guide modal once
+        if (!localStorage.getItem('krelz-guide-seen')) {
+          setGuideForAdd(false);
+          setShowGuideModal(true);
+        }
       } catch (e) {}
     }
     const savedLang = localStorage.getItem('krelz-lang') || 'en';
@@ -350,6 +361,21 @@ export default function Profile() {
   };
 
   // Multi-miner (v3.13.0+): create a new miner with its own unique token
+  // v3.14.0: default name "miner1"; guide modal shown before add
+  const openAddMiner = () => {
+    setGuideForAdd(true);
+    setShowGuideModal(true);
+  };
+
+  const closeGuide = () => {
+    setShowGuideModal(false);
+    localStorage.setItem('krelz-guide-seen', '1');
+    if (guideForAdd) {
+      setShowAddForm(true);
+      setGuideForAdd(false);
+    }
+  };
+
   const createMiner = async () => {
     setNewMinerLoading(true);
     try {
@@ -362,12 +388,32 @@ export default function Profile() {
       if (data.success) {
         setNewMinerToken(data.miner.miner_token);
         setNewMinerName('');
+        setShowAddForm(false);
         fetchMiner();
       } else {
         setMinerMsg(`❌ ${data.error}`);
       }
     } catch (err) { setMinerMsg('❌ Create failed'); }
     setNewMinerLoading(false);
+  };
+
+  // v3.14.0: rotate token for reinstall of the same machine
+  const regenerateToken = async (minerId) => {
+    try {
+      const res = await fetch(`/api/miners/mine/${minerId}/token`, {
+        method: 'PUT',
+        headers: authHeaders()
+      });
+      const data = await res.json();
+      if (data.success) {
+        setRegenTokenId(minerId);
+        setRegenTokenVal(data.miner.miner_token);
+        setMinerMsg(`✅ ${t('profile.tokenRegenerated')}`);
+        fetchMiner();
+      } else {
+        setMinerMsg(`❌ ${data.error}`);
+      }
+    } catch (err) { setMinerMsg('❌ Token regenerate failed'); }
   };
 
   // Password functions
@@ -460,6 +506,29 @@ export default function Profile() {
   return (
     <div className={`min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 ${lang === 'fa' ? 'rtl' : 'ltr'}`}>
       <Head><title>{t('profile.title')} - Krelz Network</title></Head>
+
+      {/* v3.14.0: Miner guide modal — first visit + every time before Add Miner */}
+      {showGuideModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" role="dialog" aria-modal="true">
+          <div className="bg-gray-900 border border-purple-500/40 rounded-xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+            <h3 className="text-lg font-bold text-white">{t('profile.minerGuideTitle')}</h3>
+            <div className="space-y-2 text-sm text-gray-300">
+              <p>{t('profile.minerGuideStep1')}</p>
+              <p>{t('profile.minerGuideStep2')}</p>
+              <code className="block text-xs text-green-400 bg-black/40 px-2 py-1 rounded break-all">
+                wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-ubuntu.sh && bash install-ubuntu.sh --token YOUR_TOKEN
+              </code>
+              <p>{t('profile.minerGuideStep3')}</p>
+              <p className="text-gray-400">{t('profile.minerGuideStep4')}</p>
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <button onClick={closeGuide} className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold">
+                {guideForAdd ? t('profile.minerGuideContinue') : t('profile.minerGuideClose')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <nav className="container mx-auto px-4 md:px-6 py-4">
         <div className="flex items-center justify-between">
@@ -681,10 +750,14 @@ export default function Profile() {
             </div>
           </div>
 
-          {/* Miner Settings — multi-miner list (v3.12.0+) */}
+          {/* Miner Settings — multi-miner list (v3.12.0+), guide + single-use token (v3.14.0+) */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-300">⛏️ {t('profile.minerSettings')} {miners.length > 0 && <span className="text-gray-500">({miners.length})</span>}</h3>
+              <button onClick={openAddMiner}
+                className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg text-xs font-bold transition">
+                + {t('profile.addMiner')}
+              </button>
             </div>
             {minerMsg && <p className="text-xs text-gray-300 mb-2">{minerMsg}</p>}
             <div className="bg-black/20 rounded-lg p-4">
@@ -746,7 +819,9 @@ export default function Profile() {
                     <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.uptime')}</span><span className="text-white">{parseFloat(m.uptime || 0).toFixed(1)}%</span></div>
                     <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.totalTasks')}</span><span className="text-white">{m.total_tasks || 0}</span></div>
                     <div className="flex justify-between text-sm"><span className="text-gray-400">{t('profile.earnings')}</span><span className="text-green-400 font-medium">{parseFloat(m.earnings || 0).toFixed(4)}</span></div>
-                    {m.miner_token && (
+
+                    {/* Token display (v3.14.0): show if not used, else regenerate button */}
+                    {m.miner_token ? (
                       <div className="flex items-center gap-2 pt-1">
                         <code className="flex-1 text-green-400 text-xs break-all bg-black/30 px-2 py-1 rounded">{m.miner_token}</code>
                         <button onClick={() => copyText(m.miner_token, m.id)}
@@ -754,61 +829,90 @@ export default function Profile() {
                           {copiedMinerId === m.id ? '✓' : '📋'}
                         </button>
                       </div>
-                    )}
-                  </div>
-                  ))}
-                  {/* Add miner (v3.13.0+): each server gets its own unique token */}
-                  <div className="bg-black/20 rounded-lg p-3 space-y-2 border border-white/5">
-                    <p className="text-white text-sm font-medium">➕ {t('profile.addMiner')}</p>
-                    <p className="text-gray-500 text-xs">{t('profile.addMinerDesc')}</p>
-                    <div className="flex gap-2">
-                      <input type="text" value={newMinerName} onChange={(e) => setNewMinerName(e.target.value)}
-                        placeholder={t('profile.minerNamePlaceholder')}
-                        className="flex-1 bg-white/10 text-white placeholder-gray-500 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
-                      <button onClick={createMiner} disabled={newMinerLoading}
-                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition text-sm font-bold disabled:opacity-50">
-                        {newMinerLoading ? '...' : `+ ${t('profile.create')}`}
-                      </button>
-                    </div>
-                    {newMinerToken && (
-                      <div className="space-y-2">
+                    ) : regenTokenId === m.id && regenTokenVal ? (
+                      <div className="space-y-2 pt-1">
                         <div className="flex items-center gap-2">
-                          <code className="flex-1 text-green-400 text-xs break-all bg-black/30 px-2 py-1 rounded">{newMinerToken}</code>
-                          <button onClick={() => copyText(newMinerToken, 'new')}
-                            className={`px-3 py-1 rounded text-xs font-bold transition ${copiedMinerId === 'new' ? 'bg-green-600 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
-                            {copiedMinerId === 'new' ? '✓' : '📋'}
+                          <code className="flex-1 text-green-400 text-xs break-all bg-black/30 px-2 py-1 rounded">{regenTokenVal}</code>
+                          <button onClick={() => copyText(regenTokenVal, m.id)}
+                            className={`px-3 py-1 rounded text-xs font-bold transition ${copiedMinerId === m.id ? 'bg-green-600 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
+                            {copiedMinerId === m.id ? '✓' : '📋'}
                           </button>
                         </div>
-                        <code className="block text-gray-300 text-xs break-all bg-black/30 px-2 py-1 rounded">wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-ubuntu.sh && bash install-ubuntu.sh --token {newMinerToken}</code>
+                        <code className="block text-gray-300 text-xs break-all bg-black/30 px-2 py-1 rounded">wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-ubuntu.sh && bash install-ubuntu.sh --token {regenTokenVal}</code>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <span className="text-gray-500 text-xs">🔒 {t('profile.tokenHidden')}</span>
+                        <button onClick={() => regenerateToken(m.id)}
+                          className="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded text-xs font-bold transition">
+                          🔄 {t('profile.generateNewToken')}
+                        </button>
                       </div>
                     )}
                   </div>
+                  ))}
+                  {/* Add miner form (shown after guide modal) */}
+                  {showAddForm && (
+                    <div className="bg-black/20 rounded-lg p-3 space-y-2 border border-green-500/30">
+                      <p className="text-white text-sm font-medium">➕ {t('profile.addMiner')}</p>
+                      <p className="text-gray-500 text-xs">{t('profile.addMinerDesc')}</p>
+                      <div className="flex gap-2">
+                        <input type="text" value={newMinerName} onChange={(e) => setNewMinerName(e.target.value)}
+                          placeholder={t('profile.enterMinerName')}
+                          className="flex-1 bg-white/10 text-white placeholder-gray-500 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
+                        <button onClick={createMiner} disabled={newMinerLoading}
+                          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition text-sm font-bold disabled:opacity-50">
+                          {newMinerLoading ? '...' : `+ ${t('profile.create')}`}
+                        </button>
+                      </div>
+                      {newMinerToken && (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <code className="flex-1 text-green-400 text-xs break-all bg-black/30 px-2 py-1 rounded">{newMinerToken}</code>
+                            <button onClick={() => copyText(newMinerToken, 'new')}
+                              className={`px-3 py-1 rounded text-xs font-bold transition ${copiedMinerId === 'new' ? 'bg-green-600 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
+                              {copiedMinerId === 'new' ? '✓' : '📋'}
+                            </button>
+                          </div>
+                          <code className="block text-gray-300 text-xs break-all bg-black/30 px-2 py-1 rounded">wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-ubuntu.sh && bash install-ubuntu.sh --token {newMinerToken}</code>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-3">
                   <p className="text-gray-400 text-sm">{t('profile.noMiner')}</p>
-                  <p className="text-gray-500 text-xs">{t('profile.minerInstallDesc')}</p>
+                  <p className="text-gray-500 text-xs">{t('profile.addMinerDesc')}</p>
+                  {/* Add form also available when 0 miners (after guide) */}
+                  {showAddForm && (
+                    <div className="bg-black/20 rounded-lg p-3 space-y-2 border border-green-500/30">
+                      <p className="text-white text-sm font-medium">➕ {t('profile.addMiner')}</p>
+                      <div className="flex gap-2">
+                        <input type="text" value={newMinerName} onChange={(e) => setNewMinerName(e.target.value)}
+                          placeholder={t('profile.enterMinerName')}
+                          className="flex-1 bg-white/10 text-white placeholder-gray-500 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-purple-500" />
+                        <button onClick={createMiner} disabled={newMinerLoading}
+                          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition text-sm font-bold disabled:opacity-50">
+                          {newMinerLoading ? '...' : `+ ${t('profile.create')}`}
+                        </button>
+                      </div>
+                      {newMinerToken && (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <code className="flex-1 text-green-400 text-xs break-all bg-black/30 px-2 py-1 rounded">{newMinerToken}</code>
+                            <button onClick={() => copyText(newMinerToken, 'new')}
+                              className={`px-3 py-1 rounded text-xs font-bold transition ${copiedMinerId === 'new' ? 'bg-green-600 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
+                              {copiedMinerId === 'new' ? '✓' : '📋'}
+                            </button>
+                          </div>
+                          <code className="block text-gray-300 text-xs break-all bg-black/30 px-2 py-1 rounded">wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-ubuntu.sh && bash install-ubuntu.sh --token {newMinerToken}</code>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
-              {/* Miner Token — always visible */}
-              <div className="bg-black/30 rounded-lg p-3 mt-3">
-                <p className="text-gray-400 text-xs mb-2">🔗 {t('profile.minerToken')}</p>
-                {minerToken ? (
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 text-green-400 text-xs break-all bg-black/30 px-2 py-1 rounded">{minerToken}</code>
-                    <button onClick={copyMinerToken}
-                      className={`px-3 py-1 rounded text-xs font-bold transition ${minerTokenCopied ? 'bg-green-600 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}>
-                      {minerTokenCopied ? '✓' : '📋'}
-                    </button>
-                  </div>
-                ) : (
-                  <button onClick={fetchMinerToken} disabled={minerTokenLoading}
-                    className="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50">
-                    {minerTokenLoading ? '...' : `🔑 ${t('profile.getMinerToken')}`}
-                  </button>
-                )}
-                <p className="text-gray-600 text-xs mt-2">{t('profile.minerTokenDesc')}</p>
-              </div>
             </div>
           </div>
         </div>

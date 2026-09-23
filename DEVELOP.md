@@ -360,15 +360,22 @@ Service auto-starts on boot via `systemctl enable`.
 
 Miner token format: `kz_` + 32 hex bytes (67 chars)
 
-## Multi-Miner Accounts (v3.12.0, token model v3.13.0)
+## Multi-Miner Accounts (v3.12.0, token model v3.13.0, single-use display v3.14.0)
 
 One user can run **unlimited miners**, add/remove/rename from profile. No cap.
 
 ### Identity (v3.13.0+): one unique token per miner
 - `POST /api/miners` (auth) creates a miner row + unique `miner_token`.
   The token IS the miner identity — no two servers can collide.
+  Empty name defaults to **`miner1`** (v3.14.0).
 - Install that server with **its own token** (`--token`); `/setup` and WS
   `auth` bind directly by token.
+- **Single-use display (v3.14.0):** `miners.token_used_at` is set on first
+  successful `/setup` or WS auth. `GET /api/miners/mine` then returns
+  `miner_token: null` (token stays in DB for re-auth).
+  `PUT /api/miners/mine/:id/token` rotates the token and clears the flag
+  (for reinstalling the same machine).
+- Profile shows a **guide modal** on first visit and every time before Add Miner.
 - Legacy account token (`users.miner_token`) still works only when the user
   has exactly 1 active miner; otherwise the API asks for the per-miner token.
 - `machine_id`/`name` columns from v3.12.0 are kept for display/compat but no
@@ -378,7 +385,8 @@ One user can run **unlimited miners**, add/remove/rename from profile. No cap.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | /api/miners | Create miner for current user → row + unique token (v3.13.0+) |
+| POST | /api/miners | Create miner for current user → row + unique token (v3.13.0+; default name `miner1`) |
+| PUT | /api/miners/mine/:id/token | Rotate token for reinstall, clear `token_used_at` (v3.14.0+) |
 | POST | /api/miners/setup | Bind by per-miner token; legacy account token only if exactly 1 active miner |
 | GET | /api/miners/mine | Array `miners` (+ legacy `miner` = first, backward compat) |
 | PUT | /api/miners/mine/model | Switch model; body `{ model, miner_id? }` |

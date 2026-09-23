@@ -1,6 +1,7 @@
 const { WebSocketServer } = require('ws');
 const crypto = require('crypto');
 const pool = require('./database/pool');
+const { invalidateCache } = require('./cache');
 
 class WSServer {
   constructor(server) {
@@ -94,7 +95,12 @@ class WSServer {
           return;
         }
         minerId = minerRow.rows[0].id;
-        await pool.query("UPDATE miners SET status = 'online', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [minerId]);
+        // v3.14.0: first successful auth marks token as used (hide from profile)
+        await pool.query(
+          "UPDATE miners SET status = 'online', token_used_at = COALESCE(token_used_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+          [minerId]
+        );
+        invalidateCache('/api/miners');
       } else {
         // Legacy account token (users.miner_token): unambiguous only when the
         // user has exactly 1 active miner.
@@ -164,8 +170,12 @@ class WSServer {
       current_model: null
     });
 
-    // Update DB
-    await pool.query("UPDATE miners SET status = 'online', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [minerId]);
+    // Update DB (v3.14.0: also mark token_used on first auth)
+    await pool.query(
+      "UPDATE miners SET status = 'online', token_used_at = COALESCE(token_used_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+      [minerId]
+    );
+    invalidateCache('/api/miners');
 
     ws.send(JSON.stringify({ type: 'auth_ok', miner_id: minerId }));
     console.log(`Miner ${minerId} authenticated (${wallet_address || miner_token?.slice(0, 10) + '...'})`);

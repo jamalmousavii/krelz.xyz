@@ -378,6 +378,23 @@ const migrate = async () => {
     `);
     console.log('✅ Per-miner token column added (miner_token)');
 
+    // === Single-use token display (v3.14.0): hide token after first connect ===
+    // token_used_at is set on first successful /setup or WS auth.
+    // GET /api/miners/mine hides miner_token when this is set;
+    // PUT /api/miners/mine/:id/token rotates the token and clears it.
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE miners ADD COLUMN IF NOT EXISTS token_used_at TIMESTAMP;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    // Existing miners that have connected (gpu info present) are considered used
+    await client.query(`
+      UPDATE miners SET token_used_at = COALESCE(token_used_at, updated_at)
+      WHERE token_used_at IS NULL AND gpu_model IS NOT NULL
+    `);
+    console.log('✅ Single-use token column added (token_used_at)');
+
     await client.query('COMMIT');
     console.log('\n✅ تمام جداول ایجاد شد');
     
