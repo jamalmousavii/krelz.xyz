@@ -16,6 +16,7 @@
 
 ### Fixed
 - Second machine no longer overwrites the first miner; connection fights between same-identity clients resolved (newest-wins + miner self re-auth)
+- Miner heartbeat restarted after every reconnect (`ensureHeartbeat` on `auth_ok`) — idle WS no longer dropped after ~2 min
 
 ## [3.12.0] - 2026-09-21
 

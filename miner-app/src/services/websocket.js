@@ -10,6 +10,8 @@ class MinerWebSocket {
     this.connected = false;
     this.reconnectDelay = 5000;
     this.heartbeatInterval = null;
+    this.heartbeatMinerService = null;
+    this.heartbeatDefaultModel = null;
   }
 
   connect() {
@@ -67,6 +69,8 @@ class MinerWebSocket {
       case 'auth_ok':
         this.minerId = msg.miner_id;
         console.log(`✅ Authenticated as miner #${this.minerId}`);
+        // Restart heartbeat after every (re)auth — close handler stops it.
+        this.ensureHeartbeat();
         break;
 
       case 'auth_error':
@@ -156,10 +160,20 @@ class MinerWebSocket {
   }
 
   startHeartbeat(minerService, defaultModel) {
-    console.log(`💓 Heartbeat started (every 30s, model: ${defaultModel})`);
+    this.heartbeatMinerService = minerService;
+    this.heartbeatDefaultModel = defaultModel;
+    this.ensureHeartbeat();
+  }
+
+  ensureHeartbeat() {
+    if (this.heartbeatInterval) return;
+    if (!this.heartbeatMinerService && !this.heartbeatDefaultModel) return;
+    console.log(`💓 Heartbeat started (every 30s, model: ${this.heartbeatDefaultModel})`);
     this.heartbeatInterval = setInterval(() => {
-      const stats = minerService ? minerService.getStats() : {};
-      stats.current_model = defaultModel;
+      const stats = this.heartbeatMinerService
+        ? this.heartbeatMinerService.getStats()
+        : {};
+      stats.current_model = this.heartbeatDefaultModel;
       this.sendHeartbeat('online', stats);
     }, 30000);
   }
