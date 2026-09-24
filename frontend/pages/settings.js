@@ -1,6 +1,7 @@
 import Head from 'next/head';
 import { useState, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
+import { LANGUAGES, isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
 import authHeaders from '../utils/auth';
 
@@ -15,12 +16,12 @@ const COINS = [
 ];
 
 export default function Settings() {
-  const { t, lang } = useLanguage();
+  const { t, lang, changeLang } = useLanguage();
   const [user, setUser] = useState(null);
   const [wallet, setWallet] = useState(null);
   const [walletConnected, setWalletConnected] = useState(false);
   const [walletChoice, setWalletChoice] = useState(null);
-  const [langState, setLangState] = useState('en');
+  const [langOpen, setLangOpen] = useState(false);
 
   const [activeCoin, setActiveCoin] = useState('BTC');
   const [coinBalances, setCoinBalances] = useState({});
@@ -52,8 +53,6 @@ export default function Settings() {
         fetchWalletHistory();
       } catch (e) {}
     }
-    const savedLang = localStorage.getItem('krelz-lang') || 'en';
-    setLangState(savedLang);
     setLoading(false);
   }, []);
 
@@ -219,20 +218,14 @@ export default function Settings() {
     setPasswordLoading('');
   };
 
-  const handleLangChange = (newLang) => {
-    setLangState(newLang);
-    localStorage.setItem('krelz-lang', newLang);
-    document.documentElement.dir = newLang === 'fa' ? 'rtl' : 'ltr';
-    document.documentElement.lang = newLang;
-    window.location.reload();
-  };
+  const currentLang = LANGUAGES.find(l => l.code === lang) || LANGUAGES[0];
 
   const currentCoinBalance = coinBalances[activeCoin] || { available: 0, total_earned: 0, total_spent: 0 };
   const currentCoin = COINS.find(c => c.id === activeCoin);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex items-center justify-center">
+      <div className="flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex items-center justify-center">
         <div className="text-gray-600 text-lg">Loading...</div>
       </div>
     );
@@ -244,7 +237,7 @@ export default function Settings() {
   }
 
   return (
-    <div className={`min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 ${lang === 'fa' ? 'rtl' : 'ltr'}`}>
+    <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
       <Head><title>{t('profile.settings')} - Krelz Network</title></Head>
 
       <Navbar />
@@ -298,9 +291,32 @@ export default function Settings() {
           {/* Language */}
           <div className="mb-5">
             <h3 className="text-sm font-medium text-gray-600 mb-2">🌐 {t('profile.language')}</h3>
-            <div className="flex gap-2">
-              <button onClick={() => handleLangChange('en')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${langState === 'en' ? 'bg-sky-500 text-white' : 'bg-sky-50 text-gray-600 hover:bg-sky-100 border border-sky-200'}`}>English</button>
-              <button onClick={() => handleLangChange('fa')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${langState === 'fa' ? 'bg-sky-500 text-white' : 'bg-sky-50 text-gray-600 hover:bg-sky-100 border border-sky-200'}`}>فارسی</button>
+            <div className="relative" style={{ position: 'relative' }}>
+              <button
+                onClick={() => setLangOpen(!langOpen)}
+                className="w-full flex items-center gap-3 bg-sky-50 hover:bg-sky-100 border border-sky-200 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-700 transition min-h-[44px]"
+              >
+                <span className="text-base leading-none">{currentLang.flag}</span>
+                <span className="flex-1 text-left">{currentLang.name}</span>
+                <span className="text-gray-400 text-xs">▼</span>
+              </button>
+              {langOpen && (
+                <div className="absolute left-0 right-0 mt-1 max-h-[300px] overflow-y-auto bg-white border border-sky-200 rounded-xl shadow-xl z-50 py-1">
+                  {LANGUAGES.map(l => (
+                    <button
+                      key={l.code}
+                      onClick={() => { changeLang(l.code); setLangOpen(false); }}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition text-left min-h-[44px] ${
+                        lang === l.code ? 'bg-sky-50 text-sky-700 font-bold' : 'text-gray-700 hover:bg-sky-50'
+                      }`}
+                    >
+                      <span className="text-base leading-none w-5">{l.flag}</span>
+                      <span className="flex-1 truncate">{l.name}</span>
+                      {lang === l.code && <span className="text-sky-500 text-xs">✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

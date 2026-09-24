@@ -1,6 +1,7 @@
 import Head from 'next/head';
 import { useState, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
+import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
 import authHeaders from '../utils/auth';
 
@@ -48,6 +49,7 @@ export default function Miners() {
   const [regenTokenId, setRegenTokenId] = useState(null);
   const [regenTokenVal, setRegenTokenVal] = useState('');
   const [loading, setLoading] = useState(true);
+  const [copiedInstall, setCopiedInstall] = useState(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('user');
@@ -131,6 +133,15 @@ export default function Miners() {
     setTimeout(() => setCopiedMinerId(null), 2000);
   };
 
+  const ubuntuInstallCmd = 'wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-ubuntu.sh && bash install-ubuntu.sh --token YOUR_TOKEN';
+  const redhatInstallCmd = 'wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-redhat.sh && bash install-redhat.sh --token YOUR_TOKEN';
+
+  const copyInstall = (cmd, id) => {
+    navigator.clipboard.writeText(cmd);
+    setCopiedInstall(id);
+    setTimeout(() => setCopiedInstall(null), 2000);
+  };
+
   const openAddMiner = () => {
     setGuideForAdd(true);
     setShowGuideModal(true);
@@ -186,7 +197,7 @@ export default function Miners() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex items-center justify-center">
+      <div className="flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex items-center justify-center">
         <div className="text-gray-600 text-lg">Loading...</div>
       </div>
     );
@@ -198,7 +209,7 @@ export default function Miners() {
   }
 
   return (
-    <div className={`min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 ${lang === 'fa' ? 'rtl' : 'ltr'}`}>
+    <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
       <Head><title>{t('profile.myMiners')} - Krelz Network</title></Head>
 
       {/* Guide modal */}
@@ -214,6 +225,7 @@ export default function Miners() {
               </code>
               <p>{t('profile.minerGuideStep3')}</p>
               <p className="text-gray-400">{t('profile.minerGuideStep4')}</p>
+              <p>{t('profile.minerGuideStep5')}</p>
             </div>
             <div className="flex gap-2 justify-end pt-2">
               <button onClick={closeGuide} className="px-4 py-2 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-sm font-bold">
@@ -232,6 +244,57 @@ export default function Miners() {
           <a href="/profile" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">📊 {t('nav.dashboard')}</a>
           <a href="/miners" className="px-4 py-2 rounded-lg text-sm font-bold bg-sky-500 text-white">⛏️ {t('nav.miners')}</a>
           <a href="/settings" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⚙️ {t('nav.settings')}</a>
+        </div>
+
+        {/* Quick Install with copy buttons */}
+        <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-5 md:p-6 mb-6">
+          <h2 className="text-lg font-bold text-gray-800 mb-1">⚡ {t('miner.quickInstall')}</h2>
+          <p className="text-gray-500 text-xs mb-4">{t('miner.connectStep2')}</p>
+          <div className="space-y-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span>🐧</span>
+                <span className="text-gray-800 font-bold text-sm">{t('miner.ubuntu')}</span>
+              </div>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="flex-1 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2 font-mono text-xs text-emerald-700 overflow-x-auto">
+                  <code>{ubuntuInstallCmd}</code>
+                </div>
+                <button
+                  onClick={() => copyInstall(ubuntuInstallCmd, 'ubuntu')}
+                  className={`px-4 py-2 rounded-lg font-bold text-sm transition min-h-[40px] ${
+                    copiedInstall === 'ubuntu' ? 'bg-emerald-500 text-white' : 'bg-sky-500 hover:bg-sky-600 text-white'
+                  }`}
+                >
+                  {copiedInstall === 'ubuntu' ? t('miner.copied') : t('miner.copyCmd')}
+                </button>
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span>🎩</span>
+                <span className="text-gray-800 font-bold text-sm">{t('miner.redhat')}</span>
+              </div>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="flex-1 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2 font-mono text-xs text-emerald-700 overflow-x-auto">
+                  <code>{redhatInstallCmd}</code>
+                </div>
+                <button
+                  onClick={() => copyInstall(redhatInstallCmd, 'redhat')}
+                  className={`px-4 py-2 rounded-lg font-bold text-sm transition min-h-[40px] ${
+                    copiedInstall === 'redhat' ? 'bg-emerald-500 text-white' : 'bg-sky-500 hover:bg-sky-600 text-white'
+                  }`}
+                >
+                  {copiedInstall === 'redhat' ? t('miner.copied') : t('miner.copyCmd')}
+                </button>
+              </div>
+            </div>
+          </div>
+          <p className="text-gray-400 text-xs mt-3">
+            <a href="/miner" className="text-sky-600 hover:text-sky-700">📖 {t('miner.installDocsDesc')}</a>
+            {' · '}
+            <a href="https://github.com/jamalmousavii/krelz.xyz" target="_blank" rel="noopener noreferrer" className="text-sky-600 hover:text-sky-700">⭐ {t('miner.github')}</a>
+          </p>
         </div>
 
         <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-5 md:p-6">

@@ -30,11 +30,13 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Install Self-Cleanup** — Install scripts auto-delete after successful installation
 - **Miner Earnings** — 90% of paid usage goes to miners
 - **Multi-Miner Accounts** — unlimited miners per user, each with its own unique token; add/remove/rename from `/miners`, no cap
-- **Internationalization** — English (default) + Farsi with RTL support
+- **Internationalization (v3.16.0)** — 33 languages with country flags; browser auto-detect; session-persisted user choice; RTL for FA/AR/HE/UR
+- **Global Version Footer (v3.16.0)** — every page shows a one-line footer sentence including the current version
 - **Chat-First Homepage (v3.15.0)** — Landing page IS the chat: centered model picker + input; after start, history sidebar left + input bottom
 - **Split Pages (v3.15.0)** — Dashboard (`/profile`), Miners (`/miners`), Settings (`/settings`) separated
 - **Light Sky Theme (v3.15.0)** — Sky-blue light UI across all pages
 - **Install Self-Cleanup** — Install scripts auto-delete after successful installation (`rm -f "$0"`)
+- **Miner Docs vs Interactive (v3.16.0)** — `/miner`: full install/connect/delete guide + GitHub; `/miners`: copy-command Quick Install + miner cards
 
 ## Quick Install (Miner)
 
@@ -110,7 +112,7 @@ Every user gets **1,000 free AI inference tokens per day**:
 krelz.xyz/
 ├── backend/                    # API Server (Node.js/Express)
 │   ├── src/
-│   │   ├── server.js          # Entry point (v3.15.0)
+│   │   ├── server.js          # Entry point (v3.16.0)
 │   │   ├── models.js          # AI models + pricing
 │   │   ├── database/
 │   │   │   ├── pool.js        # PostgreSQL connection
@@ -132,16 +134,22 @@ krelz.xyz/
 │   │   ├── index.js           # Chat homepage (chat-first, v3.15.0)
 │   │   ├── chat.js            # Redirects to / (chat is homepage now)
 │   │   ├── profile.js         # Dashboard (balance, daily tokens)
-│   │   ├── miners.js          # Miner management (add/remove/rename, v3.15.0)
-│   │   ├── settings.js        # Settings (wallet, language, password, v3.15.0)
-│   │   ├── miner.js           # Miner install guide
-│   │   ├── explorer.js        # Network explorer
+│   │   ├── miners.js          # Miner management + Quick Install copy (v3.16.0)
+│   │   ├── settings.js        # Settings (wallet, 33-lang dropdown, password)
+│   │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)
+│   │   ├── explorer.js        # Network explorer (not in nav)
 │   │   ├── leaderboard.js     # Top miners/users
 │   │   └── admin.js           # Admin panel
 │   ├── components/
-│   │   ├── Navbar.js          # Navigation + auth
+│   │   ├── Navbar.js          # Nav (Miner, Leaderboard) + auth + lang dropdown
+│   │   ├── Footer.js          # Global version footer (v3.16.0)
 │   │   ├── GoogleLogin.js     # Google OAuth
-│   │   └── LanguageSwitcher.js
+│   │   ├── ErrorBoundary.js   # Error boundary
+│   │   └── LanguageSwitcher.js # 33-lang dropdown with flags
+│   ├── i18n/
+│   │   ├── translations.js    # Aggregator + LANGUAGES + detectLanguage
+│   │   ├── translations/      # One file per language (33 files)
+│   │   └── LanguageContext.js  # Provider (browser detect + sessionStorage)
 │   ├── i18n/
 │   │   ├── translations.js    # EN/FA translations
 │   │   └── LanguageContext.js

@@ -152,8 +152,6 @@ export default function Navbar() {
         {/* Desktop */}
         <div className="hidden md:flex items-center gap-4">
           <LanguageSwitcher />
-          <a href="/" className="text-gray-600 hover:text-sky-700 transition">{t('nav.chat')}</a>
-          <a href="/explorer" className="text-gray-600 hover:text-sky-700 transition">{t('nav.explorer')}</a>
           <a href="/miner" className="text-gray-600 hover:text-sky-700 transition">{t('nav.miner')}</a>
           <a href="/leaderboard" className="text-gray-600 hover:text-sky-700 transition">🏆</a>
 
@@ -314,8 +312,6 @@ export default function Navbar() {
         <div className="md:hidden mt-4 pb-4 border-t border-sky-200">
           <div className="flex flex-col gap-3 pt-4">
             <LanguageSwitcher />
-            <a href="/" className="text-gray-600 hover:text-sky-700 transition py-2">{t('nav.chat')}</a>
-            <a href="/explorer" className="text-gray-600 hover:text-sky-700 transition py-2">{t('nav.explorer')}</a>
             <a href="/miner" className="text-gray-600 hover:text-sky-700 transition py-2">{t('nav.miner')}</a>
             <a href="/leaderboard" className="text-gray-600 hover:text-sky-700 transition py-2">🏆 Leaderboard</a>
 

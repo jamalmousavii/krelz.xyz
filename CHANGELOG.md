@@ -1,5 +1,30 @@
 # Changelog
 
+## [3.16.0] - 2026-09-24
+
+### Added
+- **33 languages** with country flags (EN, FA, AR, HE, UR, FR, DE, ES, PT, IT, NL, RU, UK, PL, TR, ZH, ZH-TW, JA, KO, HI, BN, ID, VI, TH, MS, SV, DA, FI, NO, CS, RO, EL, HU) — full translation of all keys
+- Browser-language auto-detection on first visit (`navigator.languages`); fallback English if unsupported
+- Session-persisted user language choice (`sessionStorage['krelz-lang']`) — stays while user is on the site
+- Language dropdown with flag + native name in Navbar (desktop + mobile) and Settings
+- Global `Footer` on every page: one sentence containing the version (`footer.sentence` + `{version}`)
+- `/miner` docs sections: always-visible Install, Connect (with token), Delete/Uninstall + GitHub links
+- `/miners` Quick Install card with Ubuntu/RedHat copy buttons (`--token YOUR_TOKEN`)
+- Guide modal step 5: how to remove a miner
+- RTL support generalized to `fa`, `ar`, `he`, `ur` via `isRtl()` helper
+
+### Changed
+- Navbar: removed Chat and Explorer menu items (site logo/name already opens chat)
+- `/miner` model catalog is read-only (interactive copy buttons moved to `/miners`)
+- Settings language section: dropdown with flags replaces EN/FA buttons; uses context `changeLang` (no full reload)
+- Language files split: `i18n/translations/<code>.js` + `translations.js` re-exports `translations`, `LANGUAGES`, `isRtl`, `detectLanguage`
+- Page roots use `flex-1` inside `_app` flex column so the global Footer fits without extra scroll
+- Active-chat height accounts for footer (`calc(100vh - 130px)`)
+- Version bumped to 3.16.0 (server.js health, logger, package.json, i18n `home.version`)
+
+### Removed
+- Chat and Explorer from main navigation (Explorer page still reachable at `/explorer`)
+
 ## [3.15.0] - 2026-09-23
 
 ### Added

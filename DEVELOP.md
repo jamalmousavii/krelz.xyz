@@ -59,20 +59,22 @@ frontend/
 │   ├── index.js           # Chat homepage (chat-first, v3.15.0)
 │   ├── chat.js            # Redirects to /
 │   ├── profile.js         # Dashboard (balance, daily tokens)
-│   ├── miners.js          # Miner management page (v3.15.0)
-│   ├── settings.js         # Settings page (v3.15.0)
-│   ├── miner.js           # Miner install
-│   ├── explorer.js        # Network explorer
+│   ├── miners.js          # Miner mgmt + Quick Install copy buttons (v3.16.0)
+│   ├── settings.js         # Settings (wallet, 33-lang dropdown, password)
+│   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)
+│   ├── explorer.js        # Network explorer (not in main nav)
 │   ├── leaderboard.js     # Top miners/users
 │   └── admin.js           # Admin panel
 ├── components/
-│   ├── Navbar.js          # Navigation + auth dropdown
+│   ├── Navbar.js          # Nav + auth dropdown + LanguageSwitcher
+│   ├── Footer.js          # Global version footer (every page, v3.16.0)
 │   ├── GoogleLogin.js     # Google OAuth
 │   ├── ErrorBoundary.js   # Error boundary
-│   └── LanguageSwitcher.js
+│   └── LanguageSwitcher.js # Dropdown: flag + language name (33 langs)
 ├── i18n/
-│   ├── translations.js    # EN/FA translations
-│   └── LanguageContext.js  # Language provider
+│   ├── translations.js    # Aggregator, LANGUAGES, RTL_LANGS, isRtl, detectLanguage
+│   ├── translations/      # One file per language (33 files: en, fa, ar, ...)
+│   └── LanguageContext.js  # Provider: browser detect + sessionStorage
 └── styles/
 ```
 
@@ -82,7 +84,7 @@ Node.js/Express API with PostgreSQL + Redis.
 ```
 backend/
 ├── src/
-│   ├── server.js          # Entry point (v3.15.0)
+│   ├── server.js          # Entry point (v3.16.0)
 │   ├── models.js          # AI models + per-model pricing
 │   ├── cache.js           # Redis caching
 │   ├── database/
@@ -269,37 +271,23 @@ const accounts = await window.ethereum.request({ method: 'eth_accounts' });
 3. Add translation keys (`connectXxx`)
 4. Both use same `eth_requestAccounts` method
 
-## Internationalization (i18n)
+## Internationalization (i18n) — 33 languages (v3.16.0)
 
 ### How it works
 
-- Translations in `frontend/i18n/translations.js`
-- Language stored in localStorage (`krelz-lang`)
-- Default: English, Farsi with RTL
+- Language files: `frontend/i18n/translations/<code>.js` (one per language, full key set)
+- Aggregator: `frontend/i18n/translations.js` exports `translations`, `LANGUAGES` (code/name/flag/rtl), `RTL_LANGS`, `isRtl()`, `detectLanguage()`
+- **Detection (first visit):** `sessionStorage['krelz-lang']` → else `navigator.languages` match → else `en`
+- **User choice:** stored in `sessionStorage['krelz-lang']` (persists while user is on the site / same tab)
+- **RTL:** `fa`, `ar`, `he`, `ur` — `document.documentElement.dir` set by LanguageContext
+- Fallback: missing keys fall back to English (`t()` walks `translations[lang]` then `translations.en`)
 
 ### Adding a new language
 
-1. Open `frontend/i18n/translations.js`
-2. Add a new key (e.g., `ar` for Arabic):
-
-```javascript
-const translations = {
-  en: { ... },
-  fa: { ... },
-  ar: {
-    nav: { ... },
-    profile: {
-      spent: '...',
-      dailyTokens: '...',
-      remaining: '...',
-      usedToday: '...',
-    },
-    // ...
-  },
-};
-```
-
-3. Add language option to `LanguageSwitcher.js`
+1. Copy `frontend/i18n/translations/en.js` → `<code>.js` and translate all values
+2. Import it in `frontend/i18n/translations.js` and add to the `translations` object
+3. Add `{ code, name, flag, rtl }` to `LANGUAGES`
+4. If RTL, add code to RTL set (via `rtl: true` on the LANGUAGES entry)
 
 ### Translation Keys (Profile)
 

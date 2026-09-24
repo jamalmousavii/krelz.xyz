@@ -1,6 +1,7 @@
 import Head from 'next/head';
 import { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
+import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
 
 const CATEGORY_ICONS = { chat: '💬', code: '💻', vision: '👁️', embedding: '🔗' };
@@ -236,7 +237,7 @@ export default function Home() {
   // ===== EMPTY STATE: centered hero =====
   if (!hasStarted) {
     return (
-      <div className={`min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex flex-col ${lang === 'fa' ? 'rtl' : 'ltr'}`}>
+      <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex flex-col ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
         <Head>
           <title>Krelz Network - Decentralized LLM Inference</title>
           <meta name="description" content="Decentralized LLM Inference Network. Chat with AI models." />
@@ -274,22 +275,18 @@ export default function Home() {
 
           <p className="text-gray-400 text-sm mt-6">{t('chat.startTyping')}</p>
         </main>
-
-        <footer className="container mx-auto px-6 py-5 text-center text-gray-400 text-xs">
-          <p>&copy; 2026 Krelz Network. {t('home.footer')} {t('home.version')}</p>
-        </footer>
       </div>
     );
   }
 
   // ===== ACTIVE STATE: sidebar + messages + bottom input =====
   return (
-    <div className={`min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex flex-col ${lang === 'fa' ? 'rtl' : 'ltr'}`}>
+    <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex flex-col ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
       <Head><title>{t('chat.title')}</title></Head>
 
       <Navbar />
 
-      <main className="flex-1 container mx-auto px-2 md:px-6 pb-4 md:pb-6 max-w-6xl flex gap-0 md:gap-4 min-h-0" style={{ height: 'calc(100vh - 80px)' }}>
+      <main className="flex-1 container mx-auto px-2 md:px-6 pb-4 md:pb-6 max-w-6xl flex gap-0 md:gap-4 min-h-0" style={{ height: 'calc(100vh - 130px)' }}>
         {/* Sidebar — history */}
         {isLoggedIn && (
           <div className={`${sidebarOpen ? 'flex' : 'hidden'} md:flex w-full md:w-64 flex-shrink-0 mb-2 md:mb-0 flex-col`}>
@@ -375,7 +372,7 @@ export default function Home() {
           {/* Messages */}
           <div className={`bg-white border border-sky-100 ${isLoggedIn && activeSessionId ? 'rounded-b-xl' : 'rounded-xl'} p-3 md:p-5 flex-1 overflow-y-auto mb-3 shadow-sm`}>
             {chat.map((msg, i) => (
-              <div key={i} className={`mb-4 ${msg.role === 'user' ? (lang === 'fa' ? 'text-right' : 'text-left') : (lang === 'fa' ? 'text-left' : 'text-right')}`}>
+              <div key={i} className={`mb-4 ${msg.role === 'user' ? (isRtl(lang) ? 'text-right' : 'text-left') : (isRtl(lang) ? 'text-left' : 'text-right')}`}>
                 <div className={`inline-block max-w-[85%] md:max-w-[80%] p-3 md:p-4 rounded-2xl text-sm md:text-base ${
                   msg.role === 'user'
                     ? 'bg-sky-500 text-white'
@@ -384,14 +381,14 @@ export default function Home() {
                   {msg.content}
                 </div>
                 {msg.role === 'assistant' && msg.provider_name && (
-                  <div className={`text-xs text-gray-400 mt-1 ${lang === 'fa' ? 'text-right' : 'text-left'}`}>
+                  <div className={`text-xs text-gray-400 mt-1 ${isRtl(lang) ? 'text-right' : 'text-left'}`}>
                     ⚡ via {msg.provider_name}
                   </div>
                 )}
               </div>
             ))}
             {loading && (
-              <div className={lang === 'fa' ? 'text-left' : 'text-right'}>
+              <div className={isRtl(lang) ? 'text-left' : 'text-right'}>
                 <div className="inline-block bg-sky-50 text-gray-600 border border-sky-100 p-3 md:p-4 rounded-2xl text-sm md:text-base">{t('chat.typing')}</div>
               </div>
             )}

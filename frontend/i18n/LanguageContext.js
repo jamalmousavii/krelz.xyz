@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import translations from './translations';
+import translations, { detectLanguage, isRtl } from './translations';
 
 const LanguageContext = createContext();
 
@@ -7,17 +7,18 @@ export function LanguageProvider({ children }) {
   const [lang, setLang] = useState('en');
 
   useEffect(() => {
-    const saved = typeof window !== 'undefined' && localStorage.getItem('krelz-lang');
-    if (saved && (saved === 'en' || saved === 'fa')) {
-      setLang(saved);
-    }
+    const detected = detectLanguage();
+    setLang(detected);
+    document.documentElement.dir = isRtl(detected) ? 'rtl' : 'ltr';
+    document.documentElement.lang = detected;
   }, []);
 
   const changeLang = (newLang) => {
+    if (!translations[newLang]) return;
     setLang(newLang);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('krelz-lang', newLang);
-      document.documentElement.dir = newLang === 'fa' ? 'rtl' : 'ltr';
+      try { sessionStorage.setItem('krelz-lang', newLang); } catch (e) {}
+      document.documentElement.dir = isRtl(newLang) ? 'rtl' : 'ltr';
       document.documentElement.lang = newLang;
     }
   };
@@ -28,7 +29,13 @@ export function LanguageProvider({ children }) {
     for (const k of keys) {
       value = value?.[k];
     }
-    return value || key;
+    if (value === undefined && lang !== 'en') {
+      value = translations.en;
+      for (const k of keys) {
+        value = value?.[k];
+      }
+    }
+    return value !== undefined ? value : key;
   };
 
   return (

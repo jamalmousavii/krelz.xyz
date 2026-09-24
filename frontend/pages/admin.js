@@ -1,6 +1,7 @@
 import Head from 'next/head';
 import { useState, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
+import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
 
 export default function Admin() {
@@ -59,7 +60,7 @@ export default function Admin() {
   };
 
   return (
-    <div className={`min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 ${lang === 'fa' ? 'rtl' : 'ltr'}`}>
+    <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
       <Head><title>Admin - Krelz Network</title></Head>
       <Navbar />
 
