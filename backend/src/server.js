@@ -128,7 +128,7 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/token', tokenRoutes);
 app.use('/api/stats', cacheMiddleware(30), statsRoutes);
-app.use('/api/models', cacheMiddleware(60), modelRoutes);
+app.use('/api/models', cacheMiddleware(15), modelRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/leaderboard', cacheMiddleware(60), leaderboardRoutes);
 
@@ -145,7 +145,7 @@ app.get('/health', async (req, res) => {
 
   res.json({
     status: 'ok',
-    version: '3.18.0',
+    version: '3.18.1',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     redis: cache.connected ? 'connected' : 'disconnected',

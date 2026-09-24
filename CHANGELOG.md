@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.18.1] - 2026-09-24
+
+### Fixed
+- **Chat model badge** — online miner with removed/unknown `current_model` (e.g. `qwen3.6:27b`) now credits `llama3.1:8b` so dropdown shows green ✅
+- `/api/models` + `/api/stats` cache invalidated on WS auth / heartbeat / disconnect / cleanup (was stale up to 60s)
+- `/api/models` TTL 60s → 15s
+- Model dropdown: `free-cloud-ai` always selectable (was greyed out when badge was 0)
+
+### Added
+- Chat response source badge: `⛏️ via miner #N` / `⚡ via provider` / `💻 local`
+- `miners_online_total` on `GET /api/models`
+
+### Changed
+- **Default chat model → `llama3.1:8b`** (uses online miner; `free-cloud-ai` secondary option)
+- MODELS_LIST order: `llama3.1:8b` first, then `free-cloud-ai`
+- Version bumped to 3.18.1
+
 ## [3.18.0] - 2026-09-24
 
 ### Added

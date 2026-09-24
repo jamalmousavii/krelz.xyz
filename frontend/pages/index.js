@@ -12,7 +12,7 @@ export default function Home() {
   const [chat, setChat] = useState([]);
   const [loading, setLoading] = useState(false);
   const [models, setModels] = useState([]);
-  const [selectedModel, setSelectedModel] = useState('free-cloud-ai');
+  const [selectedModel, setSelectedModel] = useState('llama3.1:8b');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -171,7 +171,13 @@ export default function Home() {
       });
       const data = await res.json();
       if (data.success) {
-        setChat(prev => [...prev, { role: 'assistant', content: data.response, provider_name: data.provider_name || null }]);
+        setChat(prev => [...prev, {
+          role: 'assistant',
+          content: data.response,
+          provider_name: data.provider_name || null,
+          source: data.source || null,
+          miner_id: data.miner_id || null,
+        }]);
         if (data.session_id && !activeSessionId) {
           setActiveSessionId(data.session_id);
           fetchSessions(token);
@@ -204,14 +210,16 @@ export default function Home() {
         <div className={`absolute ${upward ? 'bottom-full mb-2' : 'top-full mt-2'} left-0 w-full md:w-72 bg-white border border-sky-200 rounded-xl shadow-xl overflow-hidden z-50 max-h-[300px] overflow-y-auto`}>
           {models.map((model) => {
             const isSelected = selectedModel === model.id;
+            const isCloud = model.id === 'free-cloud-ai';
             const hasMiners = model.miners_online > 0;
+            const canSelect = isCloud || hasMiners;
             return (
               <button
                 key={model.id}
-                onClick={() => { if (hasMiners) { setSelectedModel(model.id); setDropdownOpen(false); } }}
-                disabled={!hasMiners}
+                onClick={() => { if (canSelect) { setSelectedModel(model.id); setDropdownOpen(false); } }}
+                disabled={!canSelect}
                 className={`w-full text-left px-4 py-3 flex items-center justify-between transition text-sm border-b border-sky-50 last:border-0 ${
-                  isSelected ? 'bg-sky-100 text-sky-800' : hasMiners ? 'hover:bg-sky-50 text-gray-700' : 'opacity-40 cursor-not-allowed text-gray-400'
+                  isSelected ? 'bg-sky-100 text-sky-800' : canSelect ? 'hover:bg-sky-50 text-gray-700' : 'opacity-40 cursor-not-allowed text-gray-400'
                 }`}
               >
                 <div className="flex items-center gap-2 min-w-0">
@@ -220,7 +228,9 @@ export default function Home() {
                   <span className="text-sky-600 text-xs">{model.size}</span>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  {hasMiners ? (
+                  {isCloud ? (
+                    <span className="text-sky-500 text-xs">☁️ cloud</span>
+                  ) : hasMiners ? (
                     <span className="text-emerald-600 text-xs">✅ {model.miners_online}</span>
                   ) : (
                     <span className="text-red-400 text-xs">⚠️ 0</span>
@@ -380,9 +390,20 @@ export default function Home() {
                 }`}>
                   {msg.content}
                 </div>
-                {msg.role === 'assistant' && msg.provider_name && (
+                {msg.role === 'assistant' && (
                   <div className={`text-xs text-gray-400 mt-1 ${isRtl(lang) ? 'text-right' : 'text-left'}`}>
-                    ⚡ via {msg.provider_name}
+                    {msg.source === 'miner' && (
+                      <span className="text-emerald-600">⛏️ {t('chat.viaMiner')}{msg.miner_id ? ` #${msg.miner_id}` : ''}</span>
+                    )}
+                    {msg.source === 'external' && msg.provider_name && (
+                      <span>⚡ via {msg.provider_name}</span>
+                    )}
+                    {msg.source === 'local' && (
+                      <span>💻 {t('chat.viaLocal')}</span>
+                    )}
+                    {!msg.source && msg.provider_name && (
+                      <span>⚡ via {msg.provider_name}</span>
+                    )}
                   </div>
                 )}
               </div>

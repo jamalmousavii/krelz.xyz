@@ -40,6 +40,9 @@ class WSServer {
         if (miner.ws === ws) {
           this.miners.delete(minerId);
           pool.query("UPDATE miners SET status = 'offline' WHERE id = $1", [minerId]);
+          invalidateCache('/api/miners');
+          invalidateCache('/api/models');
+          invalidateCache('/api/stats');
           console.log(`Miner ${minerId} disconnected`);
         }
       }
@@ -176,6 +179,8 @@ class WSServer {
       [minerId]
     );
     invalidateCache('/api/miners');
+    invalidateCache('/api/models');
+    invalidateCache('/api/stats');
 
     ws.send(JSON.stringify({ type: 'auth_ok', miner_id: minerId }));
     console.log(`Miner ${minerId} authenticated (${wallet_address || miner_token?.slice(0, 10) + '...'})`);
@@ -213,6 +218,9 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
         [statusValue, miner.id, current_model,
          gpu_usage || 0, ram_usage || 0, cpu_usage || 0, disk_usage || 0, statusValue]
       );
+      invalidateCache('/api/miners');
+      invalidateCache('/api/models');
+      invalidateCache('/api/stats');
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');
@@ -352,6 +360,9 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
       if (timeSinceHeartbeat > 120000) {
         this.miners.delete(minerId);
         pool.query("UPDATE miners SET status = 'offline' WHERE id = $1", [minerId]);
+        invalidateCache('/api/miners');
+        invalidateCache('/api/models');
+        invalidateCache('/api/stats');
         console.log(`Miner ${minerId} marked offline (no heartbeat)`);
       }
     }

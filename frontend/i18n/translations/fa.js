@@ -40,7 +40,7 @@ const fa = {
     startChat: 'شروع چت',
     footer: 'تمامی حقوق محفوظ است.',
     installMetaMask: 'لطفاً MetaMask را نصب کنید',
-    version: 'v3.18.0',
+    version: 'v3.18.1',
   },
   footer: {
     sentence: '© ۲۰۲۶ شبکه کرلز — پلتفرم استنتاج LLM غیرمتمرکز، نسخه {version}. تمامی حقوق محفوظ است.',
@@ -67,6 +67,8 @@ const fa = {
     freeTokens: 'توکن رایگان',
     history: 'تاریخچه',
     startTyping: 'برای شروع چت تایپ کنید...',
+    viaMiner: 'از ماینر',
+    viaLocal: 'محلی',
   },
   miner: {
     title: 'ماینر - Krelz Network',

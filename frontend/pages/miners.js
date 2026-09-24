@@ -6,10 +6,10 @@ import Navbar from '../components/Navbar';
 import authHeaders from '../utils/auth';
 
 const MODELS_LIST = [
+  { id: 'llama3.1:8b', name: 'Llama 3.1', category: 'chat' },
   { id: 'free-cloud-ai', name: 'Free Cloud AI', category: 'chat' },
   { id: 'llama3.3:70b', name: 'Llama 3.3', category: 'chat' },
   { id: 'deepseek-r1:70b', name: 'DeepSeek R1', category: 'chat' },
-  { id: 'llama3.1:8b', name: 'Llama 3.1', category: 'chat' },
   { id: 'qwen3-coder:30b', name: 'Qwen 3 Coder', category: 'code' },
   { id: 'qwen2.5-coder:32b', name: 'Qwen 2.5 Coder', category: 'code' },
   { id: 'qwen3-vl:8b', name: 'Qwen 3 VL', category: 'vision' },

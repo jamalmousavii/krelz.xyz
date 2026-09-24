@@ -40,7 +40,7 @@ const ko = {
     startChat: '채팅 시작',
     footer: '모든 권리 보유.',
     installMetaMask: 'MetaMask를 설치해 주세요',
-    version: 'v3.18.0',
+    version: 'v3.18.1',
   },
   footer: {
     sentence: '© 2026 Krelz Network — 탈중앙화 LLM 추론 플랫폼, 버전 {version}. 모든 권리 보유.',

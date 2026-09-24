@@ -40,7 +40,7 @@ const el = {
     startChat: 'Έναρξη συνομιλίας',
     footer: 'Με επιφύλαξη παντός δικαιώματος.',
     installMetaMask: 'Εγκαταστήστε το MetaMask',
-    version: 'v3.18.0',
+    version: 'v3.18.1',
   },
   footer: {
     sentence: '© 2026 Krelz Network — Αποκεντρωμένη πλατφόρμα συμπερασμού LLM, έκδοση {version}. Με επιφύλαξη παντός δικαιώματος.',

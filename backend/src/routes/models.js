@@ -14,17 +14,30 @@ router.get('/', async (req, res) => {
 
     // Get miner counts per model
     const minerCounts = {};
+    let totalOnline = 0;
     try {
       const onlineResult = await pool.query(
         `SELECT current_model, COUNT(*) as cnt
          FROM miners WHERE status = 'online'
          GROUP BY current_model`
       );
+      const knownIds = new Set(models.map(m => m.id));
+      const orphanCounts = {};
       for (const row of onlineResult.rows) {
-        minerCounts[row.current_model] = parseInt(row.cnt);
+        const cnt = parseInt(row.cnt);
+        totalOnline += cnt;
+        if (knownIds.has(row.current_model)) {
+          minerCounts[row.current_model] = (minerCounts[row.current_model] || 0) + cnt;
+        } else {
+          // Unknown/removed model (e.g. qwen3.6:27b) — credit to llama3.1:8b badge
+          orphanCounts['llama3.1:8b'] = (orphanCounts['llama3.1:8b'] || 0) + cnt;
+        }
+      }
+      for (const [id, cnt] of Object.entries(orphanCounts)) {
+        minerCounts[id] = (minerCounts[id] || 0) + cnt;
       }
     } catch (e) {
-      // miners table may not exist yet
+      console.error('models.js: miners online query failed:', e.message);
     }
 
     // Merge model data with miner counts
@@ -33,7 +46,7 @@ router.get('/', async (req, res) => {
       miners_online: minerCounts[m.id] || 0,
     }));
 
-    res.json({ success: true, models: modelsWithMiners });
+    res.json({ success: true, models: modelsWithMiners, miners_online_total: totalOnline });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });

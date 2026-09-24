@@ -40,7 +40,7 @@ const en = {
     startChat: 'Start Chat',
     footer: 'All rights reserved.',
     installMetaMask: 'Please install MetaMask',
-    version: 'v3.18.0',
+    version: 'v3.18.1',
   },
   footer: {
     sentence: '© 2026 Krelz Network — Decentralized LLM inference platform, version {version}. All rights reserved.',
@@ -67,6 +67,8 @@ const en = {
     freeTokens: 'Free Tokens',
     history: 'History',
     startTyping: 'Start typing to chat...',
+    viaMiner: 'via miner',
+    viaLocal: 'local',
   },
   miner: {
     title: 'Miner - Krelz Network',
