@@ -11,7 +11,7 @@ class WSServer {
     this.taskCallbacks = new Map();
     this.taskIdCounter = 1;
 
-    this.wss.on('connection', (ws) => this.handleConnection(ws));
+    this.wss.on('connection', (ws, req) => this.handleConnection(ws, req));
     this.wss.on('error', (err) => {
       console.error('❌ WebSocket server error:', err.message);
     });
@@ -22,8 +22,16 @@ class WSServer {
     console.log('🔌 WebSocket server started on /ws');
   }
 
-  handleConnection(ws) {
-    console.log('New WebSocket connection');
+  handleConnection(ws, req) {
+    const headers = (req && req.headers) || (ws.upgradeReq && ws.upgradeReq.headers) || {};
+    const remote =
+      headers['cf-connecting-ip'] ||
+      (headers['x-forwarded-for'] && headers['x-forwarded-for'].split(',')[0].trim()) ||
+      headers['x-real-ip'] ||
+      (ws._socket && ws._socket.remoteAddress) ||
+      'unknown';
+    ws._clientIp = remote;
+    console.log(`New WebSocket connection from ${remote}`);
 
     ws.on('message', async (data) => {
       try {
@@ -167,7 +175,7 @@ class WSServer {
           existing.ws.close();
         }
       } catch (e) {}
-      console.log(`Miner ${minerId} previous connection replaced`);
+      console.log(`Miner ${minerId} previous connection replaced (old=${existing.ws && existing.ws._clientIp} new=${ws._clientIp})`);
     }
 
     this.miners.set(minerId, {
@@ -190,7 +198,7 @@ class WSServer {
     invalidateCache('/api/stats');
 
     ws.send(JSON.stringify({ type: 'auth_ok', miner_id: minerId }));
-    console.log(`Miner ${minerId} authenticated (${wallet_address || miner_token?.slice(0, 10) + '...'})`);
+    console.log(`Miner ${minerId} authenticated from ${ws._clientIp} (${wallet_address || miner_token?.slice(0, 10) + '...'})`);
   }
 
   async handleHeartbeat(ws, msg) {
