@@ -37,7 +37,8 @@ class MinerWebSocket {
     this.intentionalClose = false;
     this.authed = false;
     const wsUrl = process.env.API_WS_URL || 'wss://krelz.xyz:443/ws';
-    const ws = new WebSocket(wsUrl, {
+    const isLocal = /^wss?:\/\/(127\.0\.0\.1|localhost|::1)/.test(wsUrl);
+    const ws = new WebSocket(wsUrl, isLocal ? {} : {
       rejectUnauthorized: false,
       checkServerIdentity: () => undefined,
       servername: 'krelz.xyz',

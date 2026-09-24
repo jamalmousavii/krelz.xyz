@@ -3,6 +3,18 @@ const crypto = require('crypto');
 const pool = require('./database/pool');
 const { invalidateCache } = require('./cache');
 
+function isLocalClient(ws) {
+  // Trust only the client-facing IP (_clientIp). Behind nginx, socket.remoteAddress
+  // is always 127.0.0.1 and would wrongly mark every proxied miner as local.
+  const ip = String(ws._clientIp || '');
+  return (
+    ip === '127.0.0.1' ||
+    ip === '::1' ||
+    ip === '::ffff:127.0.0.1' ||
+    ip.endsWith('::ffff:127.0.0.1')
+  );
+}
+
 class WSServer {
   constructor(server) {
     this.wss = new WebSocketServer({ server, path: '/ws' });
@@ -169,6 +181,15 @@ class WSServer {
       return;
     }
     if (existing && existing.ws && existing.ws !== ws) {
+      // Heartbeat every 30s → allow up to 45s skew before treating as stale
+      const oldHealthy = Date.now() - (existing.lastHeartbeat || 0) < 45000;
+      const newIsLocal = isLocalClient(ws);
+      if (oldHealthy && !newIsLocal) {
+        console.log(`Miner ${minerId} rejected newcomer from ${ws._clientIp} (healthy session from ${existing.ws._clientIp})`);
+        ws.send(JSON.stringify({ type: 'auth_error', message: 'Miner already connected. Stop the other session or wait for it to go offline.' }));
+        try { ws.close(); } catch (e) {}
+        return;
+      }
       try {
         if (existing.ws.readyState === 1) {
           existing.ws.send(JSON.stringify({ type: 'error', message: 'Replaced by newer connection' }));

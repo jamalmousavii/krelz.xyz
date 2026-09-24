@@ -40,7 +40,7 @@ const id = {
     startChat: 'Mulai Obrolan',
     footer: 'Hak cipta dilindungi.',
     installMetaMask: 'Silakan pasang MetaMask',
-    version: 'v3.18.2',
+    version: 'v3.18.3',
   },
   footer: {
     sentence: '© 2026 Krelz Network — platform inferensi LLM terdesentralisasi, versi {version}. Hak cipta dilindungi.',

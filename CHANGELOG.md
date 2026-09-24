@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.18.3] - 2026-09-24
+
+### Fixed
+- **Miner WS replace-loop (root cause)** — two clients with the same `miner_token` were kicking each other every ~5s: backend now **rejects external newcomers** while an existing session is healthy (<45s heartbeat); only **localhost** may replace a healthy socket. `isLocalClient` trusts only `_clientIp` (not `socket.remoteAddress`, which is always `127.0.0.1` behind nginx)
+- VPS miner connects **directly** to `ws://127.0.0.1:8444/ws` (no Cloudflare hairpin); external miners keep `wss://krelz.xyz/ws`
+- Miner WS client skips TLS/`servername` options when `API_WS_URL` is local
+
 ## [3.18.2] - 2026-09-24
 
 ### Fixed

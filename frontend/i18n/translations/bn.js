@@ -40,7 +40,7 @@ const bn = {
     startChat: 'চ্যাট শুরু করুন',
     footer: 'সর্বস্বত্ব সংরক্ষিত।',
     installMetaMask: 'অনুগ্রহ করে MetaMask ইনস্টল করুন',
-    version: 'v3.18.2',
+    version: 'v3.18.3',
   },
   footer: {
     sentence: '© 2026 Krelz Network — ডিসেন্ট্রালাইজড LLM ইনফারেন্স প্ল্যাটফর্ম, সংস্করণ {version}। সর্বস্বত্ব সংরক্ষিত।',

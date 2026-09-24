@@ -12,7 +12,7 @@ Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
 Environment=WALLET_ADDRESS=0x7b98AF06B5220F1E6142d02c09b2e6ccD09c3bb0
-Environment=API_WS_URL=wss://krelz.xyz/ws
+Environment=API_WS_URL=ws://127.0.0.1:8444/ws
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=krelz-miner

@@ -16,8 +16,8 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 
 - **Decentralized LLM Inference** — GPU miners serve AI models via WebSocket
 - **Multi-Coin Payments (v3.18.0)** — USD wallet; Top Up via NowPayments (BTC, ETH, BNB, USDT, TRX, DOGE, XRP on checkout); withdraw USDT TRC-20 min $5
-- **Chat Source Badge (v3.18.2)** — each reply shows `⛏️ via miner` / `⚡ via provider` / `💻 local`
-- **Default Model (v3.18.2)** — chat defaults to `llama3.1:8b` (online miner); `free-cloud-ai` always available
+- **Chat Source Badge (v3.18.3)** — each reply shows `⛏️ via miner` / `⚡ via provider` / `💻 local`
+- **Default Model (v3.18.3)** — chat defaults to `llama3.1:8b` (online miner); `free-cloud-ai` always available
 - **Daily Free Tokens** — 1,000 free AI inference tokens per user per day (UTC reset)
 - **Per-Model Pricing** — 11 models from 300M to 70B parameters, priced 30-50% cheaper than DeepSeek
 - **Chat Sessions** — Persistent chat history with auto-generated subjects
@@ -113,7 +113,7 @@ Every user gets **1,000 free AI inference tokens per day**:
 krelz.xyz/
 ├── backend/                    # API Server (Node.js/Express)
 │   ├── src/
-│   │   ├── server.js          # Entry point (v3.18.2)
+│   │   ├── server.js          # Entry point (v3.18.3)
 │   │   ├── models.js          # AI models + pricing
 │   │   ├── database/
 │   │   │   ├── pool.js        # PostgreSQL connection
@@ -132,7 +132,7 @@ krelz.xyz/
 │   └── package.json
 ├── frontend/                   # UI (Next.js 14 + Tailwind CSS)
 │   ├── pages/
-│   │   ├── index.js           # Chat homepage (chat-first; default llama3.1:8b, v3.18.2)
+│   │   ├── index.js           # Chat homepage (chat-first; default llama3.1:8b, v3.18.3)
 │   │   ├── chat.js            # Redirects to / (chat is homepage now)
 │   │   ├── profile.js         # Dashboard (balance, daily tokens)
 │   │   ├── miners.js          # Miner management + Quick Install copy (v3.16.0)

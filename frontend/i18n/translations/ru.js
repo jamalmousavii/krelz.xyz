@@ -40,7 +40,7 @@ const ru = {
     startChat: 'Начать чат',
     footer: 'Все права защищены.',
     installMetaMask: 'Пожалуйста, установите MetaMask',
-    version: 'v3.18.2',
+    version: 'v3.18.3',
   },
   footer: {
     sentence: '© 2026 Krelz Network — децентрализованная платформа LLM-инференса, версия {version}. Все права защищены.',
