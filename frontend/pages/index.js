@@ -12,7 +12,7 @@ export default function Home() {
   const [chat, setChat] = useState([]);
   const [loading, setLoading] = useState(false);
   const [models, setModels] = useState([]);
-  const [selectedModel, setSelectedModel] = useState('qwen3.6:27b');
+  const [selectedModel, setSelectedModel] = useState('free-cloud-ai');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
   const messagesEndRef = useRef(null);

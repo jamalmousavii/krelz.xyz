@@ -7,7 +7,7 @@ const { authenticate, optionalAuth } = require('../middleware/auth');
 const MODELS = require('../models');
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
-const SUPPORTED_COINS = ['BTC', 'ETH', 'BNB', 'USDT', 'TRX', 'DOGE', 'XRP'];
+const SUPPORTED_COINS = ['USD'];
 const DAILY_TOKEN_LIMIT = 1000;
 
 // Free Cloud AI — Round-robin providers
@@ -17,7 +17,7 @@ const FREE_PROVIDERS = [
     name: 'Groq',
     url: 'https://api.groq.com/openai/v1/chat/completions',
     key: process.env.GROQ_API_KEY,
-    models: { 'llama3.1:8b': 'llama-3.1-8b-instant', 'llama3.3:70b': 'llama-3.3-70b-versatile', 'qwen3.6:27b': 'qwen/qwen3.6-27b', 'free-cloud-ai': 'llama-3.1-8b-instant' },
+    models: { 'llama3.1:8b': 'llama-3.1-8b-instant', 'llama3.3:70b': 'llama-3.3-70b-versatile', 'free-cloud-ai': 'llama-3.1-8b-instant' },
     cooldownUntil: 0
   },
   {
@@ -261,9 +261,9 @@ router.delete('/sessions/:id', authenticate, async (req, res) => {
 // POST /api/chat — send message (supports session_id)
 router.post('/', optionalAuth, async (req, res) => {
   try {
-    const { message, model, coin, session_id } = req.body;
+    const { message, model, session_id } = req.body;
     const userId = req.user?.id;
-    const paymentCoin = (coin || 'USDT').toUpperCase();
+    const paymentCoin = 'USD';
 
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
@@ -312,6 +312,7 @@ router.post('/', optionalAuth, async (req, res) => {
 
     const taskId = taskResult.rows[0].id;
     let response, tokensUsed, cost, providerUsed = null;
+    let lastMinerError = null;
 
     // Try WebSocket dispatch first — use miner's available model
     if (wsServer && minerId && minerModel) {
@@ -322,7 +323,8 @@ router.post('/', optionalAuth, async (req, res) => {
         const result = await wsServer.dispatchTask(minerId, taskId, message, minerModel);
 
         if (result.error) {
-          console.log(`Miner task failed: ${result.error}, falling back to local Ollama`);
+          console.log(`Miner task failed: ${result.error}, falling back`);
+          lastMinerError = result.error;
         } else {
           response = result.response;
           tokensUsed = result.tokens_used || 0;
@@ -331,7 +333,8 @@ router.post('/', optionalAuth, async (req, res) => {
         }
 
       } catch (wsError) {
-        console.log(`WebSocket dispatch failed: ${wsError.message}, falling back to local Ollama`);
+        console.log(`WebSocket dispatch failed: ${wsError.message}, falling back`);
+        lastMinerError = wsError.message;
       }
     }
 
@@ -343,14 +346,19 @@ router.post('/', optionalAuth, async (req, res) => {
         // Smart fallback: check available models
         try {
           const tagsRes = await axios.get(`${OLLAMA_URL}/api/tags`);
-          const available = tagsRes.data.models.map(m => m.name);
+          const available = (tagsRes.data.models || []).map(m => m.name);
+          if (available.length === 0) {
+            throw new Error('No local Ollama models');
+          }
           if (!available.includes(ollamaModel)) {
-            const exactMatch = available.find(m => m.startsWith(ollamaModel.split(':')[0]));
-            ollamaModel = exactMatch || available[0] || ollamaModel;
+            const family = ollamaModel.split(':')[0];
+            const exactMatch = available.find(m => m.startsWith(family + ':') || m === family);
+            ollamaModel = exactMatch || available.find(m => m.includes('8b')) || available[0];
             console.log(`Model "${model}" not available locally, using "${ollamaModel}"`);
           }
         } catch (tagErr) {
-          console.log('Could not list Ollama models, trying requested model');
+          // No models / can't list → skip to cloud providers
+          throw new Error('Ollama unavailable');
         }
 
         const ollamaResponse = await axios.post(`${OLLAMA_URL}/api/generate`, {
@@ -398,8 +406,14 @@ router.post('/', optionalAuth, async (req, res) => {
             "UPDATE tasks SET response = 'No providers available', status = 'failed' WHERE id = $1",
             [taskId]
           );
+          const detail = lastMinerError
+            ? ` (miner: ${lastMinerError})`
+            : '';
+          const noKeys = !FREE_PROVIDERS.some(p => p.key);
           return res.status(503).json({
-            error: 'No miners or free providers available. Please try again later.',
+            error: noKeys
+              ? `No inference source available. Local models unavailable and free AI API keys not configured.${detail}`
+              : `No miners or free providers available. Please try again later.${detail}`,
             task_id: taskId
           });
         }

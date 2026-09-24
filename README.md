@@ -10,17 +10,16 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 | Chat AI | https://krelz.xyz (homepage = chat) |
 | Miner Install | https://krelz.xyz/miner |
 | Explorer | https://krelz.xyz/explorer |
-| API Health | https://krelz.xyz/api/health |
+| API Health | https://krelz.xyz/health |
 
 ## Features
 
 - **Decentralized LLM Inference** — GPU miners serve AI models via WebSocket
-- **Multi-Coin Payments** — BTC, ETH, BNB, USDT, TRX, DOGE, XRP via NowPayments
+- **Multi-Coin Payments (v3.18.0)** — USD wallet; Top Up via NowPayments (BTC, ETH, BNB, USDT, TRX, DOGE, XRP on checkout); withdraw USDT TRC-20 min $5
 - **Daily Free Tokens** — 1,000 free AI inference tokens per user per day (UTC reset)
 - **Per-Model Pricing** — 11 models from 300M to 70B parameters, priced 30-50% cheaper than DeepSeek
 - **Chat Sessions** — Persistent chat history with auto-generated subjects
-- **Profile Dashboard** — Balance, daily tokens, wallet, miner settings, resource monitoring
-- **Wallet Integration** — MetaMask + Trust Wallet support (EIP-1193)
+- **Profile Dashboard** — USD balance, daily tokens, logout, quick-nav
 - **Miner CLI Mode** — Headless CLI for servers (no Electron needed)
 - **Resource Monitoring** — CPU, RAM, GPU VRAM, Disk usage tracking
 - **Auth System** — Google OAuth + email/password, password reset
@@ -32,6 +31,7 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Multi-Miner Accounts** — unlimited miners per user, each with its own unique token; add/remove/rename from `/miners`, no cap
 - **Internationalization (v3.16.0)** — 33 languages with country flags; browser auto-detect; session-persisted user choice; RTL for FA/AR/HE/UR
 - **Global Version Footer (v3.16.0)** — every page shows a one-line footer sentence including the current version
+- **USD Wallet (v3.18.0)** — Settings/Profile show `$` balance; Top Up → NowPayments; withdraw USDT-TRC20
 - **Chat-First Homepage (v3.15.0)** — Landing page IS the chat: centered model picker + input; after start, history sidebar left + input bottom
 - **Split Pages (v3.15.0)** — Dashboard (`/profile`), Miners (`/miners`), Settings (`/settings`) separated
 - **Light Sky Theme (v3.15.0)** — Sky-blue light UI across all pages
@@ -90,7 +90,6 @@ Choose to remove miner only or everything (miner + Ollama + models).
 | llama3.1:8b | 8B | $0.079 | $0.158 | -44% |
 | qwen3-vl:8b | 8B | $0.082 | $0.164 | -42% |
 | gemma4:12b | 12B | $0.085 | $0.170 | -40% |
-| qwen3.6:27b | 27B | $0.088 | $0.176 | -38% |
 | qwen3-coder:30b | 30B | $0.091 | $0.182 | -36% |
 | qwen2.5-coder:32b | 32B | $0.094 | $0.188 | -34% |
 | llama3.3:70b | 70B | $0.097 | $0.194 | -32% |
@@ -103,7 +102,7 @@ Choose to remove miner only or everything (miner + Ollama + models).
 Every user gets **1,000 free AI inference tokens per day**:
 - Resets at UTC 00:00
 - Does not accumulate
-- If exceeded, charges from paid balance (crypto deposits)
+- If exceeded, charges from paid USD balance (NowPayments deposits)
 - Tracked in `daily_tokens` table
 
 ## Project Structure
@@ -112,7 +111,7 @@ Every user gets **1,000 free AI inference tokens per day**:
 krelz.xyz/
 ├── backend/                    # API Server (Node.js/Express)
 │   ├── src/
-│   │   ├── server.js          # Entry point (v3.16.0)
+│   │   ├── server.js          # Entry point (v3.18.0)
 │   │   ├── models.js          # AI models + pricing
 │   │   ├── database/
 │   │   │   ├── pool.js        # PostgreSQL connection
@@ -121,7 +120,7 @@ krelz.xyz/
 │   │   │   ├── auth.js        # Authentication
 │   │   │   ├── miners.js      # Miner management
 │   │   │   ├── chat.js        # LLM chat + daily tokens
-│   │   │   ├── payments.js    # Multi-coin payments
+│   │   │   ├── payments.js    # USD wallet + NowPayments
 │   │   │   ├── token.js       # Balance + daily tokens
 │   │   │   ├── stats.js       # Network stats
 │   │   │   └── models.js      # Model list API
@@ -135,7 +134,7 @@ krelz.xyz/
 │   │   ├── chat.js            # Redirects to / (chat is homepage now)
 │   │   ├── profile.js         # Dashboard (balance, daily tokens)
 │   │   ├── miners.js          # Miner management + Quick Install copy (v3.16.0)
-│   │   ├── settings.js        # Settings (wallet, 33-lang dropdown, password)
+│   │   ├── settings.js        # Settings (USD wallet, 33-lang dropdown, password)
 │   │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)
 │   │   ├── explorer.js        # Network explorer (not in nav)
 │   │   ├── leaderboard.js     # Top miners/users
@@ -185,9 +184,9 @@ krelz.xyz/
 | Backend | Node.js 20, Express, PostgreSQL, Redis |
 | LLM | Ollama, 11 models (Llama, Qwen, Gemma, DeepSeek, BGE) |
 | Auth | Google OAuth 2.0, JWT |
-| Payments | NowPayments (7 cryptocurrencies) |
+| Payments | NowPayments — USD wallet, 7 coins at checkout, USDT TRC-20 withdraw |
 | Server | Ubuntu 24.04, Nginx, Let's Encrypt |
-| i18n | English (default), Farsi (RTL) |
+| i18n | 33 languages (browser detect, RTL FA/AR/HE/UR) |
 
 ## Development
 

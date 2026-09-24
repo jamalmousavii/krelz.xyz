@@ -6,7 +6,7 @@ import Navbar from '../components/Navbar';
 import authHeaders from '../utils/auth';
 
 const MODELS_LIST = [
-  { id: 'qwen3.6:27b', name: 'Qwen 3.6', category: 'chat' },
+  { id: 'free-cloud-ai', name: 'Free Cloud AI', category: 'chat' },
   { id: 'llama3.3:70b', name: 'Llama 3.3', category: 'chat' },
   { id: 'deepseek-r1:70b', name: 'DeepSeek R1', category: 'chat' },
   { id: 'llama3.1:8b', name: 'Llama 3.1', category: 'chat' },

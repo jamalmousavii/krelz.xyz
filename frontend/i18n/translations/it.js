@@ -40,7 +40,7 @@ const it = {
     startChat: 'Inizia chat',
     footer: 'Tutti i diritti riservati.',
     installMetaMask: 'Installa MetaMask',
-    version: 'v3.16.0',
+    version: 'v3.18.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — piattaforma di inferenza LLM decentralizzata, versione {version}. Tutti i diritti riservati.',

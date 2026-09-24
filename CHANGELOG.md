@@ -1,5 +1,41 @@
 # Changelog
 
+## [3.18.0] - 2026-09-24
+
+### Added
+- USD-only wallet: single `$` balance (available / earned / spent) on Settings + Profile
+- Top Up: enter USD amount → NowPayments hosted checkout (customer picks crypto coin/network)
+- Withdraw: **USDT TRC-20 only**, min **$5**, fee paid by sender ($0.50 + 0.5%, min $1)
+- Deposit records + history denominated in USD
+
+### Fixed
+- **IPN webhook never credited balances** — `processIPN` was missing `await` (`payments.js:84`)
+- Clear 503 when `NOWPAYMENTS_IPN_SECRET` missing (was generic 500)
+- Ollama empty-list guard: skip local fallback when no models / tags fail → cloud providers
+- Groq model map: removed invalid `qwen3.6:27b` entry
+- Miner errors surfaced in 503 response (no longer silently swallowed)
+- 503 message distinguishes “no API keys configured” vs “no providers”
+
+### Changed
+- **Removed Web3 wallet connect** (MetaMask / Trust) from Settings
+- **Removed 7-coin tab UI** — wallet is USD-only
+- Chat paid portion deducts from **`USD`** balance (not per-coin)
+- `POST /api/payments/deposit/create` takes `amount_usd` (coin optional pre-select)
+- Invoice omits `pay_currency` by default → customer chooses on NowPayments page
+- IPN credits **`price_amount` (USD)** to `user_coin_balances.coin='USD'`
+- Default chat model → **`free-cloud-ai`** (miners may not hold large models)
+- Removed `qwen3.6:27b` from catalog, MODELS_LIST, install-script defaults (→ `llama3.1:8b`)
+- Install script default choice → option 4 (`llama3.1:8b`)
+- `findMinerForModel`: skip miner dispatch for `free-cloud-ai`
+- Version bumped to 3.18.0
+
+### Notes
+- NowPayments keys live in VPS `/opt/krelz/backend/.env` only (not in git)
+- Existing multi-coin balances should be migrated to USD once (SQL one-time)
+- `user_balances` (legacy KRELZ) kept for daily-token accounting; Profile money cards use USD
+- Free AI provider keys (GROQ/OPENROUTER/…) still empty — required for `free-cloud-ai` fallback
+- Chat inference on tiny (3.7GB) miner still weak without capable GPU miner + API keys
+
 ## [3.16.0] - 2026-09-24
 
 ### Added

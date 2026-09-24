@@ -210,6 +210,50 @@ const migrate = async () => {
       )
     `);
     console.log('✅ جدول coin_withdrawals ایجاد شد');
+
+    // USD wallet migration: ensure USD rows exist + fold legacy multi-coin into USD once
+    try {
+      await client.query(`
+        INSERT INTO user_coin_balances (user_id, coin, chain, available, total_earned, total_spent)
+        SELECT user_id, 'USD', 'usd', 0, 0, 0
+        FROM user_coin_balances
+        WHERE coin <> 'USD'
+        ON CONFLICT (user_id, coin) DO NOTHING
+      `);
+      // One-time-ish fold: add non-USD balances into USD (fixed approx rates for migration)
+      await client.query(`
+        UPDATE user_coin_balances u SET
+          available = u.available + COALESCE(x.usd, 0),
+          total_earned = u.total_earned + COALESCE(x.usd, 0)
+        FROM (
+          SELECT user_id, SUM(
+            available * CASE coin
+              WHEN 'USDT' THEN 1
+              WHEN 'BTC' THEN 60000
+              WHEN 'ETH' THEN 3000
+              WHEN 'BNB' THEN 600
+              WHEN 'TRX' THEN 0.12
+              WHEN 'DOGE' THEN 0.15
+              WHEN 'XRP' THEN 0.5
+              ELSE 0
+            END
+          ) AS usd
+          FROM user_coin_balances
+          WHERE coin <> 'USD' AND coin <> 'KRELZ'
+          GROUP BY user_id
+        ) x
+        WHERE u.user_id = x.user_id AND u.coin = 'USD'
+      `);
+      // Zero out legacy rows after fold (keep history columns)
+      await client.query(`
+        UPDATE user_coin_balances SET available = 0
+        WHERE coin IN ('BTC','ETH','BNB','USDT','TRX','DOGE','XRP')
+      `);
+      console.log('✅ USD wallet migration completed');
+    } catch (migErr) {
+      console.warn('⚠️ USD migration note:', migErr.message);
+    }
+
     
     // Miner coin earnings
     await client.query(`

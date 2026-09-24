@@ -60,7 +60,7 @@ frontend/
 │   ├── chat.js            # Redirects to /
 │   ├── profile.js         # Dashboard (balance, daily tokens)
 │   ├── miners.js          # Miner mgmt + Quick Install copy buttons (v3.16.0)
-│   ├── settings.js         # Settings (wallet, 33-lang dropdown, password)
+│   ├── settings.js         # Settings (USD wallet, 33-lang dropdown, password)
 │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)
 │   ├── explorer.js        # Network explorer (not in main nav)
 │   ├── leaderboard.js     # Top miners/users
@@ -84,7 +84,7 @@ Node.js/Express API with PostgreSQL + Redis.
 ```
 backend/
 ├── src/
-│   ├── server.js          # Entry point (v3.16.0)
+│   ├── server.js          # Entry point (v3.18.0)
 │   ├── models.js          # AI models + per-model pricing
 │   ├── cache.js           # Redis caching
 │   ├── database/
@@ -97,7 +97,7 @@ backend/
 │       ├── chat.js        # LLM chat + daily tokens + sessions
 │       ├── miners.js      # Miner CRUD + model switch
 │       ├── models.js      # Model list API
-│       ├── payments.js    # NowPayments multi-coin
+│       ├── payments.js    # NowPayments USD wallet (deposit/withdraw/IPN)
 │       ├── token.js       # Balance + daily tokens info
 │       ├── stats.js       # Network stats
 │       └── leaderboard.js # Top miners
@@ -181,7 +181,6 @@ Models defined in `backend/src/models.js` with per-model pricing:
 | llama3.1:8b | 8B | $0.079 | $0.158 | -44% |
 | qwen3-vl:8b | 8B | $0.082 | $0.164 | -42% |
 | gemma4:12b | 12B | $0.085 | $0.170 | -40% |
-| qwen3.6:27b | 27B | $0.088 | $0.176 | -38% |
 | qwen3-coder:30b | 30B | $0.091 | $0.182 | -36% |
 | qwen2.5-coder:32b | 32B | $0.094 | $0.188 | -34% |
 | llama3.3:70b | 70B | $0.097 | $0.194 | -32% |
@@ -251,7 +250,12 @@ Both wallets use the same EIP-1193 standard. The only difference is the detectio
 6. After connection → shows wallet address + which wallet
 ```
 
-### Detection Logic
+## Web3 Wallet Connect (removed in v3.18.0)
+
+MetaMask / Trust Wallet connect was removed from Settings in favor of a **USD-only wallet**
+(NowPayments Top Up + USDT TRC-20 withdraw). The notes below are historical.
+
+### Detection Logic (legacy)
 
 ```javascript
 // MetaMask
@@ -271,7 +275,7 @@ const accounts = await window.ethereum.request({ method: 'eth_accounts' });
 3. Add translation keys (`connectXxx`)
 4. Both use same `eth_requestAccounts` method
 
-## Internationalization (i18n) — 33 languages (v3.16.0)
+## Internationalization (i18n) — 33 languages (v3.16.0+)
 
 ### How it works
 

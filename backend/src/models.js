@@ -3,7 +3,6 @@ const MODELS = [
   { id: 'free-cloud-ai', name: 'Free Cloud AI', size: 'auto', ram: '0', category: 'chat', desc: 'Free AI powered by multiple cloud providers', inputPrice: 0, outputPrice: 0 },
 
   // Chat — Kamel-tarin
-  { id: 'qwen3.6:27b', name: 'Qwen 3.6', size: '27B', ram: '17 GB', category: 'chat', desc: 'Best overall single-GPU model (68.9% SWE-bench)', inputPrice: 0.088, outputPrice: 0.176 },
   { id: 'llama3.3:70b', name: 'Llama 3.3', size: '70B', ram: '43 GB', category: 'chat', desc: 'Best large model (MMLU 86.0)', inputPrice: 0.097, outputPrice: 0.194 },
   { id: 'deepseek-r1:70b', name: 'DeepSeek R1', size: '70B', ram: '43 GB', category: 'chat', desc: 'Best reasoning model', inputPrice: 0.098, outputPrice: 0.196 },
   { id: 'llama3.1:8b', name: 'Llama 3.1', size: '8B', ram: '5 GB', category: 'chat', desc: 'Best budget all-rounder', inputPrice: 0.079, outputPrice: 0.158 },

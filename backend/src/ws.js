@@ -322,14 +322,19 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
     });
   }
 
-  // Find best available miner for a model
+  // Find best available miner for a model (resource-aware)
   findMinerForModel(model) {
+    // Prefer exact model match on online miners
     for (const [minerId, miner] of this.miners) {
       if (miner.status === 'online' && miner.current_model === model) {
         return { minerId, model: miner.current_model };
       }
     }
-    // Fallback: any online miner
+    // Prefer free-cloud-ai never needs a miner — skip miner for it
+    if (model === 'free-cloud-ai') {
+      return null;
+    }
+    // Fallback: any online miner (use its model)
     for (const [minerId, miner] of this.miners) {
       if (miner.status === 'online') {
         return { minerId, model: miner.current_model };

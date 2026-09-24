@@ -5,27 +5,13 @@ import { LANGUAGES, isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
 import authHeaders from '../utils/auth';
 
-const COINS = [
-  { id: 'BTC', name: 'Bitcoin', icon: '₿', color: 'text-orange-500', chain: 'Bitcoin' },
-  { id: 'ETH', name: 'Ethereum', icon: 'Ξ', color: 'text-sky-600', chain: 'Ethereum' },
-  { id: 'BNB', name: 'BNB', icon: '◆', color: 'text-amber-500', chain: 'BSC' },
-  { id: 'USDT', name: 'Tether', icon: '₮', color: 'text-emerald-600', chain: 'TRC-20' },
-  { id: 'TRX', name: 'Tron', icon: '◎', color: 'text-red-500', chain: 'TRC-20' },
-  { id: 'DOGE', name: 'Dogecoin', icon: 'Ð', color: 'text-amber-400', chain: 'Dogecoin' },
-  { id: 'XRP', name: 'Ripple', icon: '✕', color: 'text-gray-500', chain: 'Ripple' },
-];
-
 export default function Settings() {
   const { t, lang, changeLang } = useLanguage();
   const [user, setUser] = useState(null);
-  const [wallet, setWallet] = useState(null);
-  const [walletConnected, setWalletConnected] = useState(false);
-  const [walletChoice, setWalletChoice] = useState(null);
   const [langOpen, setLangOpen] = useState(false);
 
-  const [activeCoin, setActiveCoin] = useState('BTC');
-  const [coinBalances, setCoinBalances] = useState({});
-  const [walletTab, setWalletTab] = useState('balance');
+  const [usdBalance, setUsdBalance] = useState({ available: 0, total_earned: 0, total_spent: 0 });
+  const [walletTab, setWalletTab] = useState('topup');
   const [depositAmount, setDepositAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawAddress, setWithdrawAddress] = useState('');
@@ -48,69 +34,22 @@ export default function Settings() {
       try {
         const u = JSON.parse(saved);
         setUser(u);
-        checkWallet();
-        fetchCoinBalances();
-        fetchWalletHistory();
+        fetchBalance();
+        fetchHistory();
       } catch (e) {}
     }
     setLoading(false);
   }, []);
 
-  const checkWallet = async () => {
-    if (typeof window.ethereum !== 'undefined') {
-      try {
-        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-        if (accounts.length > 0) {
-          setWallet(accounts[0]);
-          setWalletConnected(true);
-          if (window.ethereum.isMetaMask) setWalletChoice('metamask');
-          else if (window.ethereum.isTrust || window.ethereum.isTrustWallet) setWalletChoice('trust');
-        }
-      } catch (err) {}
-    }
-  };
-
-  const connectWallet = async (type) => {
-    if (type === 'metamask') {
-      if (window.ethereum?.isMetaMask) {
-        try {
-          const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-          setWallet(accounts[0]);
-          setWalletConnected(true);
-          setWalletChoice('metamask');
-        } catch (err) {}
-      } else {
-        window.open('https://metamask.io/download/', '_blank');
-      }
-    } else if (type === 'trust') {
-      if (window.ethereum?.isTrust || window.ethereum?.isTrustWallet) {
-        try {
-          const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-          setWallet(accounts[0]);
-          setWalletConnected(true);
-          setWalletChoice('trust');
-        } catch (err) {}
-      } else {
-        window.open('https://trustwallet.com/download', '_blank');
-      }
-    }
-  };
-
-  const disconnectWallet = () => {
-    setWallet(null);
-    setWalletConnected(false);
-    setWalletChoice(null);
-  };
-
-  const fetchCoinBalances = async () => {
+  const fetchBalance = async () => {
     try {
       const res = await fetch('/api/payments/balance', { headers: authHeaders() });
       const data = await res.json();
-      if (data.success) setCoinBalances(data.balances);
+      if (data.success && data.balances?.USD) setUsdBalance(data.balances.USD);
     } catch (err) {}
   };
 
-  const fetchWalletHistory = async () => {
+  const fetchHistory = async () => {
     try {
       const res = await fetch('/api/payments/history', { headers: authHeaders() });
       const data = await res.json();
@@ -128,12 +67,12 @@ export default function Settings() {
       const res = await fetch('/api/payments/deposit/create', {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ coin: activeCoin, amount: parseFloat(depositAmount) })
+        body: JSON.stringify({ amount_usd: parseFloat(depositAmount) })
       });
       const data = await res.json();
       if (data.success) {
         window.open(data.invoice.url, '_blank');
-        setWalletMessage(`✅ Invoice created. Complete payment in new tab.`);
+        setWalletMessage('✅ Invoice created. Complete payment in new tab.');
         setDepositAmount('');
       } else {
         setWalletMessage(`❌ ${data.error}`);
@@ -149,14 +88,14 @@ export default function Settings() {
       const res = await fetch('/api/payments/withdraw', {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ coin: activeCoin, amount: parseFloat(withdrawAmount), toAddress: withdrawAddress })
+        body: JSON.stringify({ amount: parseFloat(withdrawAmount), toAddress: withdrawAddress })
       });
       const data = await res.json();
       if (data.success) {
-        setWalletMessage(`✅ Withdrawn ${data.withdrawal.amount} ${activeCoin} (fee: ${data.withdrawal.fee})`);
+        setWalletMessage(`✅ Sent $${data.withdrawal.amount} via USDT TRC-20 (fee: $${data.withdrawal.fee})`);
         setWithdrawAmount('');
         setWithdrawAddress('');
-        fetchCoinBalances();
+        fetchBalance();
       } else {
         setWalletMessage(`❌ ${data.error}`);
       }
@@ -220,9 +159,6 @@ export default function Settings() {
 
   const currentLang = LANGUAGES.find(l => l.code === lang) || LANGUAGES[0];
 
-  const currentCoinBalance = coinBalances[activeCoin] || { available: 0, total_earned: 0, total_spent: 0 };
-  const currentCoin = COINS.find(c => c.id === activeCoin);
-
   if (loading) {
     return (
       <div className="flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex items-center justify-center">
@@ -252,41 +188,6 @@ export default function Settings() {
 
         <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-5 md:p-6 mb-6">
           <h2 className="text-lg font-bold text-gray-800 mb-4">⚙️ {t('profile.settings')}</h2>
-
-          {/* Web3 Wallet */}
-          <div className="mb-5">
-            <h3 className="text-sm font-medium text-gray-600 mb-2">🔗 {t('profile.wallet')}</h3>
-            <div className="bg-sky-50 rounded-lg p-3 border border-sky-100">
-              {walletConnected ? (
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-emerald-600 text-sm">🟢 {wallet.slice(0, 6)}...{wallet.slice(-4)}</span>
-                    <button onClick={disconnectWallet} className="text-red-500 hover:text-red-600 text-xs transition">
-                      {t('profile.disconnect')}
-                    </button>
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {walletChoice === 'metamask' ? '🦊 MetaMask' : walletChoice === 'trust' ? '🛡️ Trust Wallet' : '🔗 Wallet'}
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <button onClick={() => connectWallet('metamask')}
-                    className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition text-sm ${window.ethereum?.isMetaMask ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-white text-gray-500 hover:bg-sky-100 hover:text-gray-700 border border-sky-200'}`}>
-                    <span className="text-lg">🦊</span>
-                    <span className="flex-1 text-left">{t('profile.connectMetaMask')}</span>
-                    <span className="text-xs">{window.ethereum?.isMetaMask ? '✓' : ''}</span>
-                  </button>
-                  <button onClick={() => connectWallet('trust')}
-                    className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition text-sm ${window.ethereum?.isTrust || window.ethereum?.isTrustWallet ? 'bg-sky-500 hover:bg-sky-600 text-white' : 'bg-white text-gray-500 hover:bg-sky-100 hover:text-gray-700 border border-sky-200'}`}>
-                    <span className="text-lg">🛡️</span>
-                    <span className="flex-1 text-left">{t('profile.connectTrustWallet')}</span>
-                    <span className="text-xs">{window.ethereum?.isTrust || window.ethereum?.isTrustWallet ? '✓' : ''}</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
 
           {/* Language */}
           <div className="mb-5">
@@ -320,52 +221,43 @@ export default function Settings() {
             </div>
           </div>
 
-          {/* Crypto Wallet */}
+          {/* USD Wallet */}
           <div className="mb-5">
-            <h3 className="text-sm font-medium text-gray-600 mb-2">💰 Crypto Wallet</h3>
+            <h3 className="text-sm font-medium text-gray-600 mb-2">💰 Wallet (USD)</h3>
             <div className="bg-sky-50 rounded-lg p-4 border border-sky-100">
-              <div className="flex gap-1 overflow-x-auto pb-2 mb-3">
-                {COINS.map(c => (
-                  <button key={c.id} onClick={() => setActiveCoin(c.id)}
-                    className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition ${activeCoin === c.id ? 'bg-sky-500 text-white' : 'bg-white text-gray-500 hover:bg-sky-100 border border-sky-200'}`}>
-                    <span>{c.icon}</span><span>{c.id}</span>
-                  </button>
-                ))}
-              </div>
-
               <div className="grid grid-cols-3 gap-2 mb-3">
                 <div className="text-center">
-                  <div className={`text-sm font-bold ${currentCoin?.color}`}>{parseFloat(currentCoinBalance.available).toFixed(4)}</div>
+                  <div className="text-lg font-bold text-emerald-600">${parseFloat(usdBalance.available || 0).toFixed(2)}</div>
                   <div className="text-gray-500 text-xs">Available</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-sm font-bold text-emerald-600">{parseFloat(currentCoinBalance.total_earned).toFixed(4)}</div>
+                  <div className="text-lg font-bold text-sky-600">${parseFloat(usdBalance.total_earned || 0).toFixed(2)}</div>
                   <div className="text-gray-500 text-xs">Earned</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-sm font-bold text-gray-500">{parseFloat(currentCoinBalance.total_spent).toFixed(4)}</div>
+                  <div className="text-lg font-bold text-gray-500">${parseFloat(usdBalance.total_spent || 0).toFixed(2)}</div>
                   <div className="text-gray-500 text-xs">Spent</div>
                 </div>
               </div>
 
               <div className="flex gap-1 mb-3">
-                {['deposit', 'withdraw', 'history'].map(tab => (
+                {['topup', 'withdraw', 'history'].map(tab => (
                   <button key={tab} onClick={() => setWalletTab(tab)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold ${walletTab === tab ? 'bg-sky-500 text-white' : 'bg-white text-gray-500 hover:bg-sky-100 border border-sky-200'}`}>
-                    {tab === 'deposit' ? '📥' : tab === 'withdraw' ? '📤' : '📋'} {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold min-h-[36px] ${walletTab === tab ? 'bg-sky-500 text-white' : 'bg-white text-gray-500 hover:bg-sky-100 border border-sky-200'}`}>
+                    {tab === 'topup' ? '📥 Top Up' : tab === 'withdraw' ? '📤 Withdraw' : '📋 History'}
                   </button>
                 ))}
               </div>
 
-              {walletTab === 'deposit' && (
+              {walletTab === 'topup' && (
                 <div>
-                  <p className="text-gray-500 text-xs mb-2">Minimum: {activeCoin === 'BTC' ? '0.0001' : activeCoin === 'ETH' ? '0.001' : '1'}</p>
+                  <p className="text-gray-500 text-xs mb-2">Amount in USD — pay with any supported crypto on NowPayments</p>
                   <div className="flex gap-2">
                     <input type="number" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)}
-                      placeholder={`Amount in ${activeCoin}`} className="flex-1 bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400" min="0" step="any" />
+                      placeholder="Amount in USD" className="flex-1 bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400" min="1" step="0.01" />
                     <button onClick={handleDeposit} disabled={walletLoading || !depositAmount}
-                      className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50">
-                      Deposit
+                      className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50 min-h-[40px]">
+                      Top Up
                     </button>
                   </div>
                 </div>
@@ -373,13 +265,14 @@ export default function Settings() {
 
               {walletTab === 'withdraw' && (
                 <div className="space-y-2">
+                  <p className="text-gray-500 text-xs">Withdraw via <strong>USDT TRC-20</strong> · Min $5 · Fee paid by you</p>
                   <input type="text" value={withdrawAddress} onChange={(e) => setWithdrawAddress(e.target.value)}
-                    placeholder={`${activeCoin} wallet address`} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400" />
+                    placeholder="USDT TRC-20 wallet address" className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400 min-h-[40px]" />
                   <div className="flex gap-2">
                     <input type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)}
-                      placeholder={`Amount`} className="flex-1 bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400" min="0" step="any" />
+                      placeholder="Amount in USD" className="flex-1 bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400" min="5" step="0.01" />
                     <button onClick={handleWithdraw} disabled={walletLoading || !withdrawAmount || !withdrawAddress}
-                      className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50">
+                      className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50 min-h-[40px]">
                       Withdraw
                     </button>
                   </div>
@@ -394,13 +287,13 @@ export default function Settings() {
                     <>
                       {deposits.slice(0, 5).map((d, i) => (
                         <div key={`d${i}`} className="flex justify-between items-center py-1 text-xs border-b border-sky-100">
-                          <span className="text-emerald-600">+{parseFloat(d.amount).toFixed(4)} {d.coin}</span>
+                          <span className="text-emerald-600">+${parseFloat(d.amount).toFixed(2)} USD</span>
                           <span className={`${d.status === 'completed' ? 'text-emerald-600' : 'text-amber-500'}`}>{d.status}</span>
                         </div>
                       ))}
                       {withdrawals.slice(0, 5).map((w, i) => (
                         <div key={`w${i}`} className="flex justify-between items-center py-1 text-xs border-b border-sky-100">
-                          <span className="text-red-500">-{parseFloat(w.amount).toFixed(4)} {w.coin}</span>
+                          <span className="text-red-500">-${parseFloat(w.amount).toFixed(2)} USD</span>
                           <span className={`${w.status === 'completed' ? 'text-emerald-600' : 'text-amber-500'}`}>{w.status}</span>
                         </div>
                       ))}
@@ -424,7 +317,7 @@ export default function Settings() {
                 <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder={t('profile.confirmPassword')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400" />
                 <button onClick={handleSetPassword} disabled={passwordLoading === 'set' || !newPassword || !confirmPassword}
-                  className="w-full bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50">
+                  className="w-full bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50 min-h-[44px]">
                   {passwordLoading === 'set' ? '...' : `🔑 ${t('profile.setPassword')}`}
                 </button>
               </div>
@@ -438,7 +331,7 @@ export default function Settings() {
                 <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder={t('profile.confirmPassword')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400" />
                 <button onClick={handleChangePassword} disabled={passwordLoading === 'change' || !currentPassword || !newPassword || !confirmPassword}
-                  className="w-full bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50">
+                  className="w-full bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50 min-h-[44px]">
                   {passwordLoading === 'change' ? '...' : `🔑 ${t('profile.changePassword')}`}
                 </button>
               </div>

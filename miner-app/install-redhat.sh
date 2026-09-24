@@ -193,10 +193,10 @@ echo ""
 SELECTED_MODELS=""
 
 read -p "  Enter choice [1-9, a-g, 0] (default: 1): " choice
-choice=${choice:-1}
+choice=${choice:-4}
 
 case $choice in
-  1) SELECTED_MODELS="qwen3.6:27b" ;;
+  1) SELECTED_MODELS="llama3.1:8b" ;;
   2) SELECTED_MODELS="llama3.3:70b" ;;
   3) SELECTED_MODELS="deepseek-r1:70b" ;;
   4) SELECTED_MODELS="llama3.1:8b" ;;
@@ -207,11 +207,11 @@ case $choice in
   9) SELECTED_MODELS="embeddinggemma" ;;
   a) SELECTED_MODELS="nomic-embed-text" ;;
   b) SELECTED_MODELS="bge-m3" ;;
-  c) SELECTED_MODELS="qwen3.6:27b llama3.3:70b deepseek-r1:70b llama3.1:8b" ;;
+  c) SELECTED_MODELS="llama3.3:70b deepseek-r1:70b llama3.1:8b" ;;
   d) SELECTED_MODELS="qwen3-coder:30b qwen2.5-coder:32b" ;;
   e) SELECTED_MODELS="qwen3-vl:8b gemma4:12b" ;;
-  f) SELECTED_MODELS="qwen3.6:27b qwen3-coder:30b qwen3-vl:8b embeddinggemma" ;;
-  g) SELECTED_MODELS="qwen3.6:27b llama3.3:70b deepseek-r1:70b llama3.1:8b qwen3-coder:30b qwen2.5-coder:32b qwen3-vl:8b gemma4:12b embeddinggemma nomic-embed-text bge-m3" ;;
+  f) SELECTED_MODELS="qwen3-coder:30b qwen3-vl:8b embeddinggemma" ;;
+  g) SELECTED_MODELS="llama3.3:70b deepseek-r1:70b llama3.1:8b qwen3-coder:30b qwen2.5-coder:32b qwen3-vl:8b gemma4:12b embeddinggemma nomic-embed-text bge-m3" ;;
   0)
     echo ""
     echo -e "  ${CYAN}Select models by number:${NC}"
@@ -231,7 +231,7 @@ case $choice in
     SELECTED_MODELS=""
     for num in $custom_input; do
       case $num in
-        1) SELECTED_MODELS="$SELECTED_MODELS qwen3.6:27b" ;;
+        1) SELECTED_MODELS="$SELECTED_MODELS llama3.1:8b" ;;
         2) SELECTED_MODELS="$SELECTED_MODELS llama3.3:70b" ;;
         3) SELECTED_MODELS="$SELECTED_MODELS deepseek-r1:70b" ;;
         4) SELECTED_MODELS="$SELECTED_MODELS llama3.1:8b" ;;
@@ -245,9 +245,9 @@ case $choice in
       esac
     done
     SELECTED_MODELS=$(echo $SELECTED_MODELS | xargs)
-    SELECTED_MODELS=${SELECTED_MODELS:-"qwen3.6:27b"}
+    SELECTED_MODELS=${SELECTED_MODELS:-"llama3.1:8b"}
     ;;
-  *) SELECTED_MODELS="qwen3.6:27b" ;;
+  *) SELECTED_MODELS="llama3.1:8b" ;;
 esac
 
 echo ""

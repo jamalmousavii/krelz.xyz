@@ -40,7 +40,7 @@ const ro = {
     startChat: 'Începe chatul',
     footer: 'Toate drepturile rezervate.',
     installMetaMask: 'Te rugăm să instalezi MetaMask',
-    version: 'v3.16.0',
+    version: 'v3.18.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — platformă de inferență LLM descentralizată, versiunea {version}. Toate drepturile rezervate.',

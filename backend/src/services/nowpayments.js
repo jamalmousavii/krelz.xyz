@@ -34,20 +34,22 @@ class NowPaymentsService {
     };
   }
 
-  // Create payment invoice
+  // Create payment invoice (coin optional — customer picks on NowPayments page)
   async createInvoice({ userId, coin, amount, orderId }) {
-    const coinConfig = SUPPORTED_COINS[coin];
-    if (!coinConfig) throw new Error(`Unsupported coin: ${coin}`);
+    const body = {
+      price_amount: amount,
+      price_currency: 'usd',
+      order_id: orderId || `krelz-${userId}-${Date.now()}`,
+      order_description: `Krelz Network deposit - $${amount} USD`,
+      ipn_callback_url: `${process.env.BACKEND_URL || 'https://krelz.xyz'}/api/payments/deposit/webhook`,
+    };
+    // Optional: pre-select coin; omit so customer chooses on hosted checkout
+    if (coin && SUPPORTED_COINS[coin]) {
+      body.pay_currency = coin.toLowerCase();
+    }
 
     try {
-      const response = await axios.post(`${API_URL}/invoice`, {
-        price_amount: amount,
-        price_currency: 'usd',
-        pay_currency: coin.toLowerCase(),
-        order_id: orderId || `krelz-${userId}-${Date.now()}`,
-        order_description: `Krelz Network deposit - ${coin}`,
-        ipn_callback_url: `${process.env.BACKEND_URL || 'https://krelz.xyz'}/api/payments/deposit/webhook`,
-      }, { headers: this.getHeaders() });
+      const response = await axios.post(`${API_URL}/invoice`, body, { headers: this.getHeaders() });
 
       return {
         success: true,
@@ -80,21 +82,25 @@ class NowPaymentsService {
     return calculatedSignature === signature;
   }
 
-  // Process IPN callback
+  // Process IPN callback — always credit USD (price_amount)
   async processIPN(payload) {
-    const { order_id, payment_status, pay_amount, pay_currency, tx_hash } = payload;
+    const { order_id, payment_status, price_amount, pay_amount, pay_currency, invoice_price_amount, tx_hash } = payload;
 
-    // Extract userId and coin from order_id (format: krelz-{userId}-{timestamp})
-    const parts = order_id.split('-');
+    // Extract userId from order_id (format: krelz-{userId}-{timestamp})
+    const parts = (order_id || '').split('-');
     const userId = parseInt(parts[1]);
-    const coin = pay_currency.toUpperCase();
+
+    // Prefer USD invoice amount (price_amount); fallback to pay_amount only if USD
+    const usdAmount = parseFloat(price_amount || invoice_price_amount || 0);
 
     if (payment_status === 'finished') {
       return {
         success: true,
         userId,
-        coin,
-        amount: parseFloat(pay_amount),
+        coin: 'USD',
+        amount: usdAmount > 0 ? usdAmount : parseFloat(pay_amount || 0),
+        cryptoAmount: parseFloat(pay_amount || 0),
+        cryptoCoin: (pay_currency || '').toUpperCase(),
         txHash: tx_hash,
         processorId: order_id,
         status: 'completed',
@@ -104,19 +110,21 @@ class NowPaymentsService {
     return {
       success: false,
       userId,
-      coin,
+      coin: 'USD',
       status: payment_status,
     };
   }
 
-  // Create payout (withdrawal)
+  // Create payout (withdrawal) — coin optional; defaults handled by caller
   async createPayout({ address, amount, coin }) {
     try {
       const response = await axios.post(`${API_URL}/payout`, {
         withdrawals: [{
           address,
           amount,
-          currency: coin.toLowerCase(),
+          currency: (coin || 'USDT').toLowerCase(),
+          // network hint for multi-network coins (USDT has many chains)
+          ...(coin === 'USDT' ? { network: 'tron' } : {}),
         }],
       }, { headers: this.getHeaders() });
 
@@ -149,13 +157,26 @@ class NowPaymentsService {
     return SUPPORTED_COINS;
   }
 
-  // Get min amount for a coin
+  // Get min amount for a coin (USD deposits use NowPayments minimums)
   getMinAmount(coin) {
     return SUPPORTED_COINS[coin]?.minAmount || 0;
   }
 
-  // Calculate fee
+  // Minimum USD deposit
+  getMinUsdDeposit() {
+    return 1;
+  }
+
+  // Withdraw fee (sender pays): fixed + % — surface to user
+  getWithdrawFee(amount) {
+    // $0.50 + 0.5% (matches NowPayments standard), min $1
+    const fee = Math.max(1, 0.5 + amount * 0.005);
+    return Math.round(fee * 100) / 100;
+  }
+
+  // Calculate fee (legacy per-coin)
   calculateFee(amount, coin) {
+    if (coin === 'USD' || coin === 'USDT') return this.getWithdrawFee(amount);
     const coinConfig = SUPPORTED_COINS[coin];
     if (!coinConfig) return 0;
     return coinConfig.fee;

@@ -9,6 +9,7 @@ export default function Profile() {
   const { t, lang } = useLanguage();
   const [user, setUser] = useState(null);
   const [balance, setBalance] = useState(null);
+  const [usdBalance, setUsdBalance] = useState(null);
   const [dailyTokens, setDailyTokens] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -19,6 +20,7 @@ export default function Profile() {
         const u = JSON.parse(saved);
         setUser(u);
         fetchBalance();
+        fetchUsdBalance();
       } catch (e) {}
     }
     setLoading(false);
@@ -32,6 +34,14 @@ export default function Profile() {
         setBalance(data);
         setDailyTokens(data.daily_tokens);
       }
+    } catch (err) {}
+  };
+
+  const fetchUsdBalance = async () => {
+    try {
+      const res = await fetch('/api/payments/balance', { headers: authHeaders() });
+      const data = await res.json();
+      if (data.success && data.balances?.USD) setUsdBalance(data.balances.USD);
     } catch (err) {}
   };
 
@@ -85,18 +95,18 @@ export default function Profile() {
               <span className="text-xs text-sky-600">{user.role}</span>
             </div>
           </div>
-          {balance && (
+          {usdBalance && (
             <div className="grid grid-cols-3 gap-3 mb-4">
               <div className="bg-sky-50 rounded-xl p-4 text-center border border-sky-100">
-                <div className="text-xl font-bold text-emerald-600">{parseFloat(balance.available || 0).toFixed(2)}</div>
+                <div className="text-xl font-bold text-emerald-600">${parseFloat(usdBalance.available || 0).toFixed(2)}</div>
                 <div className="text-gray-500 text-xs">{t('profile.available')}</div>
               </div>
               <div className="bg-sky-50 rounded-xl p-4 text-center border border-sky-100">
-                <div className="text-xl font-bold text-sky-600">{parseFloat(balance.total_earned || 0).toFixed(2)}</div>
+                <div className="text-xl font-bold text-sky-600">${parseFloat(usdBalance.total_earned || 0).toFixed(2)}</div>
                 <div className="text-gray-500 text-xs">{t('profile.earned')}</div>
               </div>
               <div className="bg-sky-50 rounded-xl p-4 text-center border border-sky-100">
-                <div className="text-xl font-bold text-red-500">{parseFloat(balance.total_spent || 0).toFixed(2)}</div>
+                <div className="text-xl font-bold text-red-500">${parseFloat(usdBalance.total_spent || 0).toFixed(2)}</div>
                 <div className="text-gray-500 text-xs">{t('profile.spent')}</div>
               </div>
             </div>
