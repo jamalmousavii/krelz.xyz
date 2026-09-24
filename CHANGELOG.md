@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.18.2] - 2026-09-24
+
+### Fixed
+- **Miner WS reconnect loop** — replaced sockets no longer stack (`connect` closes previous, single reconnect timer, socket-scoped handlers)
+- **Idempotent miner auth** — same-socket re-auth no longer replaces itself / resets `current_model`
+- Immediate heartbeat after `auth_ok` so DB `current_model` updates without waiting 30s
+- Miner `config.json` on VPS: token synced from DB, `default_model=llama3.1:8b`
+
 ## [3.18.1] - 2026-09-24
 
 ### Fixed

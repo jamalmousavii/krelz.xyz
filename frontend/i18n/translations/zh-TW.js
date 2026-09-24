@@ -40,7 +40,7 @@ const zhTW = {
     startChat: '開始聊天',
     footer: '版權所有。',
     installMetaMask: '請安裝 MetaMask',
-    version: 'v3.18.1',
+    version: 'v3.18.2',
   },
   footer: {
     sentence: '© 2026 Krelz Network — 去中心化 LLM 推理平台，版本 {version}。版權所有。',

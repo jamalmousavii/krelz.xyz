@@ -9,28 +9,51 @@ class MinerWebSocket {
     this.minerId = null;
     this.connected = false;
     this.reconnectDelay = 5000;
+    this.reconnectTimer = null;
+    this.intentionalClose = false;
+    this.authed = false;
     this.heartbeatInterval = null;
     this.heartbeatMinerService = null;
     this.heartbeatDefaultModel = null;
   }
 
   connect() {
+    // Never stack sockets — close any previous connection first
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws) {
+      this.intentionalClose = true;
+      try {
+        this.ws.removeAllListeners();
+        if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
+          this.ws.close();
+        }
+      } catch (e) {}
+      this.ws = null;
+    }
+
+    this.intentionalClose = false;
+    this.authed = false;
     const wsUrl = process.env.API_WS_URL || 'wss://krelz.xyz:443/ws';
-    this.ws = new WebSocket(wsUrl, {
+    const ws = new WebSocket(wsUrl, {
       rejectUnauthorized: false,
       checkServerIdentity: () => undefined,
-      // SNI must match the TLS cert (issued for krelz.xyz)
       servername: 'krelz.xyz',
     });
+    this.ws = ws;
 
-    this.ws.on('open', () => {
+    ws.on('open', () => {
+      if (this.ws !== ws) return;
       console.log('🔌 Connected to Krelz Network');
       this.connected = true;
       this.reconnectDelay = 5000;
       this.authenticate();
     });
 
-    this.ws.on('message', (data) => {
+    ws.on('message', (data) => {
+      if (this.ws !== ws) return;
       try {
         const msg = JSON.parse(data.toString());
         this.handleMessage(msg);
@@ -39,14 +62,19 @@ class MinerWebSocket {
       }
     });
 
-    this.ws.on('close', (code, reason) => {
+    ws.on('close', () => {
+      if (this.ws !== ws) return;
       console.log('🔌 Disconnected from Krelz Network');
       this.connected = false;
+      this.authed = false;
       this.stopHeartbeat();
-      this.scheduleReconnect();
+      if (!this.intentionalClose) {
+        this.scheduleReconnect();
+      }
     });
 
-    this.ws.on('error', (err) => {
+    ws.on('error', (err) => {
+      if (this.ws !== ws) return;
       console.error('WebSocket error:', err.message);
     });
   }
@@ -68,9 +96,11 @@ class MinerWebSocket {
     switch (msg.type) {
       case 'auth_ok':
         this.minerId = msg.miner_id;
+        this.authed = true;
         console.log(`✅ Authenticated as miner #${this.minerId}`);
-        // Restart heartbeat after every (re)auth — close handler stops it.
         this.ensureHeartbeat();
+        // Push model immediately so DB current_model updates without waiting 30s
+        this.sendHeartbeat('online', { current_model: this.heartbeatDefaultModel });
         break;
 
       case 'auth_error':
@@ -78,7 +108,6 @@ class MinerWebSocket {
         break;
 
       case 'heartbeat_ok':
-        // Heartbeat acknowledged
         break;
 
       case 'task':
@@ -87,10 +116,6 @@ class MinerWebSocket {
 
       case 'error':
         console.error('Server error:', msg.message);
-        // Backend forgot this connection (e.g. server restart or entry
-        // replaced): re-authenticate so heartbeats/tasks flow again.
-        // Guarded to avoid an auth loop (max once per 10s, only if we
-        // had a valid session before).
         if (
           msg.message === 'Not authenticated' &&
           this.minerId &&
@@ -101,6 +126,7 @@ class MinerWebSocket {
           console.log('🔄 Re-authenticating...');
           this.authenticate();
         }
+        // "Replaced by newer connection" → close handler will reconnect once
         break;
     }
   }
@@ -186,16 +212,28 @@ class MinerWebSocket {
   }
 
   scheduleReconnect() {
+    if (this.reconnectTimer) return;
     console.log(`Reconnecting in ${this.reconnectDelay / 1000}s...`);
-    setTimeout(() => this.connect(), this.reconnectDelay);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, this.reconnectDelay);
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, 60000);
   }
 
   disconnect() {
+    this.intentionalClose = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.stopHeartbeat();
     if (this.ws) {
-      this.ws.close();
+      try { this.ws.close(); } catch (e) {}
+      this.ws = null;
     }
+    this.connected = false;
+    this.authed = false;
   }
 }
 

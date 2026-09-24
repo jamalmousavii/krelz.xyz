@@ -40,7 +40,7 @@ const th = {
     startChat: 'เริ่มแชท',
     footer: 'สงวนลิขสิทธิ์ทุกประการ',
     installMetaMask: 'โปรดติดตั้ง MetaMask',
-    version: 'v3.18.1',
+    version: 'v3.18.2',
   },
   footer: {
     sentence: '© 2026 Krelz Network — แพลตฟอร์มการอนุมาน LLM แบบกระจายศูนย์ รุ่น {version} สงวนลิขสิทธิ์ทุกประการ',

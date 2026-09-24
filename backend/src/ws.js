@@ -153,6 +153,13 @@ class WSServer {
     // connection. Otherwise dispatches and heartbeats split across two
     // sockets and the live miner gets "Not authenticated".
     const existing = this.miners.get(minerId);
+    // Idempotent re-auth on the same socket: skip replace + duplicate work
+    if (existing && existing.ws === ws) {
+      existing.lastHeartbeat = Date.now();
+      existing.status = 'online';
+      ws.send(JSON.stringify({ type: 'auth_ok', miner_id: minerId }));
+      return;
+    }
     if (existing && existing.ws && existing.ws !== ws) {
       try {
         if (existing.ws.readyState === 1) {
@@ -170,7 +177,7 @@ class WSServer {
       lastHeartbeat: Date.now(),
       models: [],
       status: 'online',
-      current_model: null
+      current_model: (existing && existing.current_model) || null
     });
 
     // Update DB (v3.14.0: also mark token_used on first auth)

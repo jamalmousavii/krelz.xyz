@@ -40,7 +40,7 @@ const fa = {
     startChat: 'شروع چت',
     footer: 'تمامی حقوق محفوظ است.',
     installMetaMask: 'لطفاً MetaMask را نصب کنید',
-    version: 'v3.18.1',
+    version: 'v3.18.2',
   },
   footer: {
     sentence: '© ۲۰۲۶ شبکه کرلز — پلتفرم استنتاج LLM غیرمتمرکز، نسخه {version}. تمامی حقوق محفوظ است.',

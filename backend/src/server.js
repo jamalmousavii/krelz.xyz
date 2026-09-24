@@ -145,7 +145,7 @@ app.get('/health', async (req, res) => {
 
   res.json({
     status: 'ok',
-    version: '3.18.1',
+    version: '3.18.2',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     redis: cache.connected ? 'connected' : 'disconnected',

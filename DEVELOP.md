@@ -56,7 +56,7 @@ Next.js 14 frontend with Tailwind CSS and i18n support.
 ```
 frontend/
 ├── pages/
-│   ├── index.js           # Chat homepage (chat-first; default llama3.1:8b, v3.18.1)
+│   ├── index.js           # Chat homepage (chat-first; default llama3.1:8b, v3.18.2)
 │   ├── chat.js            # Redirects to /
 │   ├── profile.js         # Dashboard (balance, daily tokens)
 │   ├── miners.js          # Miner mgmt + Quick Install copy buttons (v3.16.0)
@@ -84,7 +84,7 @@ Node.js/Express API with PostgreSQL + Redis.
 ```
 backend/
 ├── src/
-│   ├── server.js          # Entry point (v3.18.1)
+│   ├── server.js          # Entry point (v3.18.2)
 │   ├── models.js          # AI models + per-model pricing
 │   ├── cache.js           # Redis caching
 │   ├── database/
