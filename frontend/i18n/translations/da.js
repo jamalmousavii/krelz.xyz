@@ -40,7 +40,7 @@ const da = {
     startChat: 'Start chat',
     footer: 'Alle rettigheder forbeholdes.',
     installMetaMask: 'Installer venligst MetaMask',
-    version: 'v3.18.3',
+    version: 'v3.18.4',
   },
   footer: {
     sentence: '© 2026 Krelz Network — Decentraliseret LLM-inferensplatform, version {version}. Alle rettigheder forbeholdes.',

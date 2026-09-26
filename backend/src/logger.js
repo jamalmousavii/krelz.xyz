@@ -22,7 +22,7 @@ const logger = pino({
   timestamp: pino.stdTimeFunctions.isoTime,
   base: {
     service: 'krelz-backend',
-    version: process.env.npm_package_version || '3.18.3',
+    version: process.env.npm_package_version || '3.18.4',
   },
 });
 

@@ -1,4 +1,6 @@
 const WebSocket = require('ws');
+const { PINNED_ROOTS } = require('./tls-roots');
+const { deriveKey, encrypt, decrypt, isEncrypted } = require('./e2e');
 
 class MinerWebSocket {
   constructor(walletAddress, onTask) {
@@ -15,6 +17,7 @@ class MinerWebSocket {
     this.heartbeatInterval = null;
     this.heartbeatMinerService = null;
     this.heartbeatDefaultModel = null;
+    this.e2eEnabled = false;
   }
 
   connect() {
@@ -38,9 +41,10 @@ class MinerWebSocket {
     this.authed = false;
     const wsUrl = process.env.API_WS_URL || 'wss://krelz.xyz:443/ws';
     const isLocal = /^wss?:\/\/(127\.0\.0\.1|localhost|::1)/.test(wsUrl);
+    // v3.18.4: full TLS verification with pinned ISRG roots (KRELZ_PIN=0 → system CAs)
+    const pinEnabled = process.env.KRELZ_PIN !== '0';
     const ws = new WebSocket(wsUrl, isLocal ? {} : {
-      rejectUnauthorized: false,
-      checkServerIdentity: () => undefined,
+      ca: pinEnabled ? PINNED_ROOTS : undefined,
       servername: 'krelz.xyz',
     });
     this.ws = ws;
@@ -87,6 +91,7 @@ class MinerWebSocket {
     const authMsg = { type: 'auth' };
     if (this.walletAddress.startsWith('kz_')) {
       authMsg.miner_token = this.walletAddress;
+      authMsg.e2e = 1;
     } else {
       authMsg.wallet_address = this.walletAddress;
     }
@@ -98,7 +103,8 @@ class MinerWebSocket {
       case 'auth_ok':
         this.minerId = msg.miner_id;
         this.authed = true;
-        console.log(`✅ Authenticated as miner #${this.minerId}`);
+        this.e2eEnabled = !!msg.e2e && this.walletAddress.startsWith('kz_');
+        console.log(`✅ Authenticated as miner #${this.minerId}${this.e2eEnabled ? ' (e2e)' : ''}`);
         this.ensureHeartbeat();
         // Push model immediately so DB current_model updates without waiting 30s
         this.sendHeartbeat('online', { current_model: this.heartbeatDefaultModel });
@@ -137,7 +143,15 @@ class MinerWebSocket {
     console.log(`📥 Received task #${task_id} (${model})`);
 
     try {
-      const result = await this.onTask(prompt, model);
+      let plainPrompt = prompt;
+      if (isEncrypted(prompt)) {
+        if (!this.walletAddress.startsWith('kz_')) {
+          throw new Error('Encrypted task but no e2e key');
+        }
+        plainPrompt = decrypt(deriveKey(this.walletAddress), prompt);
+      }
+
+      const result = await this.onTask(plainPrompt, model);
 
       if (!result || !result.response) {
         throw new Error('Empty response from model');
@@ -146,7 +160,9 @@ class MinerWebSocket {
       this.send({
         type: 'task_result',
         task_id,
-        response: result.response,
+        response: this.e2eEnabled
+          ? encrypt(deriveKey(this.walletAddress), result.response)
+          : result.response,
         tokens_used: result.eval_count || 0
       });
 

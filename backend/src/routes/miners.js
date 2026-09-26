@@ -340,11 +340,20 @@ router.post('/register', authenticate, async (req, res) => {
   return res.status(403).json({ error: 'Manual registration disabled. Use /api/miners/setup with email and miner token.' });
 });
 
-// PUT /api/miners/:id/heartbeat
+// PUT /api/miners/:id/heartbeat — requires the miner's own token (v3.18.4)
 router.put('/:id/heartbeat', async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, gpu_usage, ram_usage, tasks_completed, current_model } = req.body;
+    const { status, gpu_usage, ram_usage, tasks_completed, current_model, miner_token } = req.body;
+
+    if (!miner_token) {
+      return res.status(401).json({ error: 'miner_token required' });
+    }
+
+    const auth = await pool.query('SELECT id FROM miners WHERE id = $1 AND miner_token = $2', [id, miner_token]);
+    if (auth.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid miner token' });
+    }
 
     const result = await pool.query(
       `UPDATE miners

@@ -40,7 +40,7 @@ const fi = {
     startChat: 'Aloita chat',
     footer: 'Kaikki oikeudet pidätetään.',
     installMetaMask: 'Asenna MetaMask',
-    version: 'v3.18.3',
+    version: 'v3.18.4',
   },
   footer: {
     sentence: '© 2026 Krelz Network — Hajautettu LLM-inferenssalusta, versio {version}. Kaikki oikeudet pidätetään.',

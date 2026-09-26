@@ -145,7 +145,7 @@ app.get('/health', async (req, res) => {
 
   res.json({
     status: 'ok',
-    version: '3.18.3',
+    version: '3.18.4',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     redis: cache.connected ? 'connected' : 'disconnected',
@@ -171,12 +171,13 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-server.listen(PORT, () => {
+// v3.18.4: bind to loopback only — nginx is the sole public entry point
+server.listen(PORT, '127.0.0.1', () => {
   logger.info({ port: PORT }, 'Krelz Backend started');
   logger.info({ redis: getCacheStats().connected ? 'connected' : 'disconnected' }, 'Cache status');
 });
 
-wsServerHttp.listen(WS_PORT, () => {
+wsServerHttp.listen(WS_PORT, '127.0.0.1', () => {
   logger.info({ port: WS_PORT }, 'WebSocket server started');
 });
 

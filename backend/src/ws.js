@@ -2,6 +2,11 @@ const { WebSocketServer } = require('ws');
 const crypto = require('crypto');
 const pool = require('./database/pool');
 const { invalidateCache } = require('./cache');
+const { deriveKey, encrypt, decrypt, isEncrypted } = require('./services/e2e');
+
+const TOKEN_RE = /^kz_[0-9a-f]{32,64}$/;
+const AUTH_FAIL_LIMIT = 10;
+const AUTH_FAIL_WINDOW = 5 * 60 * 1000;
 
 function isLocalClient(ws) {
   // Trust only the client-facing IP (_clientIp). Behind nginx, socket.remoteAddress
@@ -22,6 +27,8 @@ class WSServer {
     this.taskQueue = new Map();
     this.taskCallbacks = new Map();
     this.taskIdCounter = 1;
+    // Per-IP failed WS auth attempts (rate limit)
+    this.authFails = new Map();
 
     this.wss.on('connection', (ws, req) => this.handleConnection(ws, req));
     this.wss.on('error', (err) => {
@@ -92,12 +99,54 @@ class WSServer {
     }
   }
 
+  // Returns true when this IP has burned through its failed-auth budget
+  authRateLimited(ws) {
+    // Localhost (VPS-resident, incl. our own miner + proxied nginx path is NOT
+    // local — _clientIp is the real client IP there) is trusted: rate limiting
+    // targets remote token brute-force.
+    if (isLocalClient(ws)) return false;
+    const ip = ws._clientIp || 'unknown';
+    const now = Date.now();
+    const rec = this.authFails.get(ip);
+    if (!rec || now - rec.windowStart > AUTH_FAIL_WINDOW) {
+      if (rec) this.authFails.delete(ip);
+      return false;
+    }
+    if (rec.count >= AUTH_FAIL_LIMIT) {
+      ws.send(JSON.stringify({ type: 'auth_error', message: 'Too many failed attempts. Try again in 5 minutes.' }));
+      try { ws.close(); } catch (e) {}
+      return true;
+    }
+    return false;
+  }
+
+  recordAuthFailure(ws) {
+    const ip = ws._clientIp || 'unknown';
+    const now = Date.now();
+    const rec = this.authFails.get(ip);
+    if (!rec || now - rec.windowStart > AUTH_FAIL_WINDOW) {
+      this.authFails.set(ip, { count: 1, windowStart: now });
+    } else {
+      rec.count += 1;
+    }
+  }
+
   async handleAuth(ws, msg) {
-    const { wallet_address, miner_token } = msg;
+    const { wallet_address, miner_token, e2e } = msg;
+
+    if (this.authRateLimited(ws)) return;
 
     // Must have either wallet_address or miner_token
     if (!wallet_address && !miner_token) {
+      this.recordAuthFailure(ws);
       ws.send(JSON.stringify({ type: 'auth_error', message: 'wallet_address or miner_token required' }));
+      return;
+    }
+
+    // Token hygiene: reject malformed tokens before touching the DB
+    if (miner_token && !TOKEN_RE.test(miner_token)) {
+      this.recordAuthFailure(ws);
+      ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid miner token' }));
       return;
     }
 
@@ -129,6 +178,7 @@ class WSServer {
         // user has exactly 1 active miner.
         const userResult = await pool.query('SELECT id FROM users WHERE miner_token = $1', [miner_token]);
         if (userResult.rows.length === 0) {
+          this.recordAuthFailure(ws);
           ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid miner token' }));
           return;
         }
@@ -177,7 +227,10 @@ class WSServer {
     if (existing && existing.ws === ws) {
       existing.lastHeartbeat = Date.now();
       existing.status = 'online';
-      ws.send(JSON.stringify({ type: 'auth_ok', miner_id: minerId }));
+      if (e2e && miner_token) {
+        existing.e2eKey = deriveKey(miner_token);
+      }
+      ws.send(JSON.stringify({ type: 'auth_ok', miner_id: minerId, e2e: !!(existing.e2eKey) }));
       return;
     }
     if (existing && existing.ws && existing.ws !== ws) {
@@ -186,6 +239,7 @@ class WSServer {
       const newIsLocal = isLocalClient(ws);
       if (oldHealthy && !newIsLocal) {
         console.log(`Miner ${minerId} rejected newcomer from ${ws._clientIp} (healthy session from ${existing.ws._clientIp})`);
+        this.recordAuthFailure(ws);
         ws.send(JSON.stringify({ type: 'auth_error', message: 'Miner already connected. Stop the other session or wait for it to go offline.' }));
         try { ws.close(); } catch (e) {}
         return;
@@ -206,7 +260,10 @@ class WSServer {
       lastHeartbeat: Date.now(),
       models: [],
       status: 'online',
-      current_model: (existing && existing.current_model) || null
+      current_model: (existing && existing.current_model) || null,
+      // E2E key only when THIS auth advertised e2e support (never inherit from
+      // a replaced session — an old miner binary replacing it must stay plaintext)
+      e2eKey: (e2e && miner_token) ? deriveKey(miner_token) : null
     });
 
     // Update DB (v3.14.0: also mark token_used on first auth)
@@ -218,8 +275,11 @@ class WSServer {
     invalidateCache('/api/models');
     invalidateCache('/api/stats');
 
-    ws.send(JSON.stringify({ type: 'auth_ok', miner_id: minerId }));
-    console.log(`Miner ${minerId} authenticated from ${ws._clientIp} (${wallet_address || miner_token?.slice(0, 10) + '...'})`);
+    // Successful auth resets this IP's failed-attempt counter
+    this.authFails.delete(ws._clientIp || 'unknown');
+    const session = this.miners.get(minerId);
+    ws.send(JSON.stringify({ type: 'auth_ok', miner_id: minerId, e2e: !!session.e2eKey }));
+    console.log(`Miner ${minerId} authenticated from ${ws._clientIp} (${wallet_address || miner_token?.slice(0, 10) + '...'}${session.e2eKey ? ', e2e' : ''})`);
   }
 
   async handleHeartbeat(ws, msg) {
@@ -273,6 +333,48 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
 
     if (!task_id) return;
 
+    // v3.18.4: results only accepted from an authenticated miner session,
+    // and only for tasks assigned to that miner (stops result forgery).
+    const miner = this.findMinerByWs(ws);
+    if (!miner) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Not authenticated' }));
+      return;
+    }
+
+    const taskRow = await pool.query('SELECT miner_id FROM tasks WHERE id = $1', [task_id]);
+    if (taskRow.rows.length === 0) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Unknown task' }));
+      return;
+    }
+    if (taskRow.rows[0].miner_id !== miner.id) {
+      // NULL miner_id tasks are never dispatched over WS, so a strict match
+      // here blocks forged/foreign results without breaking legitimate flows.
+      ws.send(JSON.stringify({ type: 'error', message: 'Task not assigned to this miner' }));
+      return;
+    }
+
+    // Decrypt e2e payload when the session negotiated encryption
+    let plainResponse = response;
+    if (miner.e2eKey && response !== undefined && !isEncrypted(response)) {
+      // Session negotiated e2e but plaintext arrived — refuse (downgrade/forge)
+      console.error(`Plaintext result rejected for task ${task_id} from miner ${miner.id} (e2e negotiated)`);
+      ws.send(JSON.stringify({ type: 'error', message: 'Plaintext result rejected (e2e required)' }));
+      return;
+    }
+    if (isEncrypted(response)) {
+      if (!miner.e2eKey) {
+        ws.send(JSON.stringify({ type: 'error', message: 'E2E not negotiated' }));
+        return;
+      }
+      try {
+        plainResponse = decrypt(miner.e2eKey, response);
+      } catch (err) {
+        console.error(`E2E decrypt failed for task ${task_id} from miner ${miner.id}: ${err.message}`);
+        ws.send(JSON.stringify({ type: 'error', message: 'E2E decrypt failed' }));
+        return;
+      }
+    }
+
     if (error) {
       await pool.query(
         "UPDATE tasks SET response = $1, status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $2",
@@ -287,17 +389,14 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
         `UPDATE tasks
          SET response = $1, tokens_used = $2, cost = $3, status = 'completed', completed_at = CURRENT_TIMESTAMP
          WHERE id = $4`,
-        [response, tokens_used || 0, cost, task_id]
+        [plainResponse, tokens_used || 0, cost, task_id]
       );
 
       // Update miner earnings
-      const taskResult = await pool.query('SELECT miner_id FROM tasks WHERE id = $1', [task_id]);
-      if (taskResult.rows.length > 0 && taskResult.rows[0].miner_id) {
-        await pool.query(
-          'UPDATE miners SET total_tasks = total_tasks + 1, earnings = earnings + $1 WHERE id = $2',
-          [minerFee, taskResult.rows[0].miner_id]
-        );
-      }
+      await pool.query(
+        'UPDATE miners SET total_tasks = total_tasks + 1, earnings = earnings + $1 WHERE id = $2',
+        [minerFee, miner.id]
+      );
     }
 
     // Callback for pending task
@@ -305,7 +404,7 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
     if (callback) {
       clearTimeout(callback.timeout);
       this.taskCallbacks.delete(task_id);
-      callback.resolve({ response, tokens_used, error });
+      callback.resolve({ response: plainResponse, tokens_used, error });
     }
   }
 
@@ -326,7 +425,7 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
       ws.send(JSON.stringify({
         type: 'task',
         task_id: task.id,
-        prompt: task.prompt,
+        prompt: miner.e2eKey ? encrypt(miner.e2eKey, task.prompt) : task.prompt,
         model: task.model
       }));
     }
@@ -360,7 +459,7 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
       miner.ws.send(JSON.stringify({
         type: 'task',
         task_id: taskId,
-        prompt,
+        prompt: miner.e2eKey ? encrypt(miner.e2eKey, prompt) : prompt,
         model
       }));
     });

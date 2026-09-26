@@ -40,7 +40,7 @@ const zh = {
     startChat: '开始聊天',
     footer: '版权所有。',
     installMetaMask: '请安装 MetaMask',
-    version: 'v3.18.3',
+    version: 'v3.18.4',
   },
   footer: {
     sentence: '© 2026 Krelz Network — 去中心化 LLM 推理平台，版本 {version}。版权所有。',

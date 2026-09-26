@@ -40,7 +40,7 @@ const hi = {
     startChat: 'चैट शुरू करें',
     footer: 'सर्वाधिकार सुरक्षित।',
     installMetaMask: 'कृपया MetaMask इंस्टॉल करें',
-    version: 'v3.18.3',
+    version: 'v3.18.4',
   },
   footer: {
     sentence: '© 2026 Krelz Network — विकेंद्रीकृत LLM इन्फरेंस प्लेटफ़ॉर्म, संस्करण {version}। सर्वाधिकार सुरक्षित।',

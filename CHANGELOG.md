@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.18.4] - 2026-09-26
+
+### Security
+- **Miner TLS verification (fixed)** — removed `rejectUnauthorized: false` + `checkServerIdentity` override; the miner now fully verifies the server certificate chain and hostname (MITM protection)
+- **Certificate pinning** — miner pins **ISRG Root X1 + X2** (Let's Encrypt roots for `krelz.xyz`); a rogue CA cannot forge the origin cert. Escape hatch: `KRELZ_PIN=0` → system trust store
+- **WS auth rate limit** — max **10 failed auth attempts per IP / 5 minutes**, then the connection is closed (token brute-force protection); successful auth resets the counter
+- **Token hygiene** — malformed tokens rejected **before** any DB query (`/^kz_[0-9a-f]{32,64}$/`)
+- **E2E payload encryption** — task `prompt` and `response` encrypted with **AES-256-GCM**; key = HKDF-SHA256(`miner_token`, salt `krelz-e2e-v1`, info `task-payload`). Capability handshake: miner sends `e2e:1` in auth, backend echoes in `auth_ok`; old miners stay plaintext (backward compatible)
+- **Task result forgery stopped** — `task_result` now requires an authenticated WS session **and** the task must be assigned to that miner; e2e responses are decrypted server-side (tamper/wrong-key → rejected)
+- **HTTP heartbeat authenticated** — `PUT /api/miners/:id/heartbeat` now requires the miner's own `miner_token` (was fully unauthenticated — anyone could update miner status/earnings)
+- **Loopback bind** — backend API (`:3000`) + WS (`:8444`) listen on `127.0.0.1` only; nginx is the sole public entry point (other services on the VPS can no longer reach them)
+
 ## [3.18.3] - 2026-09-24
 
 ### Fixed
