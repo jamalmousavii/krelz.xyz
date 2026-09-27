@@ -67,6 +67,8 @@ const tr = {
     freeTokens: 'Ücretsiz Tokenlar',
     history: 'Geçmiş',
     startTyping: 'Sohbet etmek için yazmaya başlayın...',
+    viaMiner: 'miner üzerinden',
+    viaLocal: 'yerel',
   },
   miner: {
     title: 'Madenci - Krelz Network',

@@ -67,6 +67,8 @@ const ko = {
     freeTokens: '무료 토큰',
     history: '기록',
     startTyping: '채팅을 시작하려면 입력하세요...',
+    viaMiner: '마이너 경유',
+    viaLocal: '로컬',
   },
   miner: {
     title: '마이너 - Krelz Network',

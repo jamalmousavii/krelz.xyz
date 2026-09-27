@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../database/pool');
 const MODELS = require('../models');
+const { logger } = require('../logger');
 
 // GET /api/models
 router.get('/', async (req, res) => {
@@ -12,32 +13,31 @@ router.get('/', async (req, res) => {
       models = MODELS.filter(m => m.category === category);
     }
 
-    // Get miner counts per model
+    // Get miner counts per model. Models no longer in the catalog (e.g. a
+    // removed qwen3.6:27b) are reported separately instead of being silently
+    // credited to another model's badge.
     const minerCounts = {};
     let totalOnline = 0;
+    const unknownModels = {};
     try {
       const onlineResult = await pool.query(
         `SELECT current_model, COUNT(*) as cnt
          FROM miners WHERE status = 'online'
          GROUP BY current_model`
       );
-      const knownIds = new Set(models.map(m => m.id));
-      const orphanCounts = {};
+      const knownIds = new Set(MODELS.map(m => m.id));
       for (const row of onlineResult.rows) {
-        const cnt = parseInt(row.cnt);
+        const cnt = parseInt(row.cnt, 10);
+        const modelId = row.current_model || 'llama3.1:8b';
         totalOnline += cnt;
-        if (knownIds.has(row.current_model)) {
-          minerCounts[row.current_model] = (minerCounts[row.current_model] || 0) + cnt;
+        if (knownIds.has(modelId)) {
+          minerCounts[modelId] = (minerCounts[modelId] || 0) + cnt;
         } else {
-          // Unknown/removed model (e.g. qwen3.6:27b) — credit to llama3.1:8b badge
-          orphanCounts['llama3.1:8b'] = (orphanCounts['llama3.1:8b'] || 0) + cnt;
+          unknownModels[modelId] = (unknownModels[modelId] || 0) + cnt;
         }
       }
-      for (const [id, cnt] of Object.entries(orphanCounts)) {
-        minerCounts[id] = (minerCounts[id] || 0) + cnt;
-      }
     } catch (e) {
-      console.error('models.js: miners online query failed:', e.message);
+      logger.error({ err: e }, 'models.js: miners online query failed');
     }
 
     // Merge model data with miner counts
@@ -46,9 +46,14 @@ router.get('/', async (req, res) => {
       miners_online: minerCounts[m.id] || 0,
     }));
 
-    res.json({ success: true, models: modelsWithMiners, miners_online_total: totalOnline });
+    res.json({
+      success: true,
+      models: modelsWithMiners,
+      miners_online_total: totalOnline,
+      unknown_models: unknownModels,
+    });
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'GET /api/models failed');
     res.status(500).json({ error: 'Server error' });
   }
 });

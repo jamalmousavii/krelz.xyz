@@ -1,4 +1,5 @@
 import { Component } from 'react';
+import Link from 'next/link';
 
 export default class ErrorBoundary extends Component {
   constructor(props) {
@@ -23,7 +24,7 @@ export default class ErrorBoundary extends Component {
             <pre className="text-xs text-red-600 bg-red-50 border border-red-100 p-3 rounded-lg mb-4 text-left overflow-auto max-h-40">{this.state.error?.message || 'Unknown error'}</pre>
             <button onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload(); }}
               className="text-sky-600 hover:text-sky-700 underline">Try Again</button>
-            <br /><a href="/" className="text-gray-500 hover:text-gray-700 text-sm mt-2 inline-block">← Go Home</a>
+            <br /><Link href="/" className="text-gray-500 hover:text-gray-700 text-sm mt-2 inline-block">← Go Home</Link>
           </div>
         </div>
       );

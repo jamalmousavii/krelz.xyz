@@ -67,6 +67,8 @@ const de = {
     freeTokens: 'Kostenlose Tokens',
     history: 'Verlauf',
     startTyping: 'Beginne zu tippen, um zu chatten...',
+    viaMiner: 'über Miner',
+    viaLocal: 'lokal',
   },
   miner: {
     title: 'Miner - Krelz Network',

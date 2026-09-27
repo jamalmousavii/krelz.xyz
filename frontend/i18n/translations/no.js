@@ -67,6 +67,8 @@ const no = {
     freeTokens: 'Gratis tokens',
     history: 'Historikk',
     startTyping: 'Begynn å skrive for å chatte...',
+    viaMiner: 'via miner',
+    viaLocal: 'lokal',
   },
   miner: {
     title: 'Miner - Krelz Network',

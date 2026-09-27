@@ -67,6 +67,8 @@ const hi = {
     freeTokens: 'मुफ़्त टोकन',
     history: 'इतिहास',
     startTyping: 'चैट करने के लिए लिखना शुरू करें...',
+    viaMiner: 'माइनर के माध्यम से',
+    viaLocal: 'स्थानीय',
   },
   miner: {
     title: 'माइनर - Krelz Network',

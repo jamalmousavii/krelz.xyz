@@ -67,6 +67,8 @@ const th = {
     freeTokens: 'โทเคนฟรี',
     history: 'ประวัติ',
     startTyping: 'เริ่มพิมพ์เพื่อแชท...',
+    viaMiner: 'ผ่านไมเนอร์',
+    viaLocal: 'ในเครื่อง',
   },
   miner: {
     title: 'ไมเนอร์ - Krelz Network',

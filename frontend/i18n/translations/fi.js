@@ -67,6 +67,8 @@ const fi = {
     freeTokens: 'Ilmaiset tokenit',
     history: 'Historia',
     startTyping: 'Aloita kirjoittaa chattaaksesi...',
+    viaMiner: 'minerin kautta',
+    viaLocal: 'paikallinen',
   },
   miner: {
     title: 'Miner - Krelz Network',

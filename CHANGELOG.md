@@ -1,5 +1,37 @@
 # Changelog
 
+## [3.19.0] - 2026-09-26
+
+Comprehensive security / correctness / stability pass. Full findings with `file:line` in **[docs/AUDIT.md](docs/AUDIT.md)**; API reference rewritten in **[docs/api.md](docs/api.md)**.
+
+### Security
+- **Password reset no longer leaks the token** — reset links are emailed via Resend (`RESEND_API_KEY`); the token is never returned in JSON or logged. Without an email provider configured in production the endpoint answers **503 before any account lookup** (cannot be used to enumerate accounts). New page `/reset-password`
+- **Admin is re-checked against the database** on every admin route (60s cache, fail-closed); `role=admin` is rejected at self-registration; JWT verified with `algorithms: ['HS256']` only (`alg:none` rejected)
+- **Response cache can never serve authenticated responses** — requests with `Authorization` or `req.user` bypass it; `/api/miners` (carries `miner_token`) is no longer cached
+- **Public miner endpoints no longer leak wallets** — `GET /api/miners` is bounded and drops `wallet_address`/`miner_token`; `GET /api/miners/:id` is owner-only
+- **IPN fail-closed** — HMAC-SHA512 + `timingSafeEqual`; rejected when `NOWPAYMENTS_IPN_SECRET` is unset
+- Guest chat gets its own **6 req/min/IP** limiter; dedicated **10/15min** limiter on forgot/reset password; WS client IP no longer trusts `cf-connecting-ip`
+- nginx: `limit_req`/`limit_conn` in front of `/api` and a **Content-Security-Policy**; server IP/SSH removed from `DEVELOP.md`
+
+### Fixed
+- **Daily free allowance reset on every request** (unlimited free usage) — `pg` now returns `DATE` as a string *and* `todayKey()`/`toDateKey()` use one consistent calendar (`backend/src/database/pool.js`, `routes/chat.js`). Regression-tested
+- **Payment webhook idempotent** — deposits store `order_id`; the webhook claims the pending row in a transaction, credits the **stored** amount, and answers `deduped` on replay (no double credit)
+- **Withdraw / `payments/deduct` are single-statement atomic** — no concurrent double-spend
+- **Miner earnings only when the miner actually served the task** (cloud/local fallback no longer credits `miners.earnings`); chat pre-flight returns **402** before any inference when allowance + wallet are empty
+- Default model disagreement (`llama3:8b` vs `llama3.1:8b`) consolidated into `DEFAULT_MODEL`
+- `/api/models` reports models missing from the catalog as `unknown_models` instead of inflating another badge
+- `heartbeat` whitelists `status`, clamps `tasks_completed`, cannot resurrect a removed miner; `/api/miners/setup` returns 401 for `removed` miners
+- `/health` returns **503** when Postgres is down (+ new `/health/live`); graceful shutdown drains HTTP/WS and closes pool/Redis; `unhandledRejection`/`uncaughtException` handled
+- `migrate.js` exits non-zero on failure; adds `coin_deposits.order_id` + indexes (additive, idempotent)
+- Install menu no longer offers `qwen3.6:27b` (not in the catalog) and preset `f)` no longer drops a model
+- `systemd` unit runs the headless CLI (not Electron) as a hardened unit without a hardcoded wallet
+- Frontend: render-time redirects replaced by `useAuth`, 401 handling in `utils/api.js`, `Number(x).toFixed()` guards, `404`/`500` pages, `next/link` navigation, env-driven API rewrite, generated favicon/PWA/OG assets
+
+### Added
+- **43 unit/integration tests** (`backend/tests/`, jest + supertest, no DB/Redis required) and **GitHub Actions CI** (syntax check, tests, `next build`, `next lint`, install-script syntax)
+- `docs/AUDIT.md` (full report), rewritten `docs/api.md`
+- `scripts/generate_assets.py` (reproducible PWA/social assets), `DISABLE_CACHE=1` switch for local/test runs
+
 ## [3.18.4] - 2026-09-26
 
 ### Security

@@ -6,30 +6,35 @@ const jwt = require('jsonwebtoken');
 const pool = require('../database/pool');
 const { OAuth2Client } = require('google-auth-library');
 const { validate, registerRules, loginRules, googleAuthRules } = require('../middleware/validate');
+const { isEmailConfigured, sendPasswordResetEmail } = require('../services/email');
+const { logger } = require('../logger');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
-  console.error('❌ JWT_SECRET environment variable is required');
+  logger.error('JWT_SECRET environment variable is required');
   process.exit(1);
 }
 
 // POST /api/auth/register
 router.post('/register', registerRules, validate, async (req, res) => {
   try {
-    const { email, password, role } = req.body;
-
-    const userExists = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-    if (userExists.rows.length > 0) {
-      return res.status(400).json({ error: 'Email already exists' });
-    }
+    const { email, password } = req.body;
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
+    // Never trust a client-supplied role: admin/miner roles are granted server-side only.
+    // ON CONFLICT turns the previous SELECT-then-INSERT race into a clean 400.
     const result = await pool.query(
-      'INSERT INTO users (email, password, role) VALUES ($1, $2, $3) RETURNING id, email, role',
-      [email, hashedPassword, role || 'user']
+      `INSERT INTO users (email, password, role) VALUES ($1, $2, 'user')
+       ON CONFLICT (email) DO NOTHING
+       RETURNING id, email, role`,
+      [email, hashedPassword]
     );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'Email already exists' });
+    }
 
     // Create empty balance
     await pool.query(
@@ -50,7 +55,7 @@ router.post('/register', registerRules, validate, async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Auth request failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -89,7 +94,7 @@ router.post('/login', loginRules, validate, async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Auth request failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -148,7 +153,7 @@ router.post('/google', googleAuthRules, validate, async (req, res) => {
     res.json({ success: true, token, user });
 
   } catch (err) {
-    console.error('Google auth error:', err);
+    logger.error({ err }, 'Google auth error');
     res.status(401).json({ error: 'Invalid Google token' });
   }
 });
@@ -162,7 +167,7 @@ router.post('/set-password', async (req, res) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     const userId = decoded.id;
 
     const { password } = req.body;
@@ -197,7 +202,7 @@ router.post('/set-password', async (req, res) => {
     res.json({ success: true, message: 'Password set successfully' });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Auth request failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -211,7 +216,7 @@ router.post('/change-password', async (req, res) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     const userId = decoded.id;
 
     const { current_password, new_password } = req.body;
@@ -256,7 +261,7 @@ router.post('/change-password', async (req, res) => {
     res.json({ success: true, message: 'Password changed successfully' });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Auth request failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -268,6 +273,15 @@ router.post('/forgot-password', async (req, res) => {
 
     if (!email) {
       return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const isDev = process.env.NODE_ENV === 'development';
+    // Checked before any account lookup so the failure code cannot be used to
+    // enumerate accounts: with no transport configured EVERY request gets 503.
+    if (!isEmailConfigured() && !isDev) {
+      return res.status(503).json({
+        error: 'Password reset is temporarily unavailable. Please try again later.',
+      });
     }
 
     const userResult = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
@@ -286,14 +300,31 @@ router.post('/forgot-password', async (req, res) => {
       [resetToken, expiry, userId]
     );
 
-    // TODO: Send email with reset link
-    // For now, log the token (in production, send via email)
-    console.log(`Password reset token for ${email}: ${resetToken}`);
+    // The token is delivered by email only. Returning it in the response body
+    // (or logging it) would let anyone take over any account in two requests.
+    if (isEmailConfigured()) {
+      try {
+        await sendPasswordResetEmail(email, resetToken);
+      } catch (err) {
+        logger.error({ err: err.message }, 'Password reset email failed');
+        // fall through: respond generically so the endpoint stays enumeration-safe
+      }
+    } else {
+      logger.error({ email }, 'RESEND_API_KEY missing — password reset email was NOT sent');
+      if (isDev) {
+        // Dev-only escape hatch: surface the token locally when no SMTP/Resend is wired up.
+        return res.json({
+          success: true,
+          message: 'If an account exists, a reset link has been sent.',
+          reset_token: resetToken,
+        });
+      }
+    }
 
-    res.json({ success: true, message: 'If an account exists, a reset link has been sent.', reset_token: resetToken });
+    res.json({ success: true, message: 'If an account exists, a reset link has been sent.' });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Auth request failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -342,7 +373,7 @@ router.post('/reset-password', async (req, res) => {
     res.json({ success: true, message: 'Password reset successfully' });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Auth request failed');
     res.status(500).json({ error: 'Server error' });
   }
 });

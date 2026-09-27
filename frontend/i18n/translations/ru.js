@@ -67,6 +67,8 @@ const ru = {
     freeTokens: 'Бесплатные токены',
     history: 'История',
     startTyping: 'Начните печатать для общения...',
+    viaMiner: 'через майнер',
+    viaLocal: 'локальный',
   },
   miner: {
     title: 'Майнер - Krelz Network',

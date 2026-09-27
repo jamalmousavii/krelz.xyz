@@ -67,6 +67,8 @@ const hu = {
     freeTokens: 'Ingyenes tokenek',
     history: 'Előzmények',
     startTyping: 'Kezdjen el gépelni a csevegéshez...',
+    viaMiner: 'bányász révén',
+    viaLocal: 'helyi',
   },
   miner: {
     title: 'Miner - Krelz Network',

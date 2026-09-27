@@ -58,7 +58,6 @@ step_fail() {
 
 # Model size map
 declare -A MODEL_SIZES
-MODEL_SIZES[qwen3.6:27b]="17 GB"
 MODEL_SIZES[llama3.3:70b]="43 GB"
 MODEL_SIZES[deepseek-r1:70b]="43 GB"
 MODEL_SIZES[llama3.1:8b]="5 GB"
@@ -160,10 +159,10 @@ echo -e "${CYAN}  Select models to install${NC}"
 echo -e "${CYAN}========================================${NC}"
 echo ""
 echo -e "  ${CYAN}--- Chat ---${NC}"
-echo -e "  ${GREEN}1${NC}) qwen3.6:27b        (17 GB)  - Best overall single-GPU"
+echo -e "  ${GREEN}1${NC}) llama3.1:8b        (5 GB)   - Best budget all-rounder"
 echo -e "  ${GREEN}2${NC}) llama3.3:70b       (43 GB)  - Best large model"
 echo -e "  ${GREEN}3${NC}) deepseek-r1:70b    (43 GB)  - Best reasoning"
-echo -e "  ${GREEN}4${NC}) llama3.1:8b        (5 GB)   - Best budget all-rounder"
+echo -e "  ${GREEN}4${NC}) llama3.1:8b        (5 GB)   - Recommended default (Enter)"
 echo ""
 echo -e "  ${CYAN}--- Code ---${NC}"
 echo -e "  ${GREEN}5${NC}) qwen3-coder:30b    (18 GB)  - Best coding model"
@@ -183,7 +182,7 @@ echo -e "  ${GREEN}c${NC}) All Chat (1+2+3+4)"
 echo -e "  ${GREEN}d${NC}) All Code (5+6)"
 echo -e "  ${GREEN}e${NC}) All Vision (7+8)"
 echo -e "  ${GREEN}f${NC}) All recommended (1+5+7+9)"
-echo -e "  ${GREEN}g${NC}) Everything (all 11)"
+echo -e "  ${GREEN}g${NC}) Everything (all 10 local models)"
 echo -e "  ${GREEN}0${NC}) Custom (enter model names manually)"
 echo ""
 
@@ -207,12 +206,12 @@ case $choice in
   c) SELECTED_MODELS="llama3.3:70b deepseek-r1:70b llama3.1:8b" ;;
   d) SELECTED_MODELS="qwen3-coder:30b qwen2.5-coder:32b" ;;
   e) SELECTED_MODELS="qwen3-vl:8b gemma4:12b" ;;
-  f) SELECTED_MODELS="qwen3-coder:30b qwen3-vl:8b embeddinggemma" ;;
+  f) SELECTED_MODELS="llama3.1:8b qwen3-coder:30b qwen3-vl:8b embeddinggemma" ;;
   g) SELECTED_MODELS="llama3.3:70b deepseek-r1:70b llama3.1:8b qwen3-coder:30b qwen2.5-coder:32b qwen3-vl:8b gemma4:12b embeddinggemma nomic-embed-text bge-m3" ;;
   0)
     echo ""
     echo -e "  ${CYAN}Select models by number:${NC}"
-    echo -e "  ${GREEN}1${NC}) qwen3.6:27b        (17 GB)"
+    echo -e "  ${GREEN}1${NC}) llama3.1:8b        (5 GB)"
     echo -e "  ${GREEN}2${NC}) llama3.3:70b       (43 GB)"
     echo -e "  ${GREEN}3${NC}) deepseek-r1:70b    (43 GB)"
     echo -e "  ${GREEN}4${NC}) llama3.1:8b        (5 GB)"

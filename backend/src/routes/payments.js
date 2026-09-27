@@ -4,6 +4,7 @@ const pool = require('../database/pool');
 const { authenticate } = require('../middleware/auth');
 const nowpayments = require('../services/nowpayments');
 const { invalidateCache } = require('../cache');
+const { logger } = require('../logger');
 
 // GET /api/payments/coins — still returns coin list for invoice display
 router.get('/coins', (req, res) => {
@@ -43,11 +44,11 @@ router.post('/deposit/create', authenticate, async (req, res) => {
       return res.status(500).json({ error: result.error });
     }
 
-    // Save deposit record (USD)
+    // Save deposit record (USD). order_id is the IPN correlation key.
     await pool.query(
-      `INSERT INTO coin_deposits (user_id, coin, amount, processor_id, status)
-       VALUES ($1, 'USD', $2, $3, 'pending')`,
-      [userId, amount, result.invoiceId]
+      `INSERT INTO coin_deposits (user_id, coin, amount, processor_id, order_id, status)
+       VALUES ($1, 'USD', $2, $3, $4, 'pending')`,
+      [userId, amount, result.invoiceId, result.orderId]
     );
 
     res.status(201).json({
@@ -62,7 +63,7 @@ router.post('/deposit/create', authenticate, async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'POST /api/payments/deposit/create failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -74,7 +75,7 @@ router.post('/deposit/webhook', async (req, res) => {
     const payload = req.body;
 
     if (!nowpayments.verifyIPN(payload, signature)) {
-      console.error('Invalid IPN signature');
+      logger.error('Rejected IPN: invalid signature');
       return res.status(401).json({ error: 'Invalid signature' });
     }
 
@@ -83,45 +84,77 @@ router.post('/deposit/webhook', async (req, res) => {
       return res.json({ status: 'ignored', payment_status: result.status });
     }
 
-    const { userId, amount, txHash, processorId } = result;
+    const { userId, amount, txHash, orderId, invoiceId, cryptoCoin } = result;
 
     if (!userId || !(amount > 0)) {
       return res.json({ status: 'ignored', reason: 'invalid payload' });
     }
 
-    // Update deposit status
-    await pool.query(
-      "UPDATE coin_deposits SET status = 'completed', tx_hash = $1 WHERE processor_id = $2",
-      [txHash, processorId]
-    );
+    const client = await pool.connect();
+    let credited = false;
+    let storedAmount = amount;
+    try {
+      await client.query('BEGIN');
 
-    // Credit USD balance
-    await pool.query(
-      `INSERT INTO user_coin_balances (user_id, coin, chain, available)
-       VALUES ($1, 'USD', 'usd', $2)
-       ON CONFLICT (user_id, coin) DO UPDATE SET
-       available = user_coin_balances.available + $2,
-       total_earned = user_coin_balances.total_earned + $2`,
-      [userId, amount]
-    );
+      // Claim the deposit exactly once: UPDATE only while still pending, so a
+      // replayed/forged 'finished' IPN can never credit twice.
+      const claim = await client.query(
+        `UPDATE coin_deposits
+            SET status = 'completed', tx_hash = COALESCE($1, tx_hash)
+          WHERE user_id = $2
+            AND status = 'pending'
+            AND (order_id = $3 OR processor_id = $3 OR processor_id = $4)
+          RETURNING id, amount`,
+        [txHash, userId, orderId, invoiceId]
+      );
 
-    // Record transaction
-    await pool.query(
-      `INSERT INTO transactions (from_address, to_address, amount, type, description, status)
-       VALUES ('deposit', $1, $2, 'usd_deposit', $3, 'completed')`,
-      [userId, amount, `USD deposit via NowPayments (${result.cryptoCoin || 'crypto'} paid)`]
-    );
+      if (claim.rows.length === 0) {
+        // Already completed (replay) — acknowledge without crediting.
+        await client.query('COMMIT');
+        logger.warn({ userId, orderId }, 'IPN replay ignored (deposit already processed)');
+        return res.json({ status: 'ok', deduped: true });
+      }
 
-    invalidateCache('/api/payments/balance');
+      // Credit the amount we stored when the invoice was created, never the
+      // amount asserted by the webhook payload.
+      storedAmount = parseFloat(claim.rows[0].amount);
 
-    console.log(`✅ Deposit confirmed: $${amount} USD for user ${userId}`);
+      await client.query(
+        `INSERT INTO user_coin_balances (user_id, coin, chain, available, total_earned)
+         VALUES ($1, 'USD', 'usd', $2, $2)
+         ON CONFLICT (user_id, coin) DO UPDATE SET
+         available = user_coin_balances.available + $2,
+         total_earned = user_coin_balances.total_earned + $2`,
+        [userId, storedAmount]
+      );
+
+      await client.query(
+        `INSERT INTO transactions (from_address, to_address, amount, type, description, status)
+         VALUES ('deposit', $1, $2, 'usd_deposit', $3, 'completed')`,
+        [userId, storedAmount, `USD deposit via NowPayments (${cryptoCoin || 'crypto'} paid)`]
+      );
+
+      await client.query('COMMIT');
+      credited = true;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    if (credited) {
+      invalidateCache('/api/payments/balance');
+      logger.info({ userId, amount: storedAmount, orderId }, 'Deposit confirmed');
+    }
     res.json({ status: 'ok' });
 
   } catch (err) {
-    console.error('Webhook error:', err);
+    logger.error({ err }, 'IPN webhook error');
     if (!process.env.NOWPAYMENTS_IPN_SECRET) {
       return res.status(503).json({ error: 'Payment webhook not configured (missing IPN secret)' });
     }
+    // Non-2xx makes NowPayments retry — correct for transient DB failures.
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -148,7 +181,7 @@ router.get('/balance', authenticate, async (req, res) => {
     res.json({ success: true, balances, currency: 'USD' });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Request failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -173,25 +206,27 @@ router.post('/withdraw', authenticate, async (req, res) => {
     const fee = nowpayments.getWithdrawFee(amount);
     const totalDeduction = amount + fee;
 
-    const balanceResult = await pool.query(
-      "SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = 'USD'",
-      [userId]
-    );
-
-    const available = parseFloat(balanceResult.rows[0]?.available || 0);
-    if (available < totalDeduction) {
-      return res.status(400).json({
-        error: `Insufficient balance. Need $${totalDeduction.toFixed(2)} ($${amount.toFixed(2)} + $${fee.toFixed(2)} fee)`
-      });
-    }
-
-    // Deduct USD (amount + fee, sender pays fee)
-    await pool.query(
+    // Deduct USD atomically (amount + fee, sender pays fee).
+    // The `available >= $1` guard makes check+debit a single statement, so two
+    // concurrent withdrawals can never both succeed against the same balance.
+    const deducted = await pool.query(
       `UPDATE user_coin_balances
-       SET available = available - $1, total_spent = total_spent + $1
-       WHERE user_id = $2 AND coin = 'USD'`,
+          SET available = available - $1, total_spent = total_spent + $1
+        WHERE user_id = $2 AND coin = 'USD' AND available >= $1
+        RETURNING available`,
       [totalDeduction, userId]
     );
+
+    if (deducted.rows.length === 0) {
+      const balanceResult = await pool.query(
+        "SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = 'USD'",
+        [userId]
+      );
+      const available = parseFloat(balanceResult.rows[0]?.available || 0);
+      return res.status(400).json({
+        error: `Insufficient balance. Need $${totalDeduction.toFixed(2)} ($${amount.toFixed(2)} + $${fee.toFixed(2)} fee), have $${available.toFixed(2)}`
+      });
+    }
 
     // Create payout in USDT TRC-20 (1 USD ≈ 1 USDT)
     const usdtAmount = amount;
@@ -240,7 +275,7 @@ router.post('/withdraw', authenticate, async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Request failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -249,7 +284,8 @@ router.post('/withdraw', authenticate, async (req, res) => {
 router.get('/history', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { limit = 50 } = req.query;
+    // Whitelist the limit: raw query values go straight into LIMIT $2.
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
 
     const deposits = await pool.query(
       "SELECT * FROM coin_deposits WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
@@ -268,7 +304,7 @@ router.get('/history', authenticate, async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Request failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -278,33 +314,29 @@ router.post('/deduct', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
     const amount = parseFloat(req.body.amount);
-    const reason = req.body.reason;
 
-    if (!amount || amount <= 0) {
+    if (!amount || !Number.isFinite(amount) || amount <= 0) {
       return res.status(400).json({ error: 'amount required' });
     }
 
-    const balanceResult = await pool.query(
-      "SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = 'USD'",
-      [userId]
-    );
-
-    const available = parseFloat(balanceResult.rows[0]?.available || 0);
-    if (available < amount) {
-      return res.status(400).json({ error: 'Insufficient balance' });
-    }
-
-    await pool.query(
+    // Single atomic statement: a read-then-write pair lets two parallel
+    // requests both pass the balance check and overspend the wallet.
+    const result = await pool.query(
       `UPDATE user_coin_balances
-       SET available = available - $1, total_spent = total_spent + $1
-       WHERE user_id = $2 AND coin = 'USD'`,
+          SET available = available - $1, total_spent = total_spent + $1
+        WHERE user_id = $2 AND coin = 'USD' AND available >= $1
+        RETURNING available`,
       [amount, userId]
     );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: 'Insufficient balance' });
+    }
 
     res.json({ success: true, message: `Deducted $${amount.toFixed(4)} USD` });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Request failed');
     res.status(500).json({ error: 'Server error' });
   }
 });

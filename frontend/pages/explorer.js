@@ -129,7 +129,7 @@ export default function Explorer() {
                 <div className="text-gray-600 text-xs md:text-sm space-y-1">
                   <p>GPU: {miner.gpu_model || t('explorer.unknown')}</p>
                   <p>{t('explorer.tasks')}: {miner.total_tasks || 0}</p>
-                  <p>{t('explorer.earnings')}: {(miner.earnings || 0).toFixed(2)} KRELZ</p>
+                  <p>{t('explorer.earnings')}: {Number(miner.earnings || 0).toFixed(2)} KRELZ</p>
                   <p className="font-mono text-xs text-gray-400 mt-2">
                     {miner.wallet_address ? `${miner.wallet_address.slice(0, 10)}...` : '--'}
                   </p>

@@ -1,9 +1,11 @@
 import Head from 'next/head';
+import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
 import authHeaders from '../utils/auth';
+import { useAuth } from '../utils/api';
 
 const MODELS_LIST = [
   { id: 'llama3.1:8b', name: 'Llama 3.1', category: 'chat' },
@@ -34,7 +36,6 @@ function ResourceBar({ label, value, color }) {
 
 export default function Miners() {
   const { t, lang } = useLanguage();
-  const [user, setUser] = useState(null);
   const [miners, setMiners] = useState([]);
   const [editingMinerId, setEditingMinerId] = useState(null);
   const [minerNameInput, setMinerNameInput] = useState('');
@@ -51,21 +52,18 @@ export default function Miners() {
   const [loading, setLoading] = useState(true);
   const [copiedInstall, setCopiedInstall] = useState(null);
 
+  const { ready, user } = useAuth();
+
   useEffect(() => {
-    const saved = localStorage.getItem('user');
-    if (saved) {
-      try {
-        const u = JSON.parse(saved);
-        setUser(u);
-        fetchMiners();
-        if (!localStorage.getItem('krelz-guide-seen')) {
-          setGuideForAdd(false);
-          setShowGuideModal(true);
-        }
-      } catch (e) {}
+    if (user) {
+      fetchMiners();
+      if (!localStorage.getItem('krelz-guide-seen')) {
+        setGuideForAdd(false);
+        setShowGuideModal(true);
+      }
     }
     setLoading(false);
-  }, []);
+  }, [user]);
 
   const fetchMiners = async () => {
     try {
@@ -195,17 +193,12 @@ export default function Miners() {
     } catch (err) { setMinerMsg('❌ Token regenerate failed'); }
   };
 
-  if (loading) {
+  if (loading || !user) {
     return (
       <div className="flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex items-center justify-center">
         <div className="text-gray-600 text-lg">Loading...</div>
       </div>
     );
-  }
-
-  if (!user) {
-    if (typeof window !== 'undefined') window.location.href = '/';
-    return null;
   }
 
   return (
@@ -241,9 +234,9 @@ export default function Miners() {
       <main className="container mx-auto px-4 md:px-6 py-6 md:py-12 max-w-3xl">
         {/* Quick nav */}
         <div className="flex gap-2 mb-6 flex-wrap">
-          <a href="/profile" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">📊 {t('nav.dashboard')}</a>
-          <a href="/miners" className="px-4 py-2 rounded-lg text-sm font-bold bg-sky-500 text-white">⛏️ {t('nav.miners')}</a>
-          <a href="/settings" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⚙️ {t('nav.settings')}</a>
+          <Link href="/profile" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">📊 {t('nav.dashboard')}</Link>
+          <Link href="/miners" className="px-4 py-2 rounded-lg text-sm font-bold bg-sky-500 text-white">⛏️ {t('nav.miners')}</Link>
+          <Link href="/settings" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⚙️ {t('nav.settings')}</Link>
         </div>
 
         {/* Quick Install with copy buttons */}
@@ -291,7 +284,7 @@ export default function Miners() {
             </div>
           </div>
           <p className="text-gray-400 text-xs mt-3">
-            <a href="/miner" className="text-sky-600 hover:text-sky-700">📖 {t('miner.installDocsDesc')}</a>
+            <Link href="/miner" className="text-sky-600 hover:text-sky-700">📖 {t('miner.installDocsDesc')}</Link>
             {' · '}
             <a href="https://github.com/jamalmousavii/krelz.xyz" target="_blank" rel="noopener noreferrer" className="text-sky-600 hover:text-sky-700">⭐ {t('miner.github')}</a>
           </p>

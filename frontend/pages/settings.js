@@ -1,13 +1,14 @@
 import Head from 'next/head';
+import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import { LANGUAGES, isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
 import authHeaders from '../utils/auth';
+import { useAuth, clearSession } from '../utils/api';
 
 export default function Settings() {
   const { t, lang, changeLang } = useLanguage();
-  const [user, setUser] = useState(null);
   const [langOpen, setLangOpen] = useState(false);
 
   const [usdBalance, setUsdBalance] = useState({ available: 0, total_earned: 0, total_spent: 0 });
@@ -28,18 +29,15 @@ export default function Settings() {
   const [passwordMessage, setPasswordMessage] = useState('');
   const [loading, setLoading] = useState(true);
 
+  const { ready, user } = useAuth();
+
   useEffect(() => {
-    const saved = localStorage.getItem('user');
-    if (saved) {
-      try {
-        const u = JSON.parse(saved);
-        setUser(u);
-        fetchBalance();
-        fetchHistory();
-      } catch (e) {}
+    if (user) {
+      fetchBalance();
+      fetchHistory();
     }
     setLoading(false);
-  }, []);
+  }, [user]);
 
   const fetchBalance = async () => {
     try {
@@ -159,17 +157,12 @@ export default function Settings() {
 
   const currentLang = LANGUAGES.find(l => l.code === lang) || LANGUAGES[0];
 
-  if (loading) {
+  if (loading || !user) {
     return (
       <div className="flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex items-center justify-center">
         <div className="text-gray-600 text-lg">Loading...</div>
       </div>
     );
-  }
-
-  if (!user) {
-    if (typeof window !== 'undefined') window.location.href = '/';
-    return null;
   }
 
   return (
@@ -181,9 +174,9 @@ export default function Settings() {
       <main className="container mx-auto px-4 md:px-6 py-6 md:py-12 max-w-2xl">
         {/* Quick nav */}
         <div className="flex gap-2 mb-6 flex-wrap">
-          <a href="/profile" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">📊 {t('nav.dashboard')}</a>
-          <a href="/miners" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⛏️ {t('nav.miners')}</a>
-          <a href="/settings" className="px-4 py-2 rounded-lg text-sm font-bold bg-sky-500 text-white">⚙️ {t('nav.settings')}</a>
+          <Link href="/profile" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">📊 {t('nav.dashboard')}</Link>
+          <Link href="/miners" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⛏️ {t('nav.miners')}</Link>
+          <Link href="/settings" className="px-4 py-2 rounded-lg text-sm font-bold bg-sky-500 text-white">⚙️ {t('nav.settings')}</Link>
         </div>
 
         <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-5 md:p-6 mb-6">

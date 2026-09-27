@@ -67,6 +67,8 @@ const he = {
     freeTokens: 'טוקנים חינם',
     history: 'היסטוריה',
     startTyping: 'התחל להקליד כדי לשוחח...',
+    viaMiner: 'דרך כורה',
+    viaLocal: 'מקומי',
   },
   miner: {
     title: 'כורה - Krelz Network',

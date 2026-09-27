@@ -67,6 +67,8 @@ const ur = {
     freeTokens: 'مفت ٹوکنز',
     history: 'ہسٹری',
     startTyping: 'بات چیت شروع کرنے کے لیے لکھنا شروع کریں...',
+    viaMiner: 'منر کے ذریعے',
+    viaLocal: 'مقامی',
   },
   miner: {
     title: 'مائنر - Krelz Network',

@@ -67,6 +67,8 @@ const ro = {
     freeTokens: 'Tokeni gratuiți',
     history: 'Istoric',
     startTyping: 'Începe să scrii pentru a conversa...',
+    viaMiner: 'prin miner',
+    viaLocal: 'local',
   },
   miner: {
     title: 'Miner - Krelz Network',

@@ -1,242 +1,301 @@
-# مستندات API Krelz Network
+# مستندات API — Krelz Network
 
-## خلاصه
+نسخه بک‌اند: `3.18.4` — پایه: `https://krelz.xyz` (نمونه: `https://krelz.xyz/api/chat`)
 
-آدرس سرور اصلی: `https://api.krelz.xyz`
+همه پاسخ‌ها JSON هستند. در حالت موفقیت معمولاً `success: true` برمی‌گردد و در حالت خطا `error` (رشته) یا `details` (لیست خطاهای اعتبارسنجی).
 
 ---
 
 ## احراز هویت
 
-### POST /api/auth/register
-ثبت‌نام کاربر جدید
+دو نوع توکن وجود دارد:
 
-**Body:**
+| توکن | کاربرد |
+|------|--------|
+| JWT کاربر (`Authorization: Bearer <token>`) | پروفایل، کیف پول، چت، ماینرهای کاربر |
+| `miner_token` (`kz_...`) | فقط برای ماینرها: heartbeat و ثبت دستگاه |
+
+نکات:
+
+- JWT فقط با الگوریتم `HS256` و `JWT_SECRET` سرور پذیرفته می‌شود (`alg: none` یا کلید دیگر → `401`).
+- `role` در ثبت‌نام فقط `user` یا `miner` است؛ مقدار `admin` پذیرفته نمی‌شود (`400`).
+- نقش ادمین در هر درخواستِ `admin` دوباره از دیتابیس خوانده می‌شود (کش ۶۰ ثانیه‌ای) و در صورت خطا `fail-closed` است.
+
+### نرخ محدودیت (Rate limit)
+
+| مسیر | سقف |
+|------|-----|
+| عمومی `/api/` | ۲۰۰ درخواست / ۱۵ دقیقه |
+| `/api/auth/login` و `register` | ۱۰ / ۱۵ دقیقه |
+| `/api/auth/forgot-password` و `reset-password` | ۱۰ / ۱۵ دقیقه |
+| `/api/chat` (کاربر واردشده) | ۳۰ / دقیقه |
+| `/api/chat` (مهمان، بدون توکن) | ۶ / دقیقه |
+| nginx روی `/api/` | ۱۰ r/s با burst=40 (پاسخ `429`) |
+
+---
+
+## کاربران
+
+### POST `/api/auth/register`
+
 ```json
-{
-  "email": "user@example.com",
-  "password": "password123",
-  "role": "user"
-}
+{ "email": "user@example.com", "password": "password123" }
 ```
 
-**Response:**
+پاسخ: `{ "success": true, "token": "...", "user": { "id", "email", "name", "role" } }`
+
+### POST `/api/auth/login`
+
+```json
+{ "email": "user@example.com", "password": "password123" }
+```
+
+### POST `/api/auth/google`
+
+```json
+{ "credential": "google-id-token" }
+```
+
+### POST `/api/auth/set-password`
+
+تنظیم رمز برای حساب‌های Google-only (نیازمند JWT).
+
+### POST `/api/auth/change-password`
+
+```json
+{ "currentPassword": "...", "newPassword": "..." }
+```
+
+### POST `/api/auth/forgot-password`
+
+```json
+{ "email": "user@example.com" }
+```
+
+- اگر `RESEND_API_KEY` تنظیم نشده باشد → **`503`** (بدون توجه به وجود حساب، تا امکان شمارش حساب‌ها نباشد).
+- توکن ریست **هرگز** در پاسخ یا لاگ برنمی‌گردد؛ فقط با ایمیل ارسال می‌شود.
+- پاسخ موفق: `{ "success": true, "message": "If an account exists, a reset link has been sent." }`
+- لینک: `BACKEND_URL/reset-password?token=...` (اعتبار ۱ ساعته)
+
+### POST `/api/auth/reset-password`
+
+```json
+{ "token": "...", "password": "newpassword" }
+```
+
+---
+
+## چت
+
+### POST `/api/chat`
+
+نیازمند توکن نیست (مهمان هم می‌تواند) اما مهمان نرخ محدودیت سخت‌تری دارد.
+
+```json
+{ "message": "سلام", "model": "llama3.1:8b", "session_id": 12 }
+```
+
+پاسخ موفق:
+
 ```json
 {
   "success": true,
-  "token": "jwt-token-here",
-  "user": {
-    "id": "user-id",
-    "email": "user@example.com",
-    "role": "user"
-  }
+  "response": "...",
+  "task_id": 123,
+  "session_id": 12,
+  "tokens_used": 420,
+  "cost": 0.00007,
+  "coin": "USD",
+  "payment_status": "free | free_daily | paid",
+  "miner_id": 7,
+  "source": "miner | external | local",
+  "provider_name": "Groq",
+  "daily_tokens": { "limit": 1000, "used": 100, "remaining": 900 }
 }
 ```
 
-### POST /api/auth/login
-ورود کاربر
+**پرداخت:**
 
-**Body:**
-```json
-{
-  "email": "user@example.com",
-  "password": "password123"
-}
-```
+1. ابتدا از سهمیه روزانه (۱۰۰۰ توکن ≈ ۱ دلار اعتبار) کم می‌شود.
+2. باقیمانده از کیف پول USD کاربر.
+3. سهم ماینر = ۹۰٪ مبلغ پرداخت‌شده (فقط اگر واقعاً ماینر جواب داده باشد).
+4. اگر نه سهمیه‌ای مانده باشد نه موجودی → **`402`** با `payment_status: "insufficient_balance"`.
 
-**Response:**
-```json
-{
-  "success": true,
-  "token": "jwt-token-here",
-  "user": {
-    "id": "user-id",
-    "email": "user@example.com",
-    "role": "user"
-  }
-}
-```
+قیمت‌گذاری: `cost = tokens × outputPrice / 1e6` (قیمت مدل انتخاب‌شده از `src/models.js`).
+
+### مدیریت جلسات
+
+| متد و مسیر | توضیح |
+|-----------|-------|
+| `GET /api/chat/sessions` | لیست جلسات کاربر |
+| `POST /api/chat/sessions` | ساخت جلسه (`subject`, `model`) — `subject` حداکثر ۲۵۵ کاراکتر |
+| `GET /api/chat/sessions/:id` | یک جلسه + پیام‌ها |
+| `PUT /api/chat/sessions/:id` | تغییر عنوان |
+| `DELETE /api/chat/sessions/:id` | حذف جلسه |
+| `GET /api/chat/history` | ۵۰ درخواست آخر کاربر (legacy) |
 
 ---
 
 ## ماینرها
 
-### GET /api/miners
-دریافت لیست ماینرها
+### `GET /api/miners` (عمومی)
 
-**Response:**
+لیست ماینرهای آنلاین برای نمایش عمومی — **بدون** `wallet_address` و `miner_token`، حداکثر ۱۰۰ ردیف.
+
+### `GET /api/miners/:id` (فقط مالک)
+
+### `POST /api/miners` (نیازمند JWT)
+
+ساخت ماینر جدید: `{ "name": "miner1" }` → پاسخ شامل `miner_token` (فقط یک بار نمایش داده می‌شود).
+
+### `GET /api/miners/mine`
+
+ماینرهای خودِ کاربر (به‌جز `removed`)؛ `miner_token` بعد از اولین اتصال `null` می‌شود.
+
+### متدهای مدیریت (نیازمند JWT و مالکیت)
+
+| متد و مسیر | توضیح |
+|-----------|-------|
+| `PUT /api/miners/mine/model` | تغییر مدل (`model`, `miner_id` اختیاری) |
+| `PUT /api/miners/mine/:id` | تغییر نام |
+| `PUT /api/miners/mine/:id/token` | ساخت توکن جدید (نصب مجدد) |
+| `DELETE /api/miners/mine/:id` | حذف نرم — تاریخچه محفوظ می‌ماند |
+
+### `POST /api/token` (نیازمند JWT)
+
+دریافت/ساخت توکن سطح حساب (legacy).
+
+### `POST /api/miners/setup` (عمومی، با توکن)
+
 ```json
-{
-  "success": true,
-  "miners": [
-    {
-      "id": "miner-id",
-      "name": "Miner 1",
-      "gpu": "RTX 3080",
-      "status": "online",
-      "uptime": 99.5,
-      "earnings": 1250.5
-    }
-  ]
-}
+{ "email": "a@b.co", "miner_token": "kz_...", "gpu_model": "...", "ram": "32 GB", "cpu": "...", "models": ["llama3.1:8b"], "machine_id": "...", "name": "vps1" }
 ```
 
-### POST /api/miners/register
-ثبت‌نام ماینر جدید
+- توکنِ ماینرِ اختصاصی → بلافاصله ثبت/به‌روزرسانی.
+- توکنِ سطح حساب → فقط وقتی کاربر دقیقاً یک ماینر فعال دارد؛ در غیر این صورت `409`.
+- ماینرِ `removed` دوباره زنده نمی‌شود → `401`.
 
-**Body:**
-```json
-{
-  "wallet": "0x1234...",
-  "gpu": "RTX 3080",
-  "ram": "16GB",
-  "cpu": "Intel i7"
-}
-```
+### `PUT /api/miners/:id/heartbeat`
 
-### PUT /api/miners/:id/heartbeat
-گزارش وضعیت ماینر
+بدون JWT؛ با `miner_token` در body. `status` فقط `online|offline|busy` پذیرفته می‌شود، `tasks_completed` بین ۰ تا ۱۰۰۰ محدود است و ماینرِ `removed` به‌روز نمی‌شود.
 
-**Body:**
-```json
-{
-  "status": "online",
-  "gpu_usage": 75,
-  "ram_usage": 60,
-  "tasks_completed": 45
-}
-```
+### `POST /api/miners/register`
 
----
-
-## چت LLM
-
-### POST /api/chat
-ارسال درخواست به LLM
-
-**Body:**
-```json
-{
-  "message": "سلام، حال شما چطور است؟",
-  "model": "llama3:8b"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "response": "سلام! ممنون، خوب هستم...",
-  "tokens_used": 150,
-  "cost": 0.5,
-  "miner_id": "miner-id"
-}
-```
+غیرفعال است (`403`) — از `/api/miners/setup` استفاده شود.
 
 ---
 
 ## پرداخت
 
-### POST /api/payments/create
-ایجاد تراکنش پرداخت
+### `GET /api/payments/coins`
 
-**Body:**
+لیست کوین‌های قابل واریز (NowPayments).
+
+### `POST /api/payments/deposit/create`
+
 ```json
-{
-  "amount": 100,
-  "from": "0x1234...",
-  "to": "0x5678...",
-  "type": "chat"
-}
+{ "amount_usd": 25, "coin": "USDT" }
 ```
 
-### GET /api/payments/history
-دریافت تاریخچه پرداخت‌ها
+پاسخ شامل `invoice_url` (صفحه پرداخت NowPayments) و `order_id` است. این `order_id` در `coin_deposits` ذخیره می‌شود.
 
-**Response:**
+### `POST /api/payments/deposit/webhook` (عمومی، امضای IPN)
+
+- اعتبارسنجی HMAC-SHA512 با `NOWPAYMENTS_IPN_SECRET` (**fail-closed**: بدون تنظیم بودنِ secret هیچ وب‌هوکی پذیرفته نمی‌شود).
+- ادعا (claim) ایدمپوتنت با `order_id`/`processor_id` در یک تراکنش: وب‌هوکِ تکراری اعتباری اضافه نمی‌کند.
+- مبلغ از **ردیف دیتابیس** خوانده می‌شود، نه از payload.
+
+### `GET /api/payments/balance` (نیازمند JWT)
+
 ```json
-{
-  "success": true,
-  "payments": [
-    {
-      "id": "payment-id",
-      "amount": 100,
-      "from": "0x1234...",
-      "to": "0x5678...",
-      "tx_hash": "0xabc...",
-      "created_at": "2024-01-01T00:00:00Z"
-    }
-  ]
-}
+{ "success": true, "balances": { "USD": { "available": 12.5, "total_earned": 30, "total_spent": 17.5 } } }
 ```
+
+### `POST /api/payments/withdraw`
+
+```json
+{ "amount": 5, "address": "T..." }
+```
+
+برداشت با یک `UPDATE ... WHERE available >= amount` اتمیک انجام می‌شود (حداقل ۵ دلار).
+
+### `GET /api/payments/history`
+
+`limit` بین ۱ تا ۱۰۰.
+
+### `POST /api/payments/deduct` (نیازمند JWT)
+
+کم‌کردن موجودی خودِ کاربر (اتمیک).
 
 ---
 
-## توکن
+## توکن (legacy)
 
-### GET /api/token/balance
-دریافت موجودی توکن
+### `GET /api/token/balance` (نیازمند JWT)
 
-**Response:**
 ```json
-{
-  "success": true,
-  "balance": 1250.5,
-  "staked": 500,
-  "available": 750.5
-}
+{ "success": true, "tokens": 820, "daily_tokens": { "limit": 1000, "used": 180, "remaining": 820 } }
 ```
 
-### POST /api/token/stake
-استیک کردن توکن
+### `POST /api/token/deposit|deduct|transfer`
 
-**Body:**
-```json
-{
-  "amount": 100
-}
-```
-
-### POST /api/token/unstake
-برداشت توکن از استیک
-
-**Body:**
-```json
-{
-  "amount": 50
-}
-```
+**غیرفعال شده → `410 Gone`.** موجودی فقط از مسیر پرداخت و چت تغییر می‌کند.
 
 ---
 
-## آمار
+## آمار، مدل‌ها، رتبه‌بندی
 
-### GET /api/stats/network
-آمار کل شبکه
-
-**Response:**
-```json
-{
-  "success": true,
-  "stats": {
-    "total_miners": 150,
-    "active_miners": 120,
-    "total_users": 500,
-    "total_requests": 15000,
-    "total_tokens_burned": 25000
-  }
-}
-```
+| مسیر | توضیح |
+|------|-------|
+| `GET /api/stats/network` | شمار ماینر/کاربر/درخواست + `platform_revenue` (۱۰٪ هزینه تسک‌های کامل) — کش ۳۰ ثانیه |
+| `GET /api/models` | کاتالوگ مدل‌ها + تعداد ماینر آنلاین هر مدل (`unknown_models` برای مدل‌های خارج از کاتالوگ) — کش ۱۵ ثانیه |
+| `GET /api/models/categories` | دسته‌بندی‌ها |
+| `GET /api/leaderboard/miners` | ۵۰ ماینر برتر |
+| `GET /api/leaderboard/users` | ۵۰ کاربر برتر |
 
 ---
 
-## خطاها
+## ادمین (نیازمند JWT + نقش `admin` در دیتابیس)
 
-| کد | پیام | توضیح |
-|----|------|-------|
-| 400 | Bad Request | درخواست نامعتبر |
-| 401 | Unauthorized | احراز هویت نشده |
-| 403 | Forbidden | دسترسی غیرمجاز |
-| 404 | Not Found | یافت نشد |
-| 429 | Too Many Requests | درخواست زیاد |
-| 500 | Server Error | خطای سرور |
+| مسیر | توضیح |
+|------|-------|
+| `GET /api/admin/dashboard` | شمارنده‌ها + درآمد پلتفرم |
+| `GET /api/admin/users` | ۱۰۰ کاربر اخیر |
+| `GET /api/admin/miners` | ۱۰۰ ماینر |
+| `GET /api/admin/tasks` | ۱۰۰ تسک اخیر + ایمیل کاربر |
+
+---
+
+## سلامت
+
+| مسیر | رفتار |
+|------|-------|
+| `GET /health` | readiness: بدون Postgres → `503` + `status: "degraded"`؛ Redis فقط گزارشی است |
+| `GET /health/live` | liveness: همیشه `200` |
+
+---
+
+## WebSocket
+
+آدرس: `wss://krelz.xyz/ws` (از داخل سرور: `ws://127.0.0.1:8444/ws`)
+
+- احراز هویت ماینر با `miner_token`.
+- پیام‌های کلیدی: `register`, `task_dispatch`, `task_result`, `heartbeat`.
+- نتیجه تکراری (`task_result` برای تسکی که دیگر `pending/processing` نیست) نادیده گرفته می‌شود.
+
+---
+
+## کدهای خطا
+
+| کد | معنا |
+|----|------|
+| `400` | اعتبارسنجی ناموفق (`details` شامل فیلدهاست) |
+| `401` | توکن نامعتبر/نبودن توکن/توکنِ ماینر نامعتبر |
+| `402` | موجودی و سهمیه روزانه کافی نیست |
+| `403` | دسترسی ادمین لازم است / CORS |
+| `404` | پیدا نشد |
+| `409` | تعارض (چند ماینر با توکن سطح حساب) |
+| `410` | endpoint قدیمی حذف شده |
+| `429` | نرخ محدودیت |
+| `500` | خطای داخلی |
+| `503** | سرویس در دسترس نیست (بدون provider / بدون ایمیل / بدون Postgres) |

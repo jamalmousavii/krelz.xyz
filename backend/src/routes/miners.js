@@ -4,23 +4,27 @@ const crypto = require('crypto');
 const pool = require('../database/pool');
 const { invalidateCache } = require('../cache');
 const { authenticate } = require('../middleware/auth');
+const { logger } = require('../logger');
 
-// GET /api/miners
+// GET /api/miners — public network view. Deliberately excludes wallet_address
+// and miner_token, and is bounded so it cannot dump the whole table.
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, wallet_address, gpu_model, ram, cpu, status, uptime, total_tasks, earnings FROM miners ORDER BY earnings DESC'
+      `SELECT id, gpu_model, ram, cpu, status, uptime, total_tasks, earnings, current_model
+         FROM miners
+        WHERE status IS NULL OR status != 'removed'
+        ORDER BY earnings DESC
+        LIMIT 100`
     );
 
     res.json({
       success: true,
       miners: result.rows
     });
-    invalidateCache('/api/stats');
-    invalidateCache('/api/miners');
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'GET /api/miners failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -51,7 +55,7 @@ router.post('/', authenticate, async (req, res) => {
     res.status(201).json({ success: true, miner: result.rows[0] });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Miner route failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -88,7 +92,7 @@ router.get('/mine', authenticate, async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Miner route failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -129,7 +133,7 @@ router.put('/mine/model', authenticate, async (req, res) => {
     res.json({ success: true, miner: result.rows[0] });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Miner route failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -162,7 +166,7 @@ router.put('/mine/:id', authenticate, async (req, res) => {
     res.json({ success: true, miner: result.rows[0] });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Miner route failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -195,7 +199,7 @@ router.put('/mine/:id/token', authenticate, async (req, res) => {
     res.json({ success: true, miner: result.rows[0] });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Miner route failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -237,7 +241,7 @@ router.delete('/mine/:id', authenticate, async (req, res) => {
     res.json({ success: true, message: 'Miner removed. Task/earning history is preserved.' });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Miner route failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -261,7 +265,7 @@ router.post('/token', authenticate, async (req, res) => {
     res.json({ success: true, miner_token: minerToken });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Miner route failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -285,6 +289,9 @@ router.post('/setup', async (req, res) => {
       [miner_token]
     );
     if (minerResult.rows.length > 0) {
+      if (minerResult.rows[0].status === 'removed') {
+        return res.status(401).json({ error: 'This miner was removed. Re-add it from your profile to use it again.' });
+      }
       const minerId = minerResult.rows[0].id;
       const result = await pool.query(
         `UPDATE miners SET gpu_model = $1, ram = $2, cpu = $3, models = $4,
@@ -330,7 +337,7 @@ router.post('/setup', async (req, res) => {
     return res.status(401).json({ error: 'Invalid miner token' });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Miner route failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -355,6 +362,11 @@ router.put('/:id/heartbeat', async (req, res) => {
       return res.status(401).json({ error: 'Invalid miner token' });
     }
 
+    // Whitelist caller-controlled fields: a heartbeat may never resurrect a
+    // removed miner, invent a status, or inflate the task counter.
+    const statusValue = ['online', 'offline', 'busy'].includes(status) ? status : 'online';
+    const taskDelta = Math.max(0, Math.min(1000, parseInt(tasks_completed, 10) || 0));
+
     const result = await pool.query(
       `UPDATE miners
        SET status = $1,
@@ -362,9 +374,9 @@ router.put('/:id/heartbeat', async (req, res) => {
            total_tasks = total_tasks + $2,
            current_model = COALESCE($4, current_model),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $3
+       WHERE id = $3 AND (status IS NULL OR status != 'removed')
        RETURNING *`,
-      [status, tasks_completed || 0, id, current_model]
+      [statusValue, taskDelta, id, current_model]
     );
 
     if (result.rows.length === 0) {
@@ -377,19 +389,24 @@ router.put('/:id/heartbeat', async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Miner route failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// GET /api/miners/:id
-router.get('/:id', async (req, res) => {
+// GET /api/miners/:id — owner only (used to be public and leaked
+// wallet_address + earnings for any miner id).
+router.get('/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
 
     const result = await pool.query(
-      'SELECT id, wallet_address, gpu_model, ram, cpu, status, uptime, total_tasks, earnings FROM miners WHERE id = $1',
-      [id]
+      `SELECT id, wallet_address, gpu_model, ram, cpu, models, current_model, status, uptime,
+              total_tasks, earnings, created_at, gpu_usage, ram_usage, cpu_usage, disk_usage,
+              machine_id, name, token_used_at
+         FROM miners
+        WHERE id = $1 AND user_id = $2 AND (status IS NULL OR status != 'removed')`,
+      [id, req.user.id]
     );
 
     if (result.rows.length === 0) {
@@ -402,7 +419,7 @@ router.get('/:id', async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Miner route failed');
     res.status(500).json({ error: 'Server error' });
   }
 });

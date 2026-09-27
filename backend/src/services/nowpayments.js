@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const axios = require('axios');
+const { logger } = require('../logger');
 
 const API_URL = process.env.NOWPAYMENTS_API_URL || 'https://api.nowpayments.io/v1';
 const API_KEY = process.env.NOWPAYMENTS_API_KEY;
@@ -19,10 +20,10 @@ const SUPPORTED_COINS = {
 class NowPaymentsService {
   constructor() {
     if (!API_KEY) {
-      console.log('⚠️ NowPayments API key not configured');
+      logger.warn('NowPayments API key not configured');
     }
     if (!IPN_SECRET) {
-      console.log('⚠️ NOWPAYMENTS_IPN_SECRET not configured — webhook verification will be skipped');
+      logger.warn('NOWPAYMENTS_IPN_SECRET not configured — IPN webhooks will be REJECTED (fail closed)');
     }
   }
 
@@ -36,10 +37,11 @@ class NowPaymentsService {
 
   // Create payment invoice (coin optional — customer picks on NowPayments page)
   async createInvoice({ userId, coin, amount, orderId }) {
+    const finalOrderId = orderId || `krelz-${userId}-${Date.now()}`;
     const body = {
       price_amount: amount,
       price_currency: 'usd',
-      order_id: orderId || `krelz-${userId}-${Date.now()}`,
+      order_id: finalOrderId,
       order_description: `Krelz Network deposit - $${amount} USD`,
       ipn_callback_url: `${process.env.BACKEND_URL || 'https://krelz.xyz'}/api/payments/deposit/webhook`,
     };
@@ -54,19 +56,27 @@ class NowPaymentsService {
       return {
         success: true,
         invoiceId: response.data.id,
+        orderId: finalOrderId,
         invoiceUrl: response.data.invoice_url,
         payAddress: response.data.pay_address,
         payAmount: response.data.pay_amount,
         payCurrency: response.data.pay_currency,
       };
     } catch (err) {
-      console.error('NowPayments createInvoice error:', err.response?.data || err.message);
+      logger.error({ err: err.response?.data || err.message }, 'NowPayments createInvoice failed');
       return { success: false, error: err.response?.data?.message || err.message };
     }
   }
 
-  // Verify IPN callback signature
+  // Verify IPN callback signature.
+  // Fails closed when the secret is missing and compares in constant time.
   verifyIPN(payload, signature) {
+    if (!IPN_SECRET) {
+      logger.error('IPN rejected: NOWPAYMENTS_IPN_SECRET is not configured');
+      return false;
+    }
+    if (!signature || typeof signature !== 'string') return false;
+
     const sortedPayload = Object.keys(payload)
       .sort()
       .reduce((acc, key) => {
@@ -77,14 +87,16 @@ class NowPaymentsService {
     const jsonString = JSON.stringify(sortedPayload);
     const hmac = crypto.createHmac('sha512', IPN_SECRET);
     hmac.update(jsonString);
-    const calculatedSignature = hmac.digest('hex');
+    const expected = Buffer.from(hmac.digest('hex'), 'utf8');
+    const actual = Buffer.from(signature, 'utf8');
 
-    return calculatedSignature === signature;
+    if (expected.length !== actual.length) return false;
+    return crypto.timingSafeEqual(expected, actual);
   }
 
   // Process IPN callback — always credit USD (price_amount)
   async processIPN(payload) {
-    const { order_id, payment_status, price_amount, pay_amount, pay_currency, invoice_price_amount, tx_hash } = payload;
+    const { order_id, invoice_id, payment_status, price_amount, pay_amount, pay_currency, invoice_price_amount, tx_hash } = payload;
 
     // Extract userId from order_id (format: krelz-{userId}-{timestamp})
     const parts = (order_id || '').split('-');
@@ -102,6 +114,8 @@ class NowPaymentsService {
         cryptoAmount: parseFloat(pay_amount || 0),
         cryptoCoin: (pay_currency || '').toUpperCase(),
         txHash: tx_hash,
+        orderId: order_id || null,
+        invoiceId: invoice_id ? String(invoice_id) : null,
         processorId: order_id,
         status: 'completed',
       };
@@ -111,6 +125,8 @@ class NowPaymentsService {
       success: false,
       userId,
       coin: 'USD',
+      orderId: order_id || null,
+      invoiceId: invoice_id ? String(invoice_id) : null,
       status: payment_status,
     };
   }
@@ -135,7 +151,7 @@ class NowPaymentsService {
         status: response.data.status,
       };
     } catch (err) {
-      console.error('NowPayments payout error:', err.response?.data || err.message);
+      logger.error({ err: err.response?.data || err.message }, 'NowPayments payout failed');
       return { success: false, error: err.response?.data?.message || err.message };
     }
   }

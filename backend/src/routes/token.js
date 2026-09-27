@@ -1,14 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../database/pool');
-const { invalidateCache } = require('../cache');
+const { logger } = require('../logger');
 
 const DAILY_TOKEN_LIMIT = 1000;
 
-// GET /api/token/balance
+// GET /api/token/balance — USD/daily-token snapshot for the signed-in user.
+// Auth is enforced by `authenticate` mounted in server.js, so req.user is set.
 router.get('/balance', async (req, res) => {
   try {
-    const userId = req.user?.id;
+    const userId = req.user.id;
 
     const balanceResult = await pool.query(
       `SELECT COALESCE(available, 0) as available, COALESCE(total_earned, 0) as total_earned, COALESCE(total_spent, 0) as total_spent
@@ -22,18 +23,19 @@ router.get('/balance', async (req, res) => {
     let dailyUsed = 0;
     let dailyRemaining = DAILY_TOKEN_LIMIT;
 
-    if (userId) {
-      const dailyResult = await pool.query(
-        'SELECT tokens_used_today, last_reset_date FROM daily_tokens WHERE user_id = $1',
-        [userId]
-      );
+    const dailyResult = await pool.query(
+      'SELECT tokens_used_today, last_reset_date FROM daily_tokens WHERE user_id = $1',
+      [userId]
+    );
 
-      if (dailyResult.rows.length > 0) {
-        const { tokens_used_today, last_reset_date } = dailyResult.rows[0];
-        if (last_reset_date === today) {
-          dailyUsed = parseFloat(tokens_used_today);
-          dailyRemaining = Math.max(0, DAILY_TOKEN_LIMIT - dailyUsed);
-        }
+    if (dailyResult.rows.length > 0) {
+      const { tokens_used_today, last_reset_date } = dailyResult.rows[0];
+      const lastReset = last_reset_date instanceof Date
+        ? last_reset_date.toISOString().split('T')[0]
+        : String(last_reset_date).slice(0, 10);
+      if (lastReset === today) {
+        dailyUsed = parseFloat(tokens_used_today);
+        dailyRemaining = Math.max(0, DAILY_TOKEN_LIMIT - dailyUsed);
       }
     }
 
@@ -50,150 +52,23 @@ router.get('/balance', async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'GET /api/token/balance failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// POST /api/token/deposit
-router.post('/deposit', async (req, res) => {
-  try {
-    const userId = req.user?.id;
-    const { amount, tx_hash } = req.body;
+// Legacy self-service ledger endpoints. They let any signed-in user mint an
+// arbitrary balance (deposit self-confirms without any chain verification) or
+// move funds without any economic check, and nothing in the app calls them:
+// balances are funded exclusively through NowPayments (/api/payments).
+const gone = (name) => (req, res) => {
+  res.status(410).json({
+    error: `${name} is no longer supported. Fund your wallet with POST /api/payments/deposit/create.`,
+  });
+};
 
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ error: 'Invalid amount' });
-    }
-
-    const result = await pool.query(
-      `INSERT INTO deposits (user_id, amount, tx_hash, status)
-       VALUES ($1, $2, $3, 'pending')
-       RETURNING *`,
-      [userId, amount, tx_hash]
-    );
-
-    await pool.query(
-      "UPDATE deposits SET status = 'confirmed' WHERE id = $1",
-      [result.rows[0].id]
-    );
-
-    await pool.query(
-      `INSERT INTO user_balances (user_id, available, total_earned)
-       VALUES ($1, $2, 0)
-       ON CONFLICT (user_id) DO UPDATE SET
-       available = user_balances.available + $2`,
-      [userId, amount]
-    );
-
-    await pool.query(
-      `INSERT INTO transactions (from_address, to_address, amount, type, tx_hash, status)
-       VALUES ('deposit', 'user', $1, 'deposit', $2, 'completed')`,
-      [amount, tx_hash]
-    );
-
-    invalidateCache('/api/stats');
-
-    res.status(201).json({
-      success: true,
-      deposit: result.rows[0],
-      message: `Deposited ${amount} KRELZ`
-    });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// POST /api/token/deduct
-router.post('/deduct', async (req, res) => {
-  try {
-    const userId = req.user?.id;
-    const { amount, reason } = req.body;
-
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ error: 'Invalid amount' });
-    }
-
-    const balanceResult = await pool.query(
-      'SELECT available FROM user_balances WHERE user_id = $1',
-      [userId]
-    );
-
-    if (balanceResult.rows.length === 0 || parseFloat(balanceResult.rows[0].available) < amount) {
-      return res.status(400).json({ error: 'Insufficient balance' });
-    }
-
-    await pool.query(
-      `UPDATE user_balances
-       SET available = available - $1, total_spent = total_spent + $1
-       WHERE user_id = $2`,
-      [amount, userId]
-    );
-
-    await pool.query(
-      `INSERT INTO transactions (from_address, to_address, amount, type, status)
-       VALUES ('user', 'platform', $1, $2, 'completed')`,
-      [amount, reason || 'api_usage']
-    );
-
-    res.json({
-      success: true,
-      message: `Deducted ${amount} KRELZ`
-    });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// POST /api/token/transfer
-router.post('/transfer', async (req, res) => {
-  try {
-    const userId = req.user?.id;
-    const { to_user_id, amount } = req.body;
-
-    if (!amount || amount <= 0 || !to_user_id) {
-      return res.status(400).json({ error: 'Invalid parameters' });
-    }
-
-    const balanceResult = await pool.query(
-      'SELECT available FROM user_balances WHERE user_id = $1',
-      [userId]
-    );
-
-    if (balanceResult.rows.length === 0 || parseFloat(balanceResult.rows[0].available) < amount) {
-      return res.status(400).json({ error: 'Insufficient balance' });
-    }
-
-    await pool.query(
-      'UPDATE user_balances SET available = available - $1 WHERE user_id = $2',
-      [amount, userId]
-    );
-
-    await pool.query(
-      `INSERT INTO user_balances (user_id, available)
-       VALUES ($1, $2)
-       ON CONFLICT (user_id) DO UPDATE SET available = user_balances.available + $2`,
-      [to_user_id, amount]
-    );
-
-    await pool.query(
-      `INSERT INTO transactions (from_address, to_address, amount, type, status)
-       VALUES ($1, $2, $3, 'transfer', 'completed')`,
-      [userId, to_user_id, amount]
-    );
-
-    res.json({
-      success: true,
-      message: `Transferred ${amount} KRELZ`
-    });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
+router.post('/deposit', gone('POST /api/token/deposit'));
+router.post('/deduct', gone('POST /api/token/deduct'));
+router.post('/transfer', gone('POST /api/token/transfer'));
 
 module.exports = router;

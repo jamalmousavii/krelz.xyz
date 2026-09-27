@@ -67,6 +67,8 @@ const el = {
     freeTokens: 'Δωρεάν tokens',
     history: 'Ιστορικό',
     startTyping: 'Αρχίστε να πληκτρολογείτε για συνομιλία...',
+    viaMiner: 'μέσω miner',
+    viaLocal: 'τοπικό',
   },
   miner: {
     title: 'Miner - Krelz Network',

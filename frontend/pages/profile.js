@@ -1,30 +1,28 @@
 import Head from 'next/head';
+import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
 import authHeaders from '../utils/auth';
+import { useAuth, clearSession } from '../utils/api';
 
 export default function Profile() {
   const { t, lang } = useLanguage();
-  const [user, setUser] = useState(null);
   const [balance, setBalance] = useState(null);
   const [usdBalance, setUsdBalance] = useState(null);
   const [dailyTokens, setDailyTokens] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const { ready, user } = useAuth();
+
   useEffect(() => {
-    const saved = localStorage.getItem('user');
-    if (saved) {
-      try {
-        const u = JSON.parse(saved);
-        setUser(u);
-        fetchBalance();
-        fetchUsdBalance();
-      } catch (e) {}
+    if (user) {
+      fetchBalance();
+      fetchUsdBalance();
     }
     setLoading(false);
-  }, []);
+  }, [user]);
 
   const fetchBalance = async () => {
     try {
@@ -46,22 +44,16 @@ export default function Profile() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    clearSession();
     window.location.href = '/';
   };
 
-  if (loading) {
+  if (loading || !user) {
     return (
       <div className="flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex items-center justify-center">
         <div className="text-gray-600 text-lg">Loading...</div>
       </div>
     );
-  }
-
-  if (!user) {
-    if (typeof window !== 'undefined') window.location.href = '/';
-    return null;
   }
 
   return (
@@ -73,9 +65,9 @@ export default function Profile() {
       <main className="container mx-auto px-4 md:px-6 py-6 md:py-12 max-w-2xl">
         {/* Quick nav */}
         <div className="flex gap-2 mb-6 flex-wrap">
-          <a href="/profile" className="px-4 py-2 rounded-lg text-sm font-bold bg-sky-500 text-white">📊 {t('nav.dashboard')}</a>
-          <a href="/miners" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⛏️ {t('nav.miners')}</a>
-          <a href="/settings" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⚙️ {t('nav.settings')}</a>
+          <Link href="/profile" className="px-4 py-2 rounded-lg text-sm font-bold bg-sky-500 text-white">📊 {t('nav.dashboard')}</Link>
+          <Link href="/miners" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⛏️ {t('nav.miners')}</Link>
+          <Link href="/settings" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⚙️ {t('nav.settings')}</Link>
         </div>
 
         {/* Dashboard card */}

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../database/pool');
 const { authenticate, requireAdmin } = require('../middleware/auth');
+const { logger } = require('../logger');
 
 // GET /api/admin/dashboard
 router.get('/dashboard', authenticate, requireAdmin, async (req, res) => {
@@ -10,6 +11,7 @@ router.get('/dashboard', authenticate, requireAdmin, async (req, res) => {
       pool.query(`SELECT COUNT(*) as total, COUNT(CASE WHEN status = 'online' THEN 1 END) as online FROM miners`),
       pool.query('SELECT COUNT(*) as total FROM users'),
       pool.query(`SELECT COUNT(*) as total, COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed FROM tasks`),
+      // Platform keeps 10% (miners get 90%) — same definition as routes/stats.js
       pool.query("SELECT COALESCE(SUM(cost * 0.1), 0) as platform_fees FROM tasks WHERE status = 'completed'"),
     ]);
 
@@ -23,7 +25,7 @@ router.get('/dashboard', authenticate, requireAdmin, async (req, res) => {
       }
     });
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Admin route failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -36,7 +38,7 @@ router.get('/users', authenticate, requireAdmin, async (req, res) => {
     );
     res.json({ success: true, users: result.rows });
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Admin route failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -49,7 +51,7 @@ router.get('/miners', authenticate, requireAdmin, async (req, res) => {
     );
     res.json({ success: true, miners: result.rows });
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Admin route failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -62,7 +64,7 @@ router.get('/tasks', authenticate, requireAdmin, async (req, res) => {
     );
     res.json({ success: true, tasks: result.rows });
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Admin route failed');
     res.status(500).json({ error: 'Server error' });
   }
 });

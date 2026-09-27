@@ -67,6 +67,8 @@ const zhTW = {
     freeTokens: '免費代幣',
     history: '歷史記錄',
     startTyping: '開始輸入以聊天...',
+    viaMiner: '透過礦工',
+    viaLocal: '本地',
   },
   miner: {
     title: '礦工 - Krelz Network',

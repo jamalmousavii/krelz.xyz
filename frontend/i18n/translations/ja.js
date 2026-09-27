@@ -67,6 +67,8 @@ const ja = {
     freeTokens: '無料トークン',
     history: '履歴',
     startTyping: '入力してチャットを始めましょう...',
+    viaMiner: 'マイナー経由',
+    viaLocal: 'ローカル',
   },
   miner: {
     title: 'マイナー - Krelz Network',

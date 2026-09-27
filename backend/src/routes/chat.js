@@ -4,11 +4,18 @@ const pool = require('../database/pool');
 const axios = require('axios');
 const { invalidateCache } = require('../cache');
 const { authenticate, optionalAuth } = require('../middleware/auth');
+const { validate, chatRules } = require('../middleware/validate');
 const MODELS = require('../models');
+const { logger } = require('../logger');
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const SUPPORTED_COINS = ['USD'];
 const DAILY_TOKEN_LIMIT = 1000;
+// Single source of truth for the default model (was split between
+// 'llama3:8b' — which exists in no catalog — and 'llama3.1:8b').
+const DEFAULT_MODEL = 'llama3.1:8b';
+const FREE_DAILY_TOKEN_VALUE = 0.001; // $1 of free credit == 1000 tokens
+const MINER_REVENUE_SHARE = 0.9;
 
 // Free Cloud AI — Round-robin providers
 let roundRobinIndex = 0;
@@ -87,38 +94,47 @@ const getModelPricing = (modelId) => {
   return found ? { inputPrice: found.inputPrice, outputPrice: found.outputPrice } : { inputPrice: 0.088, outputPrice: 0.176 };
 };
 
-const checkDailyTokens = async (userId) => {
-  if (!userId) return { limit: 0, used: 0, remaining: 0 };
+// Date helpers — daily_tokens.last_reset_date must be compared as 'YYYY-MM-DD'.
+// BOTH sides use the server's local calendar (the VPS runs UTC). A pg DATE
+// column comes back either as 'YYYY-MM-DD' (string, see database/pool.js) or as
+// a Date pinned to LOCAL midnight; converting that with toISOString() shifted
+// the date back one day in any UTC+n zone and made the allowance reset on
+// every single request. Never mix the two bases here.
+const todayKey = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+const toDateKey = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  }
+  return String(value).slice(0, 10);
+};
 
-  const today = new Date().toISOString().split('T')[0];
-
-  const result = await pool.query(
+// Cheap pre-flight: does this user have ANY way to pay for a paid model?
+async function hasSpendableAllowance(userId) {
+  const today = todayKey();
+  const daily = await pool.query(
     'SELECT tokens_used_today, last_reset_date FROM daily_tokens WHERE user_id = $1',
     [userId]
   );
 
-  if (result.rows.length === 0) {
-    await pool.query(
-      'INSERT INTO daily_tokens (user_id, tokens_used_today, last_reset_date) VALUES ($1, 0, $2) ON CONFLICT (user_id) DO NOTHING',
-      [userId, today]
-    );
-    return { limit: DAILY_TOKEN_LIMIT, used: 0, remaining: DAILY_TOKEN_LIMIT };
+  if (daily.rows.length > 0) {
+    const used = parseFloat(daily.rows[0].tokens_used_today || 0);
+    const lastReset = toDateKey(daily.rows[0].last_reset_date);
+    if (lastReset === today && used < DAILY_TOKEN_LIMIT) return true;
+    if (lastReset !== today) return true; // allowance resets today
+  } else {
+    return true; // fresh row → full allowance
   }
 
-  const { tokens_used_today, last_reset_date } = result.rows[0];
-
-  if (last_reset_date !== today) {
-    await pool.query(
-      'UPDATE daily_tokens SET tokens_used_today = 0, last_reset_date = $1 WHERE user_id = $2',
-      [today, userId]
-    );
-    return { limit: DAILY_TOKEN_LIMIT, used: 0, remaining: DAILY_TOKEN_LIMIT };
-  }
-
-  const used = parseFloat(tokens_used_today);
-  const remaining = Math.max(0, DAILY_TOKEN_LIMIT - used);
-  return { limit: DAILY_TOKEN_LIMIT, used, remaining };
-};
+  const balance = await pool.query(
+    "SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = 'USD'",
+    [userId]
+  );
+  return parseFloat(balance.rows[0]?.available || 0) > 0;
+}
 
 // ======== SESSION CRUD ========
 
@@ -140,7 +156,7 @@ router.get('/sessions', authenticate, async (req, res) => {
 
     res.json({ success: true, sessions: result.rows });
   } catch (err) {
-    console.error('Sessions list error:', err);
+    logger.error({ err }, 'Sessions list failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -176,7 +192,7 @@ router.get('/sessions/:id', authenticate, async (req, res) => {
       messages: messagesResult.rows
     });
   } catch (err) {
-    console.error('Session get error:', err);
+    logger.error({ err }, 'Session get failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -191,12 +207,12 @@ router.post('/sessions', authenticate, async (req, res) => {
       `INSERT INTO chat_sessions (user_id, subject, model)
        VALUES ($1, $2, $3)
        RETURNING *`,
-      [userId, subject || 'New Chat', model || null]
+      [userId, String(subject || 'New Chat').slice(0, 255), model ? String(model).slice(0, 100) : null]
     );
 
     res.status(201).json({ success: true, session: result.rows[0] });
   } catch (err) {
-    console.error('Session create error:', err);
+    logger.error({ err }, 'Session create failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -210,6 +226,9 @@ router.put('/sessions/:id', authenticate, async (req, res) => {
 
     if (!subject || !subject.trim()) {
       return res.status(400).json({ error: 'Subject is required' });
+    }
+    if (subject.trim().length > 255) {
+      return res.status(400).json({ error: 'Subject must be at most 255 characters' });
     }
 
     const result = await pool.query(
@@ -226,7 +245,7 @@ router.put('/sessions/:id', authenticate, async (req, res) => {
 
     res.json({ success: true, session: result.rows[0] });
   } catch (err) {
-    console.error('Session update error:', err);
+    logger.error({ err }, 'Session update failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -251,7 +270,7 @@ router.delete('/sessions/:id', authenticate, async (req, res) => {
 
     res.json({ success: true, message: 'Session deleted' });
   } catch (err) {
-    console.error('Session delete error:', err);
+    logger.error({ err }, 'Session delete failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -259,7 +278,7 @@ router.delete('/sessions/:id', authenticate, async (req, res) => {
 // ======== CHAT (with session support) ========
 
 // POST /api/chat — send message (supports session_id)
-router.post('/', optionalAuth, async (req, res) => {
+router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
   try {
     const { message, model, session_id } = req.body;
     const userId = req.user?.id;
@@ -269,8 +288,22 @@ router.post('/', optionalAuth, async (req, res) => {
       return res.status(400).json({ error: 'Message is required' });
     }
 
+    // Pre-flight for paid models: don't burn GPU time for a user who has
+    // neither daily allowance nor wallet balance. free-cloud-ai stays free.
+    const requestedPricing = getModelPricing(model || DEFAULT_MODEL);
+    if (userId && requestedPricing.outputPrice > 0) {
+      const canPay = await hasSpendableAllowance(userId);
+      if (!canPay) {
+        return res.status(402).json({
+          error: 'Daily free allowance exhausted and wallet balance is empty. Top up to keep chatting.',
+          payment_status: 'insufficient_balance',
+        });
+      }
+    }
+
     // Resolve or create session
-    let sessionId = session_id || null;
+    let sessionId = session_id ? parseInt(session_id, 10) : null;
+    if (sessionId !== null && Number.isNaN(sessionId)) sessionId = null;
 
     if (userId) {
       if (sessionId) {
@@ -286,12 +319,12 @@ router.post('/', optionalAuth, async (req, res) => {
 
       if (!sessionId) {
         // Create new session with auto-generated subject
-        const subject = message.length > 50 ? message.substring(0, 50) + '...' : message;
+        const subject = (message.length > 50 ? message.substring(0, 50) + '...' : message).slice(0, 255);
         const sessionResult = await pool.query(
           `INSERT INTO chat_sessions (user_id, subject, model)
            VALUES ($1, $2, $3)
            RETURNING id`,
-          [userId, subject, model || 'llama3:8b']
+          [userId, subject, model || DEFAULT_MODEL]
         );
         sessionId = sessionResult.rows[0].id;
       }
@@ -300,40 +333,42 @@ router.post('/', optionalAuth, async (req, res) => {
     const wsServer = req.app.get('wsServer');
     const minerResult = wsServer ? wsServer.findMinerForModel(model) : null;
     const minerId = minerResult ? minerResult.minerId : null;
-    const minerModel = minerResult && minerResult.model ? minerResult.model : (model || 'llama3.1:8b');
+    const minerModel = minerResult && minerResult.model ? minerResult.model : (model || DEFAULT_MODEL);
 
     // Create task
     const taskResult = await pool.query(
       `INSERT INTO tasks (user_id, miner_id, prompt, model, status, session_id)
        VALUES ($1, $2, $3, $4, 'pending', $5)
        RETURNING id`,
-      [userId, minerId, message, model || 'llama3:8b', sessionId]
+      [userId, minerId, message, model || DEFAULT_MODEL, sessionId]
     );
 
     const taskId = taskResult.rows[0].id;
     let response, tokensUsed, cost, providerUsed = null;
     let lastMinerError = null;
+    let servedByMiner = false;
 
     // Try WebSocket dispatch first — use miner's available model
     if (wsServer && minerId && minerModel) {
       try {
         await pool.query("UPDATE tasks SET status = 'processing', miner_id = $1 WHERE id = $2", [minerId, taskId]);
 
-        console.log(`Dispatching task to miner ${minerId} with model ${minerModel} (requested: ${model})`);
+        logger.debug({ taskId, minerId, minerModel, requestedModel: model }, 'Dispatching task to miner');
         const result = await wsServer.dispatchTask(minerId, taskId, message, minerModel);
 
         if (result.error) {
-          console.log(`Miner task failed: ${result.error}, falling back`);
+          logger.warn({ taskId, minerId, err: result.error }, 'Miner task failed, falling back');
           lastMinerError = result.error;
         } else {
           response = result.response;
           tokensUsed = result.tokens_used || 0;
-          const pricing = getModelPricing(model || 'llama3.1:8b');
+          servedByMiner = true;
+          const pricing = getModelPricing(model || DEFAULT_MODEL);
           cost = (tokensUsed * pricing.outputPrice) / 1000000;
         }
 
       } catch (wsError) {
-        console.log(`WebSocket dispatch failed: ${wsError.message}, falling back`);
+        logger.warn({ taskId, err: wsError.message }, 'WebSocket dispatch failed, falling back');
         lastMinerError = wsError.message;
       }
     }
@@ -341,7 +376,7 @@ router.post('/', optionalAuth, async (req, res) => {
     // Fallback: local Ollama
     if (!response) {
       try {
-        let ollamaModel = model || 'llama3:8b';
+        let ollamaModel = model || DEFAULT_MODEL;
 
         // Smart fallback: check available models
         try {
@@ -354,7 +389,7 @@ router.post('/', optionalAuth, async (req, res) => {
             const family = ollamaModel.split(':')[0];
             const exactMatch = available.find(m => m.startsWith(family + ':') || m === family);
             ollamaModel = exactMatch || available.find(m => m.includes('8b')) || available[0];
-            console.log(`Model "${model}" not available locally, using "${ollamaModel}"`);
+            logger.warn({ requested: model, using: ollamaModel }, 'Requested model not available locally');
           }
         } catch (tagErr) {
           // No models / can't list → skip to cloud providers
@@ -369,7 +404,7 @@ router.post('/', optionalAuth, async (req, res) => {
 
         response = ollamaResponse.data.response;
         tokensUsed = ollamaResponse.data.eval_count || 0;
-        const pricing = getModelPricing(model || 'llama3.1:8b');
+        const pricing = getModelPricing(model || DEFAULT_MODEL);
         cost = (tokensUsed * pricing.outputPrice) / 1000000;
 
       } catch (ollamaError) {
@@ -385,9 +420,9 @@ router.post('/', optionalAuth, async (req, res) => {
               response = externalResponse;
               providerUsed = provider.name;
               tokensUsed = 0;
-              const pricing = getModelPricing(model || 'llama3.1:8b');
+              const pricing = getModelPricing(model || DEFAULT_MODEL);
               cost = 0;
-              console.log(`Free Cloud AI: used ${provider.name} for model "${model}"`);
+              logger.info({ provider: provider.name, model }, 'Free Cloud AI used');
               break;
             }
           } catch (providerError) {
@@ -395,7 +430,7 @@ router.post('/', optionalAuth, async (req, res) => {
             // Rate limit → cooldown
             if (providerError.response?.status === 429) {
               provider.cooldownUntil = Date.now() + 60000;
-              console.log(`${provider.name} rate limited, cooldown 60s`);
+              logger.warn({ provider: provider.name }, 'Provider rate limited, cooldown 60s');
             }
             continue;
           }
@@ -403,7 +438,7 @@ router.post('/', optionalAuth, async (req, res) => {
 
         if (!response) {
           await pool.query(
-            "UPDATE tasks SET response = 'No providers available', status = 'failed' WHERE id = $1",
+            "UPDATE tasks SET response = 'No providers available', status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $1",
             [taskId]
           );
           const detail = lastMinerError
@@ -428,62 +463,123 @@ router.post('/', optionalAuth, async (req, res) => {
       [response, tokensUsed, cost, taskId]
     );
 
-    // Payment: daily tokens + user coin balance
+    // Miner throughput counter. Revenue is accounted for separately below so a
+    // free/daily-covered task still counts as completed work for the miner.
+    if (servedByMiner && minerId) {
+      await pool.query('UPDATE miners SET total_tasks = total_tasks + 1 WHERE id = $1', [minerId])
+        .catch((err) => logger.error({ err, minerId }, 'Failed to increment miner total_tasks'));
+    }
+
+    // Payment: daily free allowance first, then the USD wallet.
+    // Everything happens in ONE transaction with row locks so two parallel
+    // requests can't both spend the same balance or the same daily allowance.
     let paymentStatus = 'free';
     let dailyTokensInfo = { limit: DAILY_TOKEN_LIMIT, used: 0, remaining: DAILY_TOKEN_LIMIT };
+    let insufficientBalance = false;
 
     if (userId && cost > 0) {
-      const dailyInfo = await checkDailyTokens(userId);
-      dailyTokensInfo = dailyInfo;
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
 
-      const dailyTokenValue = dailyInfo.remaining * 0.001;
-      const dailyCoverage = Math.min(cost, dailyTokenValue);
-      const paidPortion = cost - dailyCoverage;
-
-      if (dailyCoverage > 0) {
-        const tokensToDeduct = dailyCoverage / 0.001;
-        await pool.query(
-          'UPDATE daily_tokens SET tokens_used_today = tokens_used_today + $1 WHERE user_id = $2',
-          [tokensToDeduct, userId]
+        const today = todayKey();
+        await client.query(
+          `INSERT INTO daily_tokens (user_id, tokens_used_today, last_reset_date)
+           VALUES ($1, 0, $2)
+           ON CONFLICT (user_id) DO NOTHING`,
+          [userId, today]
         );
-        dailyTokensInfo = { ...dailyTokensInfo, used: dailyInfo.used + tokensToDeduct, remaining: Math.max(0, dailyInfo.remaining - tokensToDeduct) };
-      }
 
-      if (paidPortion > 0 && SUPPORTED_COINS.includes(paymentCoin)) {
-        const balanceResult = await pool.query(
-          'SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = $2',
-          [userId, paymentCoin]
+        const dailyLock = await client.query(
+          'SELECT tokens_used_today, last_reset_date FROM daily_tokens WHERE user_id = $1 FOR UPDATE',
+          [userId]
         );
-        const userBalance = parseFloat(balanceResult.rows[0]?.available || 0);
 
-        if (userBalance >= paidPortion) {
-          await pool.query(
-            `UPDATE user_coin_balances
-             SET available = available - $1, total_spent = total_spent + $1
-             WHERE user_id = $2 AND coin = $3`,
-            [paidPortion, userId, paymentCoin]
+        let used = parseFloat(dailyLock.rows[0]?.tokens_used_today || 0);
+        if (toDateKey(dailyLock.rows[0]?.last_reset_date) !== today) {
+          used = 0;
+          await client.query(
+            'UPDATE daily_tokens SET tokens_used_today = 0, last_reset_date = $1 WHERE user_id = $2',
+            [today, userId]
           );
-
-          const minerEarning = paidPortion * 0.9;
-          if (minerId) {
-            await pool.query(
-              'UPDATE miners SET total_tasks = total_tasks + 1, earnings = earnings + $1 WHERE id = $2',
-              [minerEarning, minerId]
-            );
-            await pool.query(
-              `INSERT INTO miner_coin_earnings (miner_id, coin, amount, task_id)
-               VALUES ($1, $2, $3, $4)`,
-              [minerId, paymentCoin, minerEarning, taskId]
-            );
-          }
-          paymentStatus = 'paid';
-          invalidateCache('/api/payments/balance');
-        } else {
-          paymentStatus = 'insufficient_balance';
         }
-      } else if (paidPortion <= 0) {
-        paymentStatus = 'free_daily';
+
+        let remaining = Math.max(0, DAILY_TOKEN_LIMIT - used);
+        dailyTokensInfo = { limit: DAILY_TOKEN_LIMIT, used, remaining };
+
+        const dailyCoverage = Math.min(cost, remaining * FREE_DAILY_TOKEN_VALUE);
+        const paidPortion = cost - dailyCoverage;
+
+        if (dailyCoverage > 0) {
+          const tokensToDeduct = dailyCoverage / FREE_DAILY_TOKEN_VALUE;
+          await client.query(
+            'UPDATE daily_tokens SET tokens_used_today = tokens_used_today + $1 WHERE user_id = $2',
+            [tokensToDeduct, userId]
+          );
+          used += tokensToDeduct;
+          remaining = Math.max(0, remaining - tokensToDeduct);
+          dailyTokensInfo = { limit: DAILY_TOKEN_LIMIT, used, remaining };
+        }
+
+        if (paidPortion > 0 && SUPPORTED_COINS.includes(paymentCoin)) {
+          const balanceResult = await client.query(
+            'SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = $2 FOR UPDATE',
+            [userId, paymentCoin]
+          );
+          const userBalance = parseFloat(balanceResult.rows[0]?.available || 0);
+
+          if (userBalance >= paidPortion) {
+            await client.query(
+              `UPDATE user_coin_balances
+                  SET available = available - $1, total_spent = total_spent + $1
+                WHERE user_id = $2 AND coin = $3`,
+              [paidPortion, userId, paymentCoin]
+            );
+
+            // Only a miner that actually served the task earns — a cloud/Ollama
+            // fallback must never credit earnings to the miner of record.
+            if (minerId && servedByMiner) {
+              const minerEarning = paidPortion * MINER_REVENUE_SHARE;
+              await client.query(
+                'UPDATE miners SET earnings = earnings + $1 WHERE id = $2',
+                [minerEarning, minerId]
+              );
+              await client.query(
+                `INSERT INTO miner_coin_earnings (miner_id, coin, amount, task_id)
+                 VALUES ($1, $2, $3, $4)`,
+                [minerId, paymentCoin, minerEarning, taskId]
+              );
+            }
+            paymentStatus = 'paid';
+          } else {
+            paymentStatus = 'insufficient_balance';
+            insufficientBalance = true;
+          }
+        } else if (paidPortion <= 0) {
+          paymentStatus = 'free_daily';
+        }
+
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw err;
+      } finally {
+        client.release();
       }
+
+      if (paymentStatus === 'paid') invalidateCache('/api/payments/balance');
+    }
+
+    // Daily allowance exhausted and wallet empty: refuse instead of serving
+    // paid inference for free. The answer is already stored in `tasks`.
+    if (insufficientBalance) {
+      return res.status(402).json({
+        error: 'Insufficient balance. Top up your wallet, or wait for the daily free allowance to reset.',
+        payment_status: 'insufficient_balance',
+        cost,
+        daily_tokens: dailyTokensInfo,
+        task_id: taskId
+      });
     }
 
     res.json({
@@ -495,14 +591,14 @@ router.post('/', optionalAuth, async (req, res) => {
       cost,
       coin: paymentCoin,
       payment_status: paymentStatus,
-      miner_id: minerId,
-      source: minerId ? 'miner' : providerUsed ? 'external' : 'local',
+      miner_id: servedByMiner ? minerId : null,
+      source: servedByMiner ? 'miner' : providerUsed ? 'external' : 'local',
       provider_name: providerUsed,
       daily_tokens: dailyTokensInfo
     });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'POST /api/chat failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -520,9 +616,17 @@ router.get('/history', authenticate, async (req, res) => {
     res.json({ success: true, tasks: result.rows });
 
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Request failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+// Exposed for the test suite (pricing + date-key rules are money-adjacent).
+router.getModelPricing = getModelPricing;
+router.todayKey = todayKey;
+router.toDateKey = toDateKey;
+router.DEFAULT_MODEL = DEFAULT_MODEL;
+router.MINER_REVENUE_SHARE = MINER_REVENUE_SHARE;
+router.FREE_DAILY_TOKEN_VALUE = FREE_DAILY_TOKEN_VALUE;
 
 module.exports = router;

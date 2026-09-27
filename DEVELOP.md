@@ -487,19 +487,21 @@ rm -f "$0"  # Last line of install-ubuntu.sh / install-redhat.sh
 
 ### Server Info
 
+Host/IP, SSH user and key live in the private ops vault — never commit them to this repository.
+
 | Item | Value |
 |------|-------|
-| IP | 65.109.176.28 |
+| IP / host | *(private vault)* |
 | OS | Ubuntu 24.04 |
-| User | root |
+| User | *(non-root deploy user)* |
 | Backend | /opt/krelz/backend |
 | Frontend | /opt/krelz/frontend |
 
 ### Deploy Commands
 
 ```bash
-# SSH into server
-ssh root@65.109.176.28
+# SSH into server (use your ops alias; do not commit hostnames/IPs)
+ssh <deploy-host>
 
 # Run migration (after DB schema changes)
 cd /opt/krelz/backend

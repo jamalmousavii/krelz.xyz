@@ -67,6 +67,8 @@ const vi = {
     freeTokens: 'Token Miễn phí',
     history: 'Lịch sử',
     startTyping: 'Bắt đầu nhập để trò chuyện...',
+    viaMiner: 'qua miner',
+    viaLocal: 'cục bộ',
   },
   miner: {
     title: 'Thợ đào - Krelz Network',

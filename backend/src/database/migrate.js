@@ -439,12 +439,41 @@ const migrate = async () => {
     `);
     console.log('✅ Single-use token column added (token_used_at)');
 
+    // ---- v3.18.5: IPN idempotency / deposit reconciliation ----
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE coin_deposits ADD COLUMN IF NOT EXISTS order_id VARCHAR(128);
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    await client.query(
+      'CREATE INDEX IF NOT EXISTS idx_coin_deposits_processor ON coin_deposits(processor_id)'
+    );
+    await client.query(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_coin_deposits_order ON coin_deposits(order_id) WHERE order_id IS NOT NULL'
+    );
+    console.log('✅ coin_deposits order_id + lookup indexes added');
+
+    // ---- Schema version bookkeeping (baseline marker for future migrations) ----
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version VARCHAR(64) PRIMARY KEY,
+        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await client.query(
+      `INSERT INTO schema_migrations (version) VALUES ('0001_baseline')
+       ON CONFLICT (version) DO NOTHING`
+    );
+
     await client.query('COMMIT');
     console.log('\n✅ تمام جداول ایجاد شد');
     
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('❌ خطا:', err);
+    // Fail loudly: a silent exit(0) lets CI/systemd deploy a broken schema.
+    process.exitCode = 1;
   } finally {
     client.release();
   }

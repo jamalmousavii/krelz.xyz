@@ -67,6 +67,8 @@ const pl = {
     freeTokens: 'Darmowe Tokeny',
     history: 'Historia',
     startTyping: 'Zacznij pisać, aby rozmawiać...',
+    viaMiner: 'przez górnik',
+    viaLocal: 'lokalny',
   },
   miner: {
     title: 'Miner - Krelz Network',

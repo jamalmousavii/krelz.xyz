@@ -67,6 +67,8 @@ const ms = {
     freeTokens: 'Token Percuma',
     history: 'Sejarah',
     startTyping: 'Mula taip untuk bersembang...',
+    viaMiner: 'melalui miner',
+    viaLocal: 'setempat',
   },
   miner: {
     title: 'Miner - Krelz Network',

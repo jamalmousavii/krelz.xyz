@@ -67,6 +67,8 @@ const id = {
     freeTokens: 'Token Gratis',
     history: 'Riwayat',
     startTyping: 'Mulai mengetik untuk mengobrol...',
+    viaMiner: 'lewat miner',
+    viaLocal: 'lokal',
   },
   miner: {
     title: 'Miner - Krelz Network',

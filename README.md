@@ -210,6 +210,16 @@ npm run dev
 # Runs at http://localhost:3001
 ```
 
+## Documentation
+
+| Doc | Contents |
+|-----|----------|
+| [docs/api.md](docs/api.md) | Full API reference (auth, chat billing, miners, payments, health) |
+| [docs/AUDIT.md](docs/AUDIT.md) | Security/money audit: findings, fixes, open risks, deploy checklist |
+| [docs/architecture.md](docs/architecture.md) | Architecture overview |
+| [docs/tokenomics.md](docs/tokenomics.md) | Token model |
+| [CHANGELOG.md](CHANGELOG.md) | Release history |
+
 ## License
 
 MIT License

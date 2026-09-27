@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
+import { useAuth, apiFetch } from '../utils/api';
 
 export default function Admin() {
   const { lang } = useLanguage();
@@ -12,46 +13,47 @@ export default function Admin() {
   const [tasks, setTasks] = useState([]);
   const [tab, setTab] = useState('dashboard');
 
-  useEffect(() => { fetchDashboard(); }, []);
+  const { ready, user } = useAuth();
+  const isAdmin = !!user && user.role === 'admin';
+  const [denied, setDenied] = useState(false);
 
-  const headers = () => {
-    const token = localStorage.getItem('token');
-    return token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : {};
+  const handle = (err) => {
+    if (err && err.status === 403) setDenied(true);
   };
 
   const fetchDashboard = async () => {
+    if (!isAdmin) return;
     try {
-      const res = await fetch('/api/admin/dashboard', { headers: headers() });
-      const data = await res.json();
+      const data = await apiFetch('/api/admin/dashboard');
       if (data.success) setDashboard(data.dashboard);
-    } catch (err) { console.error(err); }
+    } catch (err) { handle(err); }
   };
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch('/api/admin/users', { headers: headers() });
-      const data = await res.json();
+      const data = await apiFetch('/api/admin/users');
       if (data.success) setUsers(data.users);
-    } catch (err) {}
+    } catch (err) { handle(err); }
   };
 
   const fetchMiners = async () => {
     try {
-      const res = await fetch('/api/admin/miners', { headers: headers() });
-      const data = await res.json();
+      const data = await apiFetch('/api/admin/miners');
       if (data.success) setMiners(data.miners);
-    } catch (err) {}
+    } catch (err) { handle(err); }
   };
 
   const fetchTasks = async () => {
     try {
-      const res = await fetch('/api/admin/tasks', { headers: headers() });
-      const data = await res.json();
+      const data = await apiFetch('/api/admin/tasks');
       if (data.success) setTasks(data.tasks);
-    } catch (err) {}
+    } catch (err) { handle(err); }
   };
 
+  useEffect(() => { if (isAdmin) fetchDashboard(); }, [isAdmin]);
+
   const switchTab = (tb) => {
+    if (!isAdmin) return;
     setTab(tb);
     if (tb === 'users') fetchUsers();
     else if (tb === 'miners') fetchMiners();
@@ -74,7 +76,20 @@ export default function Admin() {
           ))}
         </div>
 
-        {tab === 'dashboard' && dashboard && (
+        {!isAdmin && ready && (
+          <div className="bg-white border border-red-100 shadow-sm rounded-xl p-8 text-center">
+            <p className="text-gray-800 font-bold">Access denied</p>
+            <p className="text-gray-500 text-sm mt-2">This area is restricted to administrators.</p>
+          </div>
+        )}
+
+        {denied && isAdmin && (
+          <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-sm text-red-600">
+            You do not have permission to view this data.
+          </div>
+        )}
+
+        {isAdmin && tab === 'dashboard' && dashboard && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white border border-sky-100 shadow-sm rounded-xl p-4 text-center">
               <div className="text-2xl font-bold text-emerald-600">{dashboard.miners.online}</div>
@@ -89,13 +104,13 @@ export default function Admin() {
               <div className="text-gray-500 text-sm">Users</div>
             </div>
             <div className="bg-white border border-sky-100 shadow-sm rounded-xl p-4 text-center">
-              <div className="text-2xl font-bold text-amber-500">{dashboard.revenue.toFixed(2)}</div>
+              <div className="text-2xl font-bold text-amber-500">{Number(dashboard.revenue || 0).toFixed(2)}</div>
               <div className="text-gray-500 text-sm">Platform Fees (KRELZ)</div>
             </div>
           </div>
         )}
 
-        {tab === 'users' && (
+        {isAdmin && tab === 'users' && (
           <div className="bg-white border border-sky-100 shadow-sm rounded-xl overflow-x-auto">
             <table className="w-full text-gray-700 text-sm">
               <thead><tr className="border-b border-sky-100 bg-sky-50">
@@ -120,7 +135,7 @@ export default function Admin() {
           </div>
         )}
 
-        {tab === 'miners' && (
+        {isAdmin && tab === 'miners' && (
           <div className="grid md:grid-cols-2 gap-4">
             {miners.length === 0 && <p className="text-gray-400 text-center col-span-2 py-10">No miners</p>}
             {miners.map(m => (
@@ -131,7 +146,7 @@ export default function Admin() {
                 </div>
                 <div className="text-gray-600 text-xs space-y-1">
                   <p>GPU: {m.gpu_model || 'Unknown'}</p>
-                  <p>Tasks: {m.total_tasks} | Earned: {(m.earnings || 0).toFixed(2)} KRELZ</p>
+                  <p>Tasks: {m.total_tasks} | Earned: {Number(m.earnings || 0).toFixed(2)} KRELZ</p>
                   <p className="font-mono text-gray-400">{m.wallet_address?.slice(0, 16)}...</p>
                 </div>
               </div>
@@ -139,7 +154,7 @@ export default function Admin() {
           </div>
         )}
 
-        {tab === 'tasks' && (
+        {isAdmin && tab === 'tasks' && (
           <div className="bg-white border border-sky-100 shadow-sm rounded-xl overflow-x-auto">
             <table className="w-full text-gray-700 text-sm">
               <thead><tr className="border-b border-sky-100 bg-sky-50">
@@ -157,7 +172,7 @@ export default function Admin() {
                     <td className="px-4 py-2">{tk.user_email || '--'}</td>
                     <td className="px-4 py-2 text-xs">{tk.model}</td>
                     <td className="px-4 py-2"><span className={`px-2 py-0.5 rounded text-xs ${tk.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : tk.status === 'failed' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>{tk.status}</span></td>
-                    <td className="px-4 py-2">{(tk.cost || 0).toFixed(4)}</td>
+                    <td className="px-4 py-2">{Number(tk.cost || 0).toFixed(4)}</td>
                     <td className="px-4 py-2 text-xs text-gray-400">{tk.created_at ? new Date(tk.created_at).toLocaleDateString() : '--'}</td>
                   </tr>
                 ))}

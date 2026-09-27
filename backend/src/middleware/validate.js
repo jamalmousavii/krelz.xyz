@@ -16,7 +16,8 @@ function validate(req, res, next) {
 const registerRules = [
   body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
-  body('role').optional().isIn(['user', 'miner', 'admin']).withMessage('Invalid role'),
+  // Role is never client-controlled: self-registration can only ever be 'user'.
+  body('role').optional({ values: 'falsy' }).isIn(['user', 'miner']).withMessage('Invalid role'),
 ];
 
 const loginRules = [

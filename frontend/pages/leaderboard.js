@@ -53,7 +53,7 @@ export default function Leaderboard() {
                   <div className="text-gray-400 text-xs font-mono">{m.wallet_address?.slice(0, 12)}...</div>
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <div className="text-emerald-600 font-bold">{(m.earnings || 0).toFixed(2)}</div>
+                  <div className="text-emerald-600 font-bold">{Number(m.earnings || 0).toFixed(2)}</div>
                   <div className="text-gray-400 text-xs">{m.total_tasks} tasks</div>
                 </div>
               </div>
@@ -76,7 +76,7 @@ export default function Leaderboard() {
                   <span className="text-gray-800 font-bold text-sm">{u.name || 'Anonymous'}</span>
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <div className="text-emerald-600 font-bold">{(u.earned || 0).toFixed(2)} KRELZ</div>
+                  <div className="text-emerald-600 font-bold">{Number(u.earned || 0).toFixed(2)} KRELZ</div>
                   <div className="text-gray-400 text-xs">earned</div>
                 </div>
               </div>

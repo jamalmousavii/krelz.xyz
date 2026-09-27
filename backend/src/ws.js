@@ -3,10 +3,31 @@ const crypto = require('crypto');
 const pool = require('./database/pool');
 const { invalidateCache } = require('./cache');
 const { deriveKey, encrypt, decrypt, isEncrypted } = require('./services/e2e');
+const { logger } = require('./logger');
 
 const TOKEN_RE = /^kz_[0-9a-f]{32,64}$/;
 const AUTH_FAIL_LIMIT = 10;
 const AUTH_FAIL_WINDOW = 5 * 60 * 1000;
+
+// Resolve the real client IP behind the reverse proxy.
+// Trust order matters: nginx overwrites X-Real-IP and APPENDS the real peer to
+// X-Forwarded-For, so the LAST hop is the only trustworthy one. Client-supplied
+// CF-Connecting-IP / the first XFF entry must never be trusted — otherwise a
+// spoofed 127.0.0.1 bypasses the auth rate limiter and the session-replacement
+// guard (isLocalClient).
+function resolveClientIp(headers, ws) {
+  const realIp = headers['x-real-ip'];
+  if (realIp) return String(realIp).trim();
+
+  const xff = headers['x-forwarded-for'];
+  if (xff) {
+    const parts = String(xff).split(',').map((s) => s.trim()).filter(Boolean);
+    if (parts.length > 0) return parts[parts.length - 1];
+  }
+
+  if (ws._socket && ws._socket.remoteAddress) return ws._socket.remoteAddress;
+  return 'unknown';
+}
 
 function isLocalClient(ws) {
   // Trust only the client-facing IP (_clientIp). Behind nginx, socket.remoteAddress
@@ -32,32 +53,27 @@ class WSServer {
 
     this.wss.on('connection', (ws, req) => this.handleConnection(ws, req));
     this.wss.on('error', (err) => {
-      console.error('❌ WebSocket server error:', err.message);
+      logger.error({ err }, 'WebSocket server error');
     });
 
-    // Cleanup dead miners every 60s
-    setInterval(() => this.cleanupMiners(), 60000);
+    // Cleanup dead miners every 60s (unref so the process can exit on shutdown)
+    this.cleanupTimer = setInterval(() => this.cleanupMiners(), 60000);
+    if (this.cleanupTimer.unref) this.cleanupTimer.unref();
 
-    console.log('🔌 WebSocket server started on /ws');
+    logger.info('WebSocket server started on /ws');
   }
 
   handleConnection(ws, req) {
     const headers = (req && req.headers) || (ws.upgradeReq && ws.upgradeReq.headers) || {};
-    const remote =
-      headers['cf-connecting-ip'] ||
-      (headers['x-forwarded-for'] && headers['x-forwarded-for'].split(',')[0].trim()) ||
-      headers['x-real-ip'] ||
-      (ws._socket && ws._socket.remoteAddress) ||
-      'unknown';
-    ws._clientIp = remote;
-    console.log(`New WebSocket connection from ${remote}`);
+    ws._clientIp = resolveClientIp(headers, ws);
+    logger.info({ ip: ws._clientIp }, 'New WebSocket connection');
 
     ws.on('message', async (data) => {
       try {
         const msg = JSON.parse(data.toString());
         await this.handleMessage(ws, msg);
       } catch (err) {
-        console.error('WS message error:', err.message);
+        logger.error({ err }, 'WS message error');
         ws.send(JSON.stringify({ type: 'error', message: err.message || 'Invalid message format' }));
       }
     });
@@ -66,17 +82,18 @@ class WSServer {
       for (const [minerId, miner] of this.miners) {
         if (miner.ws === ws) {
           this.miners.delete(minerId);
-          pool.query("UPDATE miners SET status = 'offline' WHERE id = $1", [minerId]);
+          pool.query("UPDATE miners SET status = 'offline' WHERE id = $1", [minerId])
+            .catch((err) => logger.error({ err, minerId }, 'Failed to mark miner offline'));
           invalidateCache('/api/miners');
           invalidateCache('/api/models');
           invalidateCache('/api/stats');
-          console.log(`Miner ${minerId} disconnected`);
+          logger.info({ minerId }, 'Miner disconnected');
         }
       }
     });
 
     ws.on('error', (err) => {
-      console.error('WebSocket error:', err.message);
+      logger.error({ err }, 'WebSocket error');
     });
   }
 
@@ -238,7 +255,7 @@ class WSServer {
       const oldHealthy = Date.now() - (existing.lastHeartbeat || 0) < 45000;
       const newIsLocal = isLocalClient(ws);
       if (oldHealthy && !newIsLocal) {
-        console.log(`Miner ${minerId} rejected newcomer from ${ws._clientIp} (healthy session from ${existing.ws._clientIp})`);
+        logger.warn({ minerId, ip: ws._clientIp, existingIp: existing.ws._clientIp }, 'Rejected duplicate miner session');
         this.recordAuthFailure(ws);
         ws.send(JSON.stringify({ type: 'auth_error', message: 'Miner already connected. Stop the other session or wait for it to go offline.' }));
         try { ws.close(); } catch (e) {}
@@ -250,7 +267,7 @@ class WSServer {
           existing.ws.close();
         }
       } catch (e) {}
-      console.log(`Miner ${minerId} previous connection replaced (old=${existing.ws && existing.ws._clientIp} new=${ws._clientIp})`);
+      logger.info({ minerId, oldIp: existing.ws && existing.ws._clientIp, newIp: ws._clientIp }, 'Miner session replaced');
     }
 
     this.miners.set(minerId, {
@@ -279,7 +296,7 @@ class WSServer {
     this.authFails.delete(ws._clientIp || 'unknown');
     const session = this.miners.get(minerId);
     ws.send(JSON.stringify({ type: 'auth_ok', miner_id: minerId, e2e: !!session.e2eKey }));
-    console.log(`Miner ${minerId} authenticated from ${ws._clientIp} (${wallet_address || miner_token?.slice(0, 10) + '...'}${session.e2eKey ? ', e2e' : ''})`);
+    logger.info({ minerId, ip: ws._clientIp, e2e: !!session.e2eKey }, 'Miner authenticated');
   }
 
   async handleHeartbeat(ws, msg) {
@@ -320,7 +337,7 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');
-      console.error(`Heartbeat DB error for miner ${miner.id}:`, err.message);
+      logger.error({ err, minerId: miner.id }, 'Heartbeat DB error');
     } finally {
       client.release();
     }
@@ -357,7 +374,7 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
     let plainResponse = response;
     if (miner.e2eKey && response !== undefined && !isEncrypted(response)) {
       // Session negotiated e2e but plaintext arrived — refuse (downgrade/forge)
-      console.error(`Plaintext result rejected for task ${task_id} from miner ${miner.id} (e2e negotiated)`);
+      logger.error({ taskId: task_id, minerId: miner.id }, 'Plaintext result rejected (e2e negotiated)');
       ws.send(JSON.stringify({ type: 'error', message: 'Plaintext result rejected (e2e required)' }));
       return;
     }
@@ -369,7 +386,7 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
       try {
         plainResponse = decrypt(miner.e2eKey, response);
       } catch (err) {
-        console.error(`E2E decrypt failed for task ${task_id} from miner ${miner.id}: ${err.message}`);
+        logger.error({ err, taskId: task_id, minerId: miner.id }, 'E2E decrypt failed');
         ws.send(JSON.stringify({ type: 'error', message: 'E2E decrypt failed' }));
         return;
       }
@@ -377,26 +394,26 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
 
     if (error) {
       await pool.query(
-        "UPDATE tasks SET response = $1, status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $2",
+        "UPDATE tasks SET response = $1, status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $2 AND status IN ('pending', 'processing')",
         [error, task_id]
       );
     } else {
-      const cost = (tokens_used || 0) * 0.001;
-      const minerFee = cost * 0.9;
-      const platformFee = cost * 0.1;
-
-      await pool.query(
+      // This handler only records the raw result. Billing (cost, miner earnings,
+      // daily tokens) is owned exclusively by routes/chat.js so a task is never
+      // paid twice and the user is always charged the published model price.
+      const updated = await pool.query(
         `UPDATE tasks
-         SET response = $1, tokens_used = $2, cost = $3, status = 'completed', completed_at = CURRENT_TIMESTAMP
-         WHERE id = $4`,
-        [plainResponse, tokens_used || 0, cost, task_id]
+            SET response = $1, tokens_used = $2, status = 'completed', completed_at = CURRENT_TIMESTAMP
+          WHERE id = $3 AND status IN ('pending', 'processing')
+          RETURNING id`,
+        [plainResponse, tokens_used || 0, task_id]
       );
 
-      // Update miner earnings
-      await pool.query(
-        'UPDATE miners SET total_tasks = total_tasks + 1, earnings = earnings + $1 WHERE id = $2',
-        [minerFee, miner.id]
-      );
+      if (updated.rows.length === 0) {
+        // Replay of an already-resolved task: do not touch counters or state.
+        logger.warn({ taskId: task_id, minerId: miner.id }, 'Ignored replayed task_result');
+        return;
+      }
     }
 
     // Callback for pending task
@@ -487,20 +504,33 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
   }
 
   cleanupMiners() {
-    console.log('>>> Cleanup miners running, miners count:', this.miners.size);
     const now = Date.now();
     for (const [minerId, miner] of this.miners) {
-      const timeSinceHeartbeat = now - miner.lastHeartbeat;
-      console.log(`>>> Cleanup check miner ${minerId}: lastHeartbeat ${timeSinceHeartbeat}ms ago`);
-      if (timeSinceHeartbeat > 120000) {
+      if (now - miner.lastHeartbeat > 120000) {
         this.miners.delete(minerId);
-        pool.query("UPDATE miners SET status = 'offline' WHERE id = $1", [minerId]);
+        pool.query("UPDATE miners SET status = 'offline' WHERE id = $1", [minerId])
+          .catch((err) => logger.error({ err, minerId }, 'Failed to mark miner offline'));
         invalidateCache('/api/miners');
         invalidateCache('/api/models');
         invalidateCache('/api/stats');
-        console.log(`Miner ${minerId} marked offline (no heartbeat)`);
+        logger.info({ minerId }, 'Miner marked offline (no heartbeat)');
       }
     }
+  }
+
+  // Graceful shutdown: drop timers, fail in-flight dispatches, close sockets.
+  async close() {
+    if (this.cleanupTimer) clearInterval(this.cleanupTimer);
+    for (const [, cb] of this.taskCallbacks) {
+      clearTimeout(cb.timeout);
+      try { cb.reject(new Error('Server shutting down')); } catch (e) { /* already settled */ }
+    }
+    this.taskCallbacks.clear();
+    for (const [, miner] of this.miners) {
+      try { miner.ws.close(); } catch (e) { /* noop */ }
+    }
+    this.miners.clear();
+    await new Promise((resolve) => this.wss.close(() => resolve()));
   }
 
   getOnlineMiners() {

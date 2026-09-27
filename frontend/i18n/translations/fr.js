@@ -67,6 +67,8 @@ const fr = {
     freeTokens: 'Jetons gratuits',
     history: 'Historique',
     startTyping: 'Commencez à écrire pour discuter...',
+    viaMiner: 'via mineur',
+    viaLocal: 'local',
   },
   miner: {
     title: 'Mineur - Krelz Network',

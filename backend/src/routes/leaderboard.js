@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../database/pool');
+const { logger } = require('../logger');
 
 // GET /api/leaderboard/miners
 router.get('/miners', async (req, res) => {
@@ -14,7 +15,7 @@ router.get('/miners', async (req, res) => {
     );
     res.json({ success: true, miners: result.rows });
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Leaderboard route failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -32,7 +33,7 @@ router.get('/users', async (req, res) => {
     );
     res.json({ success: true, users: result.rows });
   } catch (err) {
-    console.error(err);
+    logger.error({ err }, 'Leaderboard route failed');
     res.status(500).json({ error: 'Server error' });
   }
 });

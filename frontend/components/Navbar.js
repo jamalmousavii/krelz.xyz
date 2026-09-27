@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { useLanguage } from '../i18n/LanguageContext';
 import LanguageSwitcher from './LanguageSwitcher';
 import GoogleLogin from './GoogleLogin';
@@ -16,6 +17,7 @@ export default function Navbar() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [resetToken, setResetToken] = useState('');
+  const [forgotSent, setForgotSent] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem('user');
@@ -98,11 +100,13 @@ export default function Navbar() {
       });
       const data = await res.json();
       if (data.success) {
+        setAuthError('');
+        setForgotSent(true);
+        // reset_token is only ever present in development (no email provider wired).
         if (data.reset_token) {
           setResetToken(data.reset_token);
           setAuthMode('reset');
         }
-        setAuthError('');
       } else {
         setAuthError(data.error || 'Failed');
       }
@@ -142,18 +146,19 @@ export default function Navbar() {
     setAuthPassword('');
     setAuthError('');
     setResetToken('');
+    setForgotSent(false);
   };
 
   return (
     <nav className="container mx-auto px-4 md:px-6 py-4">
       <div className="flex items-center justify-between">
-        <a href="/" className="text-xl md:text-2xl font-bold text-gray-800">🚀 Krelz Network</a>
+        <Link href="/" className="text-xl md:text-2xl font-bold text-gray-800">🚀 Krelz Network</Link>
 
         {/* Desktop */}
         <div className="hidden md:flex items-center gap-4">
           <LanguageSwitcher />
-          <a href="/miner" className="text-gray-600 hover:text-sky-700 transition">{t('nav.miner')}</a>
-          <a href="/leaderboard" className="text-gray-600 hover:text-sky-700 transition">🏆</a>
+          <Link href="/miner" className="text-gray-600 hover:text-sky-700 transition">{t('nav.miner')}</Link>
+          <Link href="/leaderboard" className="text-gray-600 hover:text-sky-700 transition">🏆</Link>
 
           <div className="relative" ref={dropdownRef}>
             {user ? (
@@ -174,15 +179,15 @@ export default function Navbar() {
                 </button>
                 {dropdownOpen && (
                   <div className="absolute right-0 mt-2 w-52 bg-white border border-sky-200 rounded-xl shadow-xl overflow-hidden z-50">
-                    <a href="/profile" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-sky-50 transition">
+                    <Link href="/profile" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-sky-50 transition">
                       📊 {t('nav.dashboard')}
-                    </a>
-                    <a href="/miners" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-sky-50 transition">
+                    </Link>
+                    <Link href="/miners" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-sky-50 transition">
                       ⛏️ {t('nav.miners')}
-                    </a>
-                    <a href="/settings" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-sky-50 transition">
+                    </Link>
+                    <Link href="/settings" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-sky-50 transition">
                       ⚙️ {t('nav.settings')}
-                    </a>
+                    </Link>
                     <hr className="border-sky-100" />
                     <button
                       onClick={handleLogout}
@@ -271,6 +276,9 @@ export default function Navbar() {
                           placeholder="Email" className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
                           onKeyDown={(e) => e.key === 'Enter' && handleForgotPassword()} />
                         {authError && <p className="text-red-500 text-xs">{authError}</p>}
+                        {!authError && forgotSent && (
+                          <p className="text-emerald-600 text-xs">{t('nav.resetEmailSent')}</p>
+                        )}
                         <button onClick={handleForgotPassword} disabled={authLoading || !authEmail}
                           className="w-full bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg transition text-sm font-medium disabled:opacity-50">
                           {authLoading ? '...' : `📧 ${t('nav.sendResetLink')}`}
@@ -312,14 +320,14 @@ export default function Navbar() {
         <div className="md:hidden mt-4 pb-4 border-t border-sky-200">
           <div className="flex flex-col gap-3 pt-4">
             <LanguageSwitcher />
-            <a href="/miner" className="text-gray-600 hover:text-sky-700 transition py-2">{t('nav.miner')}</a>
-            <a href="/leaderboard" className="text-gray-600 hover:text-sky-700 transition py-2">🏆 Leaderboard</a>
+            <Link href="/miner" className="text-gray-600 hover:text-sky-700 transition py-2">{t('nav.miner')}</Link>
+            <Link href="/leaderboard" className="text-gray-600 hover:text-sky-700 transition py-2">🏆 Leaderboard</Link>
 
             {user ? (
               <>
-                <a href="/profile" className="text-gray-600 hover:text-sky-700 transition py-2">📊 {t('nav.dashboard')}</a>
-                <a href="/miners" className="text-gray-600 hover:text-sky-700 transition py-2">⛏️ {t('nav.miners')}</a>
-                <a href="/settings" className="text-gray-600 hover:text-sky-700 transition py-2">⚙️ {t('nav.settings')}</a>
+                <Link href="/profile" className="text-gray-600 hover:text-sky-700 transition py-2">📊 {t('nav.dashboard')}</Link>
+                <Link href="/miners" className="text-gray-600 hover:text-sky-700 transition py-2">⛏️ {t('nav.miners')}</Link>
+                <Link href="/settings" className="text-gray-600 hover:text-sky-700 transition py-2">⚙️ {t('nav.settings')}</Link>
                 <button onClick={handleLogout} className="text-red-500 hover:text-red-600 transition py-2 text-left">
                   🚪 {t('profile.logout')}
                 </button>
@@ -382,6 +390,9 @@ export default function Navbar() {
                     <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)}
                       placeholder="Email" className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm" />
                     {authError && <p className="text-red-500 text-xs">{authError}</p>}
+                    {!authError && forgotSent && (
+                      <p className="text-emerald-600 text-xs">{t('nav.resetEmailSent')}</p>
+                    )}
                     <button onClick={handleForgotPassword} disabled={authLoading || !authEmail}
                       className="w-full bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
                       {authLoading ? '...' : `📧 ${t('nav.sendResetLink')}`}

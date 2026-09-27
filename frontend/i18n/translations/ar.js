@@ -67,6 +67,8 @@ const ar = {
     freeTokens: 'رموز مجانية',
     history: 'السجل',
     startTyping: 'ابدأ الكتابة للدردشة...',
+    viaMiner: 'عن طريق المايナー',
+    viaLocal: 'محلي',
   },
   miner: {
     title: 'المُجمِّع - Krelz Network',

@@ -67,6 +67,8 @@ const bn = {
     freeTokens: 'বিনামূল্যের টোকেন',
     history: 'ইতিহাস',
     startTyping: 'চ্যাট করতে টাইপ করা শুরু করুন...',
+    viaMiner: 'মাইনারের মাধ্যমে',
+    viaLocal: 'স্থানীয়',
   },
   miner: {
     title: 'মাইনার - Krelz Network',

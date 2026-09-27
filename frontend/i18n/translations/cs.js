@@ -67,6 +67,8 @@ const cs = {
     freeTokens: 'Bezplatné tokeny',
     history: 'Historie',
     startTyping: 'Začněte psát pro chatování...',
+    viaMiner: 'přes těžař',
+    viaLocal: 'lokální',
   },
   miner: {
     title: 'Miner - Krelz Network',

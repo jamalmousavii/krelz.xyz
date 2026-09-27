@@ -67,6 +67,8 @@ const uk = {
     freeTokens: 'Безкоштовні токени',
     history: 'Історія',
     startTyping: 'Почніть друкувати, щоб спілкуватися...',
+    viaMiner: 'через майнер',
+    viaLocal: 'локальний',
   },
   miner: {
     title: 'Майнер - Krelz Network',

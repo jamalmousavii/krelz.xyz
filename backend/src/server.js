@@ -9,8 +9,9 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const pinoHttp = require('pino-http');
 const WSServer = require('./ws');
-const { cacheMiddleware, getCacheStats } = require('./cache');
+const { cacheMiddleware, getCacheStats, closeCache } = require('./cache');
 const { logger } = require('./logger');
+const { authenticate } = require('./middleware/auth');
 
 const authRoutes = require('./routes/auth');
 const minerRoutes = require('./routes/miners');
@@ -115,6 +116,15 @@ const authLimiter = rateLimit({
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
+// Password reset endpoints are account-takeover vectors: keep them as tight as login.
+const resetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many reset attempts, try again in 15 minutes.' },
+});
+app.use('/api/auth/forgot-password', resetLimiter);
+app.use('/api/auth/reset-password', resetLimiter);
+
 const chatLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 30,
@@ -122,36 +132,57 @@ const chatLimiter = rateLimit({
 });
 app.use('/api/chat', chatLimiter);
 
+// Anonymous chat stays free, but gets a much tighter per-IP budget than signed-in users.
+const guestChatLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 6,
+  skip: (req) => !!req.headers.authorization,
+  message: { error: 'Guest chat rate limit exceeded. Sign in for a higher limit.' },
+});
+app.use('/api/chat', guestChatLimiter);
+
 app.use('/api/auth', authRoutes);
-app.use('/api/miners', cacheMiddleware(10), minerRoutes);
+// /api/miners responses are per-user (they contain miner_token) — never cache them.
+app.use('/api/miners', minerRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/payments', paymentRoutes);
-app.use('/api/token', tokenRoutes);
+// Token router reads req.user everywhere: without authenticate every handler saw undefined.
+app.use('/api/token', authenticate, tokenRoutes);
 app.use('/api/stats', cacheMiddleware(30), statsRoutes);
 app.use('/api/models', cacheMiddleware(15), modelRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/leaderboard', cacheMiddleware(60), leaderboardRoutes);
 
+// Readiness: fails when Postgres is down so nginx/load-balancer stop routing.
+// Redis is report-only — caching is an optimisation, never a hard dependency.
 app.get('/health', async (req, res) => {
   const cache = getCacheStats();
   let dbStatus = 'unknown';
+  let dbOk = false;
   try {
     const pool = require('./database/pool');
     await pool.query('SELECT 1');
     dbStatus = 'connected';
+    dbOk = true;
   } catch (e) {
     dbStatus = 'disconnected';
+    logger.error({ err: e }, 'Health check: Postgres unreachable');
   }
 
-  res.json({
-    status: 'ok',
-    version: '3.18.4',
+  res.status(dbOk ? 200 : 503).json({
+    status: dbOk ? 'ok' : 'degraded',
+    version: require('../package.json').version,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     redis: cache.connected ? 'connected' : 'disconnected',
     postgres: dbStatus,
     sentry: !!process.env.SENTRY_DSN,
   });
+});
+
+// Liveness: process is up, regardless of dependencies.
+app.get('/health/live', (req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime() });
 });
 
 app.use('/api/*', (req, res) => {
@@ -179,6 +210,60 @@ server.listen(PORT, '127.0.0.1', () => {
 
 wsServerHttp.listen(WS_PORT, '127.0.0.1', () => {
   logger.info({ port: WS_PORT }, 'WebSocket server started');
+});
+
+// --- Graceful shutdown ----------------------------------------------------
+// On SIGTERM/SIGINT: stop accepting new work, drain HTTP + WS, then release
+// pool/Redis connections. systemd sends SIGTERM then SIGKILL after
+// TimeoutStopSec, so we force-exit well before that.
+const SHUTDOWN_TIMEOUT_MS = 15000;
+let shuttingDown = false;
+
+function closeServer(srv) {
+  if (!srv || !srv.listening) return Promise.resolve();
+  if (typeof srv.closeIdleConnections === 'function') srv.closeIdleConnections();
+  return new Promise((resolve) => srv.close(resolve));
+}
+
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info({ signal }, 'Shutdown initiated');
+
+  const forceTimer = setTimeout(() => {
+    logger.error('Shutdown timed out, forcing exit');
+    process.exit(1);
+  }, SHUTDOWN_TIMEOUT_MS);
+  forceTimer.unref();
+
+  try {
+    await closeServer(server);
+    await wsServer.close();
+    await closeServer(wsServerHttp);
+    await closeCache();
+    const pool = require('./database/pool');
+    await pool.end();
+    clearTimeout(forceTimer);
+    logger.info('Shutdown complete');
+    process.exit(0);
+  } catch (err) {
+    logger.error({ err }, 'Error during shutdown');
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+// Last-resort handlers: record the failure instead of dying silently.
+// uncaughtException exits (state unknown); unhandledRejection keeps serving
+// because one failed async task must not take down a live service.
+process.on('unhandledRejection', (reason) => {
+  logger.error({ err: reason }, 'Unhandled promise rejection');
+});
+process.on('uncaughtException', (err) => {
+  logger.fatal({ err }, 'Uncaught exception, exiting');
+  process.exit(1);
 });
 
 module.exports = { app, server, wsServer };

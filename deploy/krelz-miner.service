@@ -1,21 +1,35 @@
 [Unit]
-Description=Krelz Miner Node
-After=network.target ollama.service
-Wants=ollama.service
+Description=Krelz Miner Node (headless CLI)
+After=network-online.target ollama.service
+Wants=network-online.target ollama.service
 
 [Service]
 Type=simple
-User=root
+# Runs the CLI miner (src/cli.js reads miner_token/models from config.json,
+# written by the install script). The Electron entry point (src/main.js) needs
+# a display and must not be used here.
 WorkingDirectory=/opt/krelz/miner-app
-ExecStart=/usr/bin/node src/main.js
+ExecStart=/usr/bin/node src/cli.js
 Restart=always
 RestartSec=10
+TimeoutStopSec=30
 Environment=NODE_ENV=production
-Environment=WALLET_ADDRESS=0x7b98AF06B5220F1E6142d02c09b2e6ccD09c3bb0
 Environment=API_WS_URL=ws://127.0.0.1:8444/ws
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=krelz-miner
+
+# Hardening — the miner only needs outbound sockets, its own directory and
+# the Ollama port on localhost.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 [Install]
 WantedBy=multi-user.target
