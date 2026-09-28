@@ -23,7 +23,7 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Daily Free Tokens** — 1,000 free AI inference tokens per user per day (UTC reset)
 - **Per-Model Pricing** — 11 models from 300M to 70B parameters, priced 30-50% cheaper than DeepSeek
 - **Chat Sessions** — Persistent chat history with auto-generated subjects
-- **Profile Dashboard** — USD balance, daily tokens, logout, quick-nav
+- **Profile Dashboard** — USD balance, daily tokens, logout, quick-nav; leaderboard rank card for miners (v3.21.0)
 - **Miner CLI Mode** — Headless CLI for servers (no Electron needed)
 - **Resource Monitoring** — CPU, RAM, GPU VRAM, Disk usage tracking
 - **Auth System** — Google OAuth + email/password, password reset
@@ -136,7 +136,7 @@ krelz.xyz/
 │   ├── pages/
 │   │   ├── index.js           # Chat homepage (chat-first; fullscreen frame; attachments/voice v3.20.0)
 │   │   ├── chat.js            # Redirects to / (chat is homepage now)
-│   │   ├── profile.js         # Dashboard (balance, daily tokens)
+│   │   ├── profile.js         # Dashboard (balance, daily tokens, leaderboard rank card)
 │   │   ├── miners.js          # Miner management + Quick Install copy (v3.16.0)
 │   │   ├── settings.js        # Settings (USD wallet, 33-lang dropdown, password)
 │   │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)

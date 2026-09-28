@@ -1,5 +1,10 @@
 # Changelog
 
+## [3.21.0] - 2026-09-28
+
+### Added
+- **Leaderboard rank card in the user dashboard** — `GET /api/leaderboard/mine` (authenticated, `RANK()` over miners with ≥1 task) powers a new 🏆 card on `/profile`: personal rank (`#N of total`), GPU, tasks, earnings and a link to the full leaderboard. Shown **only to users with at least one miner**; a miner with no completed tasks sees an explicit "not ranked yet" hint instead of a number. Dashboard fetches `/api/miners/mine` first to decide visibility.
+
 ## [3.20.0] - 2026-09-28
 
 Attachments & voice notes in chat (multi-modal end-to-end: UI → API → WS → miner → Ollama).
