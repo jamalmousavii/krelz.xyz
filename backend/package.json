@@ -1,12 +1,12 @@
 {
   "name": "krelz-backend",
-  "version": "3.19.1",
+  "version": "3.20.0",
   "description": "Krelz Network Backend API",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "jest",
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js",
     "migrate": "node src/database/migrate.js",
     "seed": "node src/database/seed.js"
   },
@@ -25,6 +25,7 @@
     "ioredis": "^5.3.2",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
+    "pdf-parse": "^2.4.5",
     "pg": "^8.11.3",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",

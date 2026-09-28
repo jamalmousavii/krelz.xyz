@@ -19,6 +19,7 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Chat Source Badge (v3.18.4)** — each reply shows `⛏️ via miner` / `⚡ via provider` / `💻 local`
 - **Default Model (v3.18.4)** — chat defaults to `llama3.1:8b` (online miner); `free-cloud-ai` always available
 - **Fullscreen Chat Frame (v3.19.1)** — chat fits the viewport exactly (no page scrolling at any resolution/zoom); input keeps focus while the model answers; the latest message is always in view, including after refresh
+- **Attachments & Voice (v3.20.0)** — 📎 send an image, PDF or text file (file text is read server-side so any model can answer; images go to vision models), 🎤 record a ≤60s voice note (client-side WAV encoder, `gemma4:12b`); gated per model with explicit errors — attachments are never silently dropped
 - **Daily Free Tokens** — 1,000 free AI inference tokens per user per day (UTC reset)
 - **Per-Model Pricing** — 11 models from 300M to 70B parameters, priced 30-50% cheaper than DeepSeek
 - **Chat Sessions** — Persistent chat history with auto-generated subjects
@@ -133,7 +134,7 @@ krelz.xyz/
 │   └── package.json
 ├── frontend/                   # UI (Next.js 14 + Tailwind CSS)
 │   ├── pages/
-│   │   ├── index.js           # Chat homepage (chat-first; fullscreen frame v3.19.1)
+│   │   ├── index.js           # Chat homepage (chat-first; fullscreen frame; attachments/voice v3.20.0)
 │   │   ├── chat.js            # Redirects to / (chat is homepage now)
 │   │   ├── profile.js         # Dashboard (balance, daily tokens)
 │   │   ├── miners.js          # Miner management + Quick Install copy (v3.16.0)

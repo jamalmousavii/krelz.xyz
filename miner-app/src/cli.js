@@ -28,8 +28,11 @@ const miner = new MinerService();
 
 const ws = new MinerWebSocket(
   config.miner_token,
-  async (prompt, model) => {
+  async (prompt, model, media) => {
     ollama.setModel(model);
+    if (media) {
+      return ollama.chat(prompt, model, media);
+    }
     const result = await ollama.generate(prompt, model);
     return result;
   }

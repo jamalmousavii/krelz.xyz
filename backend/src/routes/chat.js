@@ -7,6 +7,7 @@ const { authenticate, optionalAuth } = require('../middleware/auth');
 const { validate, chatRules } = require('../middleware/validate');
 const MODELS = require('../models');
 const { logger } = require('../logger');
+const { prepareAttachment, AttachmentError } = require('../services/attachments');
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 const SUPPORTED_COINS = ['USD'];
@@ -177,10 +178,10 @@ router.get('/sessions/:id', authenticate, async (req, res) => {
     }
 
     const messagesResult = await pool.query(
-      `SELECT prompt AS content, 'user' AS role, created_at
+      `SELECT prompt AS content, 'user' AS role, created_at, media
        FROM tasks WHERE session_id = $1 AND user_id = $2
        UNION ALL
-       SELECT response AS content, 'assistant' AS role, completed_at AS created_at
+       SELECT response AS content, 'assistant' AS role, completed_at AS created_at, NULL::jsonb AS media
        FROM tasks WHERE session_id = $1 AND user_id = $2 AND response IS NOT NULL
        ORDER BY created_at ASC`,
       [sessionId, userId]
@@ -280,12 +281,51 @@ router.delete('/sessions/:id', authenticate, async (req, res) => {
 // POST /api/chat — send message (supports session_id)
 router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
   try {
-    const { message, model, session_id } = req.body;
+    const { message: rawMessage, model, session_id, attachment } = req.body;
+    // Image-only / voice-only sends arrive with an empty message (the
+    // validator allows that exactly when an attachment is present).
+    const message = typeof rawMessage === 'string' ? rawMessage : '';
     const userId = req.user?.id;
     const paymentCoin = 'USD';
 
-    if (!message) {
+    if (!message.trim() && !attachment) {
       return res.status(400).json({ error: 'Message is required' });
+    }
+
+    // Capability gate: images need a vision model, voice notes an audio-capable
+    // one. Reject up front so the UI can explain exactly why — the attachment
+    // must never be silently dropped.
+    const requestedModel = model || DEFAULT_MODEL;
+    const caps = MODELS.find(m => m.id === requestedModel);
+    if (attachment && attachment.type === 'image' && !(caps && caps.vision)) {
+      return res.status(400).json({
+        error: `Model ${requestedModel} cannot read images. Pick a vision-capable model or remove the image.`,
+        code: 'ATTACHMENT_UNSUPPORTED',
+      });
+    }
+    if (attachment && attachment.type === 'audio' && !(caps && caps.audio)) {
+      return res.status(400).json({
+        error: `Model ${requestedModel} cannot process voice notes. Pick an audio-capable model or record again.`,
+        code: 'ATTACHMENT_UNSUPPORTED',
+      });
+    }
+
+    // Normalize the attachment before anything is persisted or dispatched:
+    // images/audio pass through as Ollama media, files are parsed to text and
+    // prepended to the prompt (so any chat model can answer them).
+    let effectiveMessage = message;
+    let media = null;
+    let dbAttachment = null;
+    if (attachment) {
+      try {
+        ({ effectiveMessage, media, dbAttachment } = await prepareAttachment(attachment, message));
+      } catch (err) {
+        if (err instanceof AttachmentError) {
+          return res.status(400).json({ error: err.message, code: err.code });
+        }
+        logger.error({ err }, 'Attachment preparation failed');
+        return res.status(400).json({ error: 'Could not process attachment', code: 'ATTACHMENT_INVALID' });
+      }
     }
 
     // Pre-flight for paid models: don't burn GPU time for a user who has
@@ -318,8 +358,10 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
       }
 
       if (!sessionId) {
-        // Create new session with auto-generated subject
-        const subject = (message.length > 50 ? message.substring(0, 50) + '...' : message).slice(0, 255);
+        // Create new session with auto-generated subject. Attachment-only
+        // messages have no text — name the session after the file instead.
+        const subjectSource = message || (attachment && attachment.name) || 'New Chat';
+        const subject = (subjectSource.length > 50 ? subjectSource.substring(0, 50) + '...' : subjectSource).slice(0, 255);
         const sessionResult = await pool.query(
           `INSERT INTO chat_sessions (user_id, subject, model)
            VALUES ($1, $2, $3)
@@ -331,16 +373,19 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
     }
 
     const wsServer = req.app.get('wsServer');
-    const minerResult = wsServer ? wsServer.findMinerForModel(model) : null;
+    // Media (image/audio) may only go to a miner new enough to understand the
+    // `attachment` field on task messages (v3.20.0+).
+    const minerResult = wsServer ? wsServer.findMinerForModel(requestedModel, !!media) : null;
     const minerId = minerResult ? minerResult.minerId : null;
-    const minerModel = minerResult && minerResult.model ? minerResult.model : (model || DEFAULT_MODEL);
+    const minerModel = minerResult && minerResult.model ? minerResult.model : requestedModel;
 
     // Create task
     const taskResult = await pool.query(
-      `INSERT INTO tasks (user_id, miner_id, prompt, model, status, session_id)
-       VALUES ($1, $2, $3, $4, 'pending', $5)
+      `INSERT INTO tasks (user_id, miner_id, prompt, model, status, session_id, media, prepared_prompt)
+       VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7)
        RETURNING id`,
-      [userId, minerId, message, model || DEFAULT_MODEL, sessionId]
+      [userId, minerId, message, requestedModel, sessionId, dbAttachment,
+       effectiveMessage !== message ? effectiveMessage : null]
     );
 
     const taskId = taskResult.rows[0].id;
@@ -353,8 +398,8 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
       try {
         await pool.query("UPDATE tasks SET status = 'processing', miner_id = $1 WHERE id = $2", [minerId, taskId]);
 
-        logger.debug({ taskId, minerId, minerModel, requestedModel: model }, 'Dispatching task to miner');
-        const result = await wsServer.dispatchTask(minerId, taskId, message, minerModel);
+        logger.debug({ taskId, minerId, minerModel, requestedModel: model, media: !!media }, 'Dispatching task to miner');
+        const result = await wsServer.dispatchTask(minerId, taskId, effectiveMessage, minerModel, media);
 
         if (result.error) {
           logger.warn({ taskId, minerId, err: result.error }, 'Miner task failed, falling back');
@@ -386,6 +431,11 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
             throw new Error('No local Ollama models');
           }
           if (!available.includes(ollamaModel)) {
+            if (media) {
+              // Never substitute a random local model for a media request —
+              // an image fed to a non-vision model returns garbage.
+              throw new Error('Media model not available locally');
+            }
             const family = ollamaModel.split(':')[0];
             const exactMatch = available.find(m => m.startsWith(family + ':') || m === family);
             ollamaModel = exactMatch || available.find(m => m.includes('8b')) || available[0];
@@ -396,26 +446,41 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
           throw new Error('Ollama unavailable');
         }
 
-        const ollamaResponse = await axios.post(`${OLLAMA_URL}/api/generate`, {
-          model: ollamaModel,
-          prompt: message,
-          stream: false
-        }, { timeout: 30000 });
+        // Media goes through /api/chat with images[] — Ollama auto-detects
+        // audio (WAV RIFF) in the same slot. Text stays on /api/generate.
+        const ollamaResponse = media
+          ? await axios.post(`${OLLAMA_URL}/api/chat`, {
+              model: ollamaModel,
+              messages: [{ role: 'user', content: effectiveMessage, images: [media.data] }],
+              stream: false
+            }, { timeout: 60000 })
+          : await axios.post(`${OLLAMA_URL}/api/generate`, {
+              model: ollamaModel,
+              prompt: effectiveMessage,
+              stream: false
+            }, { timeout: 30000 });
 
-        response = ollamaResponse.data.response;
+        response = media
+          ? (ollamaResponse.data.message && ollamaResponse.data.message.content)
+          : ollamaResponse.data.response;
         tokensUsed = ollamaResponse.data.eval_count || 0;
         const pricing = getModelPricing(model || DEFAULT_MODEL);
         cost = (tokensUsed * pricing.outputPrice) / 1000000;
 
       } catch (ollamaError) {
-        // Fallback: try free external providers (round-robin)
+        // Fallback: try free external providers (round-robin) — text only.
+        // Image/voice requests can't be served by these chat APIs, so instead
+        // of silently losing the attachment we fail explicitly below.
         let externalError = null;
-        for (let i = 0; i < FREE_PROVIDERS.length; i++) {
+        // Skip the provider loop for media: these chat APIs take no images/
+        // audio, so a "success" would answer without seeing the attachment.
+        const providerCount = media ? 0 : FREE_PROVIDERS.length;
+        for (let i = 0; i < providerCount; i++) {
           const provider = getNextProvider();
           if (!provider) break;
 
           try {
-            const externalResponse = await callExternalProvider(provider, model, message);
+            const externalResponse = await callExternalProvider(provider, model, effectiveMessage);
             if (externalResponse) {
               response = externalResponse;
               providerUsed = provider.name;
@@ -437,6 +502,20 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
         }
 
         if (!response) {
+          if (media) {
+            // Attachment was valid but no capable source existed — fail with a
+            // stable code and keep the failure visible in history instead of
+            // retrying forever or dropping the attachment.
+            await pool.query(
+              "UPDATE tasks SET response = 'No capable source for attachment', status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $1",
+              [taskId]
+            );
+            return res.status(409).json({
+              error: `No online miner or local model can handle this ${media.type === 'image' ? 'image' : 'voice note'} right now. Try again shortly or switch model.`,
+              code: 'MEDIA_NO_MINER',
+              task_id: taskId,
+            });
+          }
           await pool.query(
             "UPDATE tasks SET response = 'No providers available', status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $1",
             [taskId]

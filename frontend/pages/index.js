@@ -3,8 +3,49 @@ import { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
+import { audioBlobToWav16k } from '../lib/audio';
 
 const CATEGORY_ICONS = { chat: '💬', code: '💻', vision: '👁️', embedding: '🔗' };
+const MAX_RAW_BYTES = 1.5 * 1024 * 1024;   // pdf/text/audio budget (audio is WAVed after this check)
+const IMAGE_MAX_EDGE = 1280;               // client-side image compression target
+const TEXT_FILE_RE = /\.(txt|md|csv|json|js|jsx|ts|tsx|py|java|c|h|cpp|hpp|cs|go|rs|rb|php|sh|sql|yml|yaml|xml|html|css|log|ini|cfg|conf|toml)$/i;
+
+// Downscale + JPEG-compress an image so a phone photo fits the ~1.5MB
+// attachment budget before it ever leaves the browser.
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, IMAGE_MAX_EDGE / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+      const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+      if (base64.length > 4000000) { reject(new Error('image-too-large')); return; }
+      resolve({ mime: 'image/jpeg', data: base64 });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image-load-failed')); };
+    img.src = url;
+  });
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result);
+      resolve(result.slice(result.indexOf(',') + 1));
+    };
+    reader.onerror = () => reject(new Error('file-read-failed'));
+    reader.readAsDataURL(file);
+  });
+}
 
 export default function Home() {
   const { t, lang } = useLanguage();
@@ -28,7 +69,24 @@ export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [token, setToken] = useState(null);
 
+  // Attachments & voice (v3.20.0): one pending attachment per message.
+  const [attachment, setAttachment] = useState(null); // { type, name, mime, data }
+  const [attachError, setAttachError] = useState('');
+  const [recording, setRecording] = useState(false);
+  const fileInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const recChunksRef = useRef([]);
+  const recTimerRef = useRef(null);
+
   const hasStarted = chat.length > 0;
+
+  // Capability gates — mirror backend models.js flags. Attach (📎) is off for
+  // embedding models entirely; images additionally require a vision-capable
+  // model and voice notes an audio-capable one (gemma4:12b).
+  const selectedModelData = models.find(m => m.id === selectedModel);
+  const attachFileAllowed = !!selectedModelData && selectedModelData.category !== 'embedding';
+  const visionOk = !!(selectedModelData && selectedModelData.vision);
+  const audioOk = !!(selectedModelData && selectedModelData.audio);
 
   useEffect(() => {
     fetchModels();
@@ -90,6 +148,9 @@ export default function Home() {
     if (!active || active === document.body) inputRef.current?.focus();
   }, [loading, hasStarted, dropdownOpen]);
 
+  // Unmount cleanup for the recording auto-stop timer.
+  useEffect(() => () => clearTimeout(recTimerRef.current), []);
+
   const authHeaders = (tkn) => ({
     'Content-Type': 'application/json',
     ...(tkn ? { Authorization: `Bearer ${tkn}` } : {})
@@ -127,7 +188,9 @@ export default function Home() {
         setSubject(data.session.subject || 'New Chat');
         const msgs = [];
         data.messages.forEach(m => {
-          if (m.content) msgs.push({ role: m.role, content: m.content });
+          if (m.content !== null && m.content !== undefined) {
+            msgs.push({ role: m.role, content: m.content, media: m.media || null });
+          }
         });
         instantScrollRef.current = true;
         setChat(msgs);
@@ -195,11 +258,101 @@ export default function Home() {
     } catch (err) { console.error('Failed to update subject'); }
   };
 
+  const removeAttachment = () => {
+    setAttachment(null);
+    setAttachError('');
+  };
+
+  const onPickFile = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = ''; // allow re-selecting the same file
+    if (!file) return;
+    setAttachError('');
+    try {
+      if (file.type && file.type.startsWith('image/')) {
+        const { mime, data } = await compressImage(file);
+        setAttachment({ type: 'image', name: file.name || 'image.jpg', mime, data });
+      } else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf') || TEXT_FILE_RE.test(file.name)) {
+        if (file.size > MAX_RAW_BYTES) {
+          setAttachError(t('chat.attachTooLarge'));
+          return;
+        }
+        const data = await fileToBase64(file);
+        setAttachment({ type: 'file', name: file.name, mime: file.type || 'text/plain', data });
+      } else {
+        setAttachError(t('chat.attachUnsupported'));
+      }
+    } catch (err) {
+      setAttachError(err && err.message === 'image-too-large' ? t('chat.attachTooLarge') : t('chat.attachFailed'));
+    }
+  };
+
+  const startRecording = async () => {
+    if (!audioOk || recording) return;
+    setAttachError('');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      recChunksRef.current = [];
+      mr.ondataavailable = (ev) => { if (ev.data && ev.data.size) recChunksRef.current.push(ev.data); };
+      mr.onstop = async () => {
+        stream.getTracks().forEach(tr => tr.stop());
+        clearTimeout(recTimerRef.current);
+        setRecording(false);
+        const blob = new Blob(recChunksRef.current, { type: mr.mimeType || 'audio/webm' });
+        recChunksRef.current = [];
+        try {
+          const { base64, duration } = await audioBlobToWav16k(blob);
+          if (duration > 60) { setAttachError(t('chat.voiceTooLong')); return; }
+          setAttachment({ type: 'audio', name: 'voice.wav', mime: 'audio/wav', data: base64 });
+        } catch (convErr) {
+          const code = convErr && convErr.message;
+          setAttachError(
+            code === 'audio-too-long' ? t('chat.voiceTooLong')
+            : code === 'audio-too-short' ? t('chat.voiceTooShort')
+            : t('chat.voiceFailed')
+          );
+        }
+      };
+      mr.start();
+      mediaRecorderRef.current = mr;
+      setRecording(true);
+      // Hard cap: stop at 60s (Ollama/backend budget for one voice note).
+      recTimerRef.current = setTimeout(() => {
+        if (mr.state === 'recording') mr.stop();
+      }, 60000);
+    } catch (err) {
+      setAttachError(t('chat.micDenied'));
+    }
+  };
+
+  const stopRecording = () => {
+    clearTimeout(recTimerRef.current);
+    const mr = mediaRecorderRef.current;
+    if (mr && mr.state === 'recording') mr.stop();
+  };
+
   const sendMessage = async () => {
-    if (loading || !message.trim()) return;
+    if (loading) return;
+    if (!message.trim() && !attachment) return;
+
+    // Capability gates — never send an attachment the model cannot answer.
+    if (attachment) {
+      if (!attachFileAllowed) { setAttachError(t('chat.attachEmbedding')); return; }
+      if (attachment.type === 'image' && !visionOk) { setAttachError(t('chat.needVisionModel')); return; }
+      if (attachment.type === 'audio' && !audioOk) { setAttachError(t('chat.needAudioModel')); return; }
+    }
+
     const userMessage = message;
+    const sentAttachment = attachment;
     setMessage('');
-    setChat(prev => [...prev, { role: 'user', content: userMessage }]);
+    setAttachment(null);
+    setAttachError('');
+    setChat(prev => [...prev, {
+      role: 'user',
+      content: userMessage,
+      media: sentAttachment ? { type: sentAttachment.type, name: sentAttachment.name, mime: sentAttachment.mime, data: sentAttachment.data } : null,
+    }]);
     setLoading(true);
     inputRef.current?.focus();
 
@@ -210,7 +363,8 @@ export default function Home() {
         body: JSON.stringify({
           message: userMessage,
           model: selectedModel,
-          session_id: activeSessionId
+          session_id: activeSessionId,
+          ...(sentAttachment ? { attachment: sentAttachment } : {}),
         }),
       });
       const data = await res.json();
@@ -236,8 +390,6 @@ export default function Home() {
     }
     setLoading(false);
   };
-
-  const selectedModelData = models.find(m => m.id === selectedModel);
 
   const ModelDropdown = ({ upward }) => (
     <div className="relative w-full md:w-auto" ref={dropdownRef}>
@@ -288,6 +440,58 @@ export default function Home() {
     </div>
   );
 
+  // 📎 / 🎤 controls shared by both input bars (hero + active chat).
+  const MediaButtons = () => (
+    <div className="flex items-center gap-1.5 flex-shrink-0">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,.pdf,.txt,.md,.csv,.json,application/pdf,text/*"
+        className="hidden"
+        onChange={onPickFile}
+      />
+      <button
+        type="button"
+        onClick={() => { if (attachFileAllowed) fileInputRef.current?.click(); }}
+        disabled={!attachFileAllowed}
+        title={attachFileAllowed ? t('chat.attach') : t('chat.attachEmbedding')}
+        className="flex-shrink-0 w-10 h-10 md:h-12 rounded-xl border border-sky-200 bg-white text-base hover:bg-sky-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+        aria-label={t('chat.attach')}
+      >📎</button>
+      <button
+        type="button"
+        onClick={recording ? stopRecording : startRecording}
+        disabled={!audioOk && !recording}
+        title={audioOk ? (recording ? t('chat.voiceStop') : t('chat.voice')) : t('chat.needAudioModel')}
+        className={`flex-shrink-0 w-10 h-10 md:h-12 rounded-xl border text-base transition disabled:opacity-40 disabled:cursor-not-allowed ${
+          recording ? 'bg-red-500 border-red-500 text-white animate-pulse' : 'border-sky-200 bg-white hover:bg-sky-50'
+        }`}
+        aria-label={recording ? t('chat.voiceStop') : t('chat.voice')}
+      >{recording ? '⏹' : '🎙️'}</button>
+    </div>
+  );
+
+  const pendingAttachmentChip = attachment && (
+    <div className="flex items-center gap-2 bg-white border border-sky-200 rounded-full pl-2.5 pr-2 py-1.5 text-xs text-gray-700 shadow-sm max-w-full">
+      {attachment.type === 'image' ? (
+        <img src={`data:${attachment.mime || 'image/jpeg'};base64,${attachment.data}`} alt="" className="w-5 h-5 rounded object-cover flex-shrink-0" />
+      ) : (
+        <span>{attachment.type === 'audio' ? '🎙️' : '📄'}</span>
+      )}
+      <span className="truncate max-w-[160px]">{attachment.name}</span>
+      <button
+        type="button"
+        onClick={removeAttachment}
+        className="text-gray-400 hover:text-red-500 font-bold px-1"
+        title={t('chat.removeAttachment')}
+      >✕</button>
+    </div>
+  );
+
+  const attachErrorLine = attachError ? (
+    <div className="text-red-500 text-xs">⚠️ {attachError}</div>
+  ) : null;
+
   // ===== EMPTY STATE: centered hero =====
   if (!hasStarted) {
     return (
@@ -306,8 +510,15 @@ export default function Home() {
           </div>
 
           <div className="w-full max-w-2xl bg-white rounded-2xl shadow-lg border border-sky-100 p-4 md:p-5">
+            {(attachment || attachError) && (
+              <div className="flex flex-col gap-1.5 mb-3 items-start">
+                {pendingAttachmentChip}
+                {attachErrorLine}
+              </div>
+            )}
             <div className="flex flex-col md:flex-row gap-3">
               <ModelDropdown upward={false} />
+              <MediaButtons />
               <input
                 type="text"
                 value={message}
@@ -432,7 +643,22 @@ export default function Home() {
                     ? 'bg-sky-500 text-white'
                     : 'bg-sky-50 text-gray-800 border border-sky-100'
                 }`}>
-                  {msg.content}
+                  {msg.media && msg.media.type === 'image' && msg.media.data && (
+                    <img
+                      src={`data:${msg.media.mime || 'image/jpeg'};base64,${msg.media.data}`}
+                      alt={msg.media.name || 'image'}
+                      className="rounded-xl max-h-48 md:max-h-64 max-w-full mb-2"
+                    />
+                  )}
+                  {msg.media && msg.media.type !== 'image' && (
+                    <div className={`inline-flex items-center gap-1.5 text-xs rounded-lg px-2 py-1 mb-1 ${
+                      msg.role === 'user' ? 'bg-white/20 text-white' : 'bg-white border border-sky-100 text-gray-600'
+                    }`}>
+                      <span>{msg.media.type === 'audio' ? '🎙️' : '📄'}</span>
+                      <span className="truncate max-w-[180px]">{msg.media.name}</span>
+                    </div>
+                  )}
+                  {msg.content ? <div>{msg.content}</div> : null}
                 </div>
                 {msg.role === 'assistant' && (
                   <div className={`text-xs text-gray-400 mt-1 ${isRtl(lang) ? 'text-right' : 'text-left'}`}>
@@ -461,8 +687,15 @@ export default function Home() {
           </div>
 
           {/* Input bar — pinned bottom */}
+          {(attachment || attachError) && (
+            <div className="flex flex-col gap-1.5 mb-2 items-start">
+              {pendingAttachmentChip}
+              {attachErrorLine}
+            </div>
+          )}
           <div className="flex flex-col md:flex-row gap-2 md:gap-3">
             <ModelDropdown upward={true} />
+            <MediaButtons />
             <input
               ref={inputRef}
               type="text"

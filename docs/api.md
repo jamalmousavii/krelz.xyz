@@ -1,6 +1,6 @@
 # مستندات API — Krelz Network
 
-نسخه بک‌اند: `3.19.1` — پایه: `https://krelz.xyz` (نمونه: `https://krelz.xyz/api/chat`)
+نسخه بک‌اند: `3.20.0` — پایه: `https://krelz.xyz` (نمونه: `https://krelz.xyz/api/chat`)
 
 همه پاسخ‌ها JSON هستند. در حالت موفقیت معمولاً `success: true` برمی‌گردد و در حالت خطا `error` (رشته) یا `details` (لیست خطاهای اعتبارسنجی).
 
@@ -122,6 +122,36 @@
 4. اگر نه سهمیه‌ای مانده باشد نه موجودی → **`402`** با `payment_status: "insufficient_balance"`.
 
 قیمت‌گذاری: `cost = tokens × outputPrice / 1e6` (قیمت مدل انتخاب‌شده از `src/models.js`).
+
+### پیوست (v3.20.0)
+
+یک فیلد اختیاری `attachment` به بدنهٔ بالا اضافه کنید (حداکثر یک پیوست در هر پیام):
+
+```json
+{
+  "message": "این فایل رو خلاصه کن",
+  "model": "llama3.1:8b",
+  "attachment": { "type": "file", "name": "doc.pdf", "mime": "application/pdf", "data": "<base64 خام>" }
+}
+```
+
+| type | رفتار | مدل موردنیاز |
+|------|-------|----------------|
+| `image` | به‌صورت `images[]` به Ollama می‌رود (کلاینت تا ≤1280px فشرده می‌کند) | `vision: true` (`qwen3-vl:8b`, `gemma4:12b`) |
+| `file` | PDF/متن سمت سرور استخراج و به ابتدای prompt می‌چسبد؛ مدل‌های متنی هم جواب می‌دهند | هر مدل چت |
+| `audio` | WAV 16kHz mono (کلاینت می‌سازد، حداکثر ۶۰ ثانیه) — همان شکاف `images[]` | `audio: true` (`gemma4:12b`) |
+
+محدودیت‌ها: `data` حداکثر ~۴MB base64 (تصویر ≤~1.5MB، فایل ≤1.5MB خام، PDF متن ≤60k کاراکتر).
+
+خطاهای صریح (پیوست هرگز بی‌صدا حذف نمی‌شود):
+
+| کد HTTP | `code` | معنی |
+|---------|--------|------|
+| 400 | `ATTACHMENT_UNSUPPORTED` | نوع فایل/مدل نامناسب (مثلاً تصویر با مدل بدون vision) |
+| 400 | `ATTACHMENT_TOO_LARGE` / `ATTACHMENT_INVALID` / `ATTACHMENT_EMPTY` / `ATTACHMENT_PARSE_FAILED` / `AUDIO_FORMAT` | سایز/فرمت/استخراج ناموفق |
+| 409 | `MEDIA_NO_MINER` | ماینرِ سازگار (نسخه ≥ 3.20.0) یا مدل محلی برای رسانه آنلاین نیست |
+
+تاریخچه: پیام‌های کاربر در `GET /api/chat/sessions/:id` فیلد `media` (JSONB از `tasks.media`) دارند.
 
 ### مدیریت جلسات
 

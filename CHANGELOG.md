@@ -1,5 +1,24 @@
 # Changelog
 
+## [3.20.0] - 2026-09-28
+
+Attachments & voice notes in chat (multi-modal end-to-end: UI → API → WS → miner → Ollama).
+
+### Added
+- **📎 File attach** — one attachment per message: image (client-compressed to ≤1280px JPEG), PDF (text extracted server-side, 60k char cap) or text file (≤1.5MB). File text is prepended to the prompt so **any** chat model can answer file questions; images need a vision model (`qwen3-vl:8b`, `gemma4:12b`)
+- **🎙️ Voice notes** — microphone button (audio-capable models only: `gemma4:12b`), MediaRecorder → client-side 16 kHz mono WAV encoder (`frontend/lib/audio.js`), 60s cap; Ollama receives audio in the same `images` slot (RIFF auto-detect)
+- **Capability gating in the UI** — 📎 disabled for embedding models; sending an image with a non-vision model or voice with a non-audio model is blocked inline with an explicit reason (the attachment is never silently dropped)
+- **Explicit backend errors** — `ATTACHMENT_UNSUPPORTED` / `ATTACHMENT_TOO_LARGE` / `ATTACHMENT_INVALID` / `ATTACHMENT_EMPTY` / `ATTACHMENT_PARSE_FAILED` / `AUDIO_FORMAT` (400) and `MEDIA_NO_MINER` (409) when no capable miner/local model is online
+- **`vision` / `audio` flags on all catalog models** (`backend/src/models.js`), exposed through `GET /api/models`
+- **Media-aware miner dispatch** — miners advertise `app_version` at auth (stored in `miners.app_version`); images/voice are only routed to miners ≥ 3.20.0, which parse the new e2e-encrypted `attachment` field on `task` messages (`tasks.media` JSONB + `tasks.prepared_prompt` keep polling-mode delivery exact)
+- **History rendering** — user bubbles show the image thumbnail or a 📄/🎙️ chip loaded from `tasks.media`
+
+### Changed
+- **Request body limit** raised to 8 MB (`express.json`) + `client_max_body_size 8m` in nginx (was 1 MB — attachments would 413)
+- Local-Ollama fallback uses `/api/chat` with `images[]` for media; free-cloud providers are skipped for image/voice (they cannot serve them) → explicit error instead of a silent drop
+- Miner `ollama.chat()` added alongside `generate()`; `onTask(prompt, model, media)` in both CLI and Electron entry points
+- Tests: 43 → 74 (`validate.attachment`, `attachments` incl. real pdf-parse extraction, `ws.media` gating/dispatch); Jest now runs with `--experimental-vm-modules` (pdfjs-dist needs dynamic import)
+
 ## [3.19.1] - 2026-09-28
 
 Chat UX pass (fit-to-viewport frame) + version display sync.

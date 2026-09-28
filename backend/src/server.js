@@ -97,7 +97,7 @@ app.use(helmet({
 app.use(compression());
 app.use(httpLogger);
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '8mb' }));
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

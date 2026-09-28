@@ -308,6 +308,37 @@ const migrate = async () => {
     await client.query('CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(session_id)');
     console.log('✅ Chat session indexes created');
 
+    // === Attachments (v3.20.0) ===
+    // tasks.media holds the JSONB copy of what the user attached (image/audio
+    // include their base64 so history can re-render thumbnails; files store
+    // only metadata because their text lives in tasks.prompt).
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS media JSONB;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    // tasks.prepared_prompt: the prompt after attachment preparation (file text
+    // prepended). NULL means "use prompt as-is". Needed because task_request
+    // (polling mode) only sees the DB row and must reconstruct the exact
+    // prompt that dispatchTask would have sent.
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS prepared_prompt TEXT;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    // miners.app_version: what the miner advertised at auth. Media dispatch
+    // (images/audio) only targets miners >= 3.20.0 which understand the
+    // `attachment` field on task messages.
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE miners ADD COLUMN IF NOT EXISTS app_version VARCHAR(32);
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    console.log('✅ Column tasks.media + miners.app_version added');
+
     // === Daily Free Tokens ===
     await client.query(`
       CREATE TABLE IF NOT EXISTS daily_tokens (

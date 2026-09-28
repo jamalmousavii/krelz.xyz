@@ -30,9 +30,37 @@ const googleAuthRules = [
 ];
 
 // Chat validators
+// One optional attachment per message: { type, name, mime, data } where
+// data is raw base64 (no data: prefix). Sizes are capped here and again in
+// prepareAttachment before anything touches a model or the database.
+const ATTACHMENT_MAX_B64 = 4000000; // ~3 MB decoded
 const chatRules = [
-  body('message').trim().isLength({ min: 1, max: 10000 }).withMessage('Message required (max 10000 chars)'),
+  // A message may be empty ONLY when it carries an attachment (image-only /
+  // voice-only sends); trim runs first so whitespace-only counts as empty.
+  body('message').trim().custom((value, { req }) => {
+    const msg = typeof value === 'string' ? value : '';
+    if (msg.length > 10000) throw new Error('Message too long (max 10000 chars)');
+    if (msg.length === 0 && !(req.body && req.body.attachment)) {
+      throw new Error('Message required (max 10000 chars)');
+    }
+    return true;
+  }),
   body('model').optional().isLength({ max: 100 }).withMessage('Model name too long'),
+  body('attachment').optional({ values: 'null' }).custom((value) => {
+    if (value === undefined || value === null) return true;
+    if (typeof value !== 'object' || Array.isArray(value)) throw new Error('Attachment must be an object');
+    if (!['image', 'file', 'audio'].includes(value.type)) throw new Error('Attachment type must be image, file or audio');
+    if (value.name !== undefined && (typeof value.name !== 'string' || value.name.length > 255)) {
+      throw new Error('Attachment name too long (max 255)');
+    }
+    if (value.mime !== undefined && (typeof value.mime !== 'string' || value.mime.length > 100)) {
+      throw new Error('Attachment mime too long (max 100)');
+    }
+    if (typeof value.data !== 'string' || value.data.length === 0) throw new Error('Attachment data required (base64)');
+    if (value.data.length > ATTACHMENT_MAX_B64) throw new Error('Attachment too large (max ~3MB)');
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value.data)) throw new Error('Attachment data must be base64');
+    return true;
+  }),
 ];
 
 // Miner validators

@@ -96,6 +96,32 @@ class OllamaService {
     }
   }
 
+  // v3.20.0: chat with an attachment. Images and audio (base64 WAV) both ride
+  // the `images` slot of a chat message — Ollama detects RIFF/WAVE audio by
+  // magic bytes and routes it to the audio encoder on supported platforms.
+  async chat(prompt, model, media) {
+    if (!media || !media.data) {
+      throw new Error('No attachment data');
+    }
+    try {
+      const response = await axios.post(`${this.url}/api/chat`, {
+        model: model || this.model,
+        messages: [{
+          role: 'user',
+          content: prompt,
+          images: [media.data],
+        }],
+        stream: false,
+      });
+      return {
+        response: (response.data.message && response.data.message.content) || '',
+        eval_count: response.data.eval_count || 0,
+      };
+    } catch (error) {
+      throw new Error('Ollama could not process the attachment');
+    }
+  }
+
   async getStatus() {
     try {
       const response = await axios.get(`${this.url}/api/tags`);

@@ -40,7 +40,7 @@ const ms = {
     startChat: 'Mula Sembang',
     footer: 'Semua hak terpelihara.',
     installMetaMask: 'Sila pasang MetaMask',
-    version: 'v3.19.1',
+    version: 'v3.20.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — platform inferens LLM tersebar, versi {version}. Semua hak terpelihara.',

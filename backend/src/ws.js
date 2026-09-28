@@ -9,6 +9,16 @@ const TOKEN_RE = /^kz_[0-9a-f]{32,64}$/;
 const AUTH_FAIL_LIMIT = 10;
 const AUTH_FAIL_WINDOW = 5 * 60 * 1000;
 
+// v3.20.0 added the `attachment` field on task messages (images/voice notes).
+// Older miner binaries destructure only {task_id, prompt, model} and would
+// silently drop the attachment, so media tasks must only be handed to miners
+// that advertised app_version >= 3.20.0 at auth. No version = old binary.
+function minerSupportsMedia(version) {
+  if (!version) return false;
+  const [maj = 0, min = 0] = String(version).replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+  return maj > 3 || (maj === 3 && min >= 20);
+}
+
 // Resolve the real client IP behind the reverse proxy.
 // Trust order matters: nginx overwrites X-Real-IP and APPENDS the real peer to
 // X-Forwarded-For, so the LAST hop is the only trustworthy one. Client-supplied
@@ -150,6 +160,11 @@ class WSServer {
 
   async handleAuth(ws, msg) {
     const { wallet_address, miner_token, e2e } = msg;
+    // v3.20.0: miners advertise their version at auth so media dispatch can
+    // target only miners that understand the `attachment` field on tasks.
+    const appVersion = typeof msg.app_version === 'string' && msg.app_version
+      ? msg.app_version.slice(0, 32)
+      : null;
 
     if (this.authRateLimited(ws)) return;
 
@@ -244,6 +259,7 @@ class WSServer {
     if (existing && existing.ws === ws) {
       existing.lastHeartbeat = Date.now();
       existing.status = 'online';
+      if (appVersion) existing.app_version = appVersion;
       if (e2e && miner_token) {
         existing.e2eKey = deriveKey(miner_token);
       }
@@ -270,6 +286,11 @@ class WSServer {
       logger.info({ minerId, oldIp: existing.ws && existing.ws._clientIp, newIp: ws._clientIp }, 'Miner session replaced');
     }
 
+    if (appVersion) {
+      await pool.query('UPDATE miners SET app_version = $1 WHERE id = $2', [appVersion, minerId])
+        .catch((err) => logger.warn({ err, minerId }, 'Failed to persist miner app_version'));
+    }
+
     this.miners.set(minerId, {
       id: minerId,
       ws,
@@ -278,6 +299,7 @@ class WSServer {
       models: [],
       status: 'online',
       current_model: (existing && existing.current_model) || null,
+      app_version: appVersion || (existing && existing.app_version) || null,
       // E2E key only when THIS auth advertised e2e support (never inherit from
       // a replaced session — an old miner binary replacing it must stay plaintext)
       e2eKey: (e2e && miner_token) ? deriveKey(miner_token) : null
@@ -430,21 +452,37 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
     const miner = this.findMinerByWs(ws);
     if (!miner) return;
 
-    // Find pending task for this miner
+    // Find pending task for this miner. Older miners must not pick up media
+    // tasks (they would silently drop the attachment) — those stay pending
+    // until a v3.20.0+ miner asks or the request path fails explicitly.
+    const mediaCapable = minerSupportsMedia(miner.app_version);
     const result = await pool.query(
-      "SELECT id, prompt, model FROM tasks WHERE miner_id = $1 AND status = 'pending' ORDER BY created_at ASC LIMIT 1",
+      `SELECT id, prompt, prepared_prompt, media, model FROM tasks
+        WHERE miner_id = $1 AND status = 'pending'
+        ORDER BY created_at ASC LIMIT 50`,
       [miner.id]
     );
 
-    if (result.rows.length > 0) {
-      const task = result.rows[0];
-      await pool.query("UPDATE tasks SET status = 'processing' WHERE id = $1", [task.id]);
-      ws.send(JSON.stringify({
+    for (const task of result.rows) {
+      const needsMedia = task.media && (task.media.type === 'image' || task.media.type === 'audio');
+      if (needsMedia && !mediaCapable) continue;
+
+      const upd = await pool.query(
+        "UPDATE tasks SET status = 'processing' WHERE id = $1 AND status = 'pending' RETURNING id",
+        [task.id]
+      );
+      if (upd.rows.length === 0) continue; // another connection claimed it
+      const payload = {
         type: 'task',
         task_id: task.id,
-        prompt: miner.e2eKey ? encrypt(miner.e2eKey, task.prompt) : task.prompt,
+        prompt: miner.e2eKey ? encrypt(miner.e2eKey, task.prepared_prompt || task.prompt) : (task.prepared_prompt || task.prompt),
         model: task.model
-      }));
+      };
+      if (needsMedia) {
+        payload.attachment = miner.e2eKey ? encrypt(miner.e2eKey, JSON.stringify(task.media)) : task.media;
+      }
+      ws.send(JSON.stringify(payload));
+      return;
     }
   }
 
@@ -458,7 +496,9 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
   // Dispatch task to a specific miner
   // NOTE: CPU-only miners need ~2-3 min for an 8B model (model load + inference),
   // so the timeout must stay well above the 60s it used to be.
-  async dispatchTask(minerId, taskId, prompt, model, timeoutMs = 180000) {
+  // media (image/audio {type,name,mime,data} base64) rides as `attachment`,
+  // encrypted the same way the prompt is when E2E is negotiated.
+  async dispatchTask(minerId, taskId, prompt, model, media = null, timeoutMs = 180000) {
     return new Promise((resolve, reject) => {
       const miner = this.miners.get(minerId);
       if (!miner) {
@@ -473,20 +513,30 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
 
       this.taskCallbacks.set(taskId, { resolve, reject, timeout });
 
-      miner.ws.send(JSON.stringify({
+      const payload = {
         type: 'task',
         task_id: taskId,
         prompt: miner.e2eKey ? encrypt(miner.e2eKey, prompt) : prompt,
         model
-      }));
+      };
+      if (media) {
+        payload.attachment = miner.e2eKey
+          ? encrypt(miner.e2eKey, JSON.stringify(media))
+          : media;
+      }
+      miner.ws.send(JSON.stringify(payload));
     });
   }
 
-  // Find best available miner for a model (resource-aware)
-  findMinerForModel(model) {
+  // Find best available miner for a model (resource-aware).
+  // needsMedia: only miners running >= 3.20.0 (which understand `attachment`).
+  findMinerForModel(model, needsMedia = false) {
+    const usable = (miner) =>
+      miner.status === 'online' && (!needsMedia || minerSupportsMedia(miner.app_version));
+
     // Prefer exact model match on online miners
     for (const [minerId, miner] of this.miners) {
-      if (miner.status === 'online' && miner.current_model === model) {
+      if (usable(miner) && miner.current_model === model) {
         return { minerId, model: miner.current_model };
       }
     }
@@ -496,7 +546,7 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
     }
     // Fallback: any online miner (use its model)
     for (const [minerId, miner] of this.miners) {
-      if (miner.status === 'online') {
+      if (usable(miner)) {
         return { minerId, model: miner.current_model };
       }
     }

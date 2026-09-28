@@ -89,6 +89,9 @@ class MinerWebSocket {
     // v3.13.0+: each server-miner has its own unique token, and the token
     // IS the miner identity — no machine_id needed.
     const authMsg = { type: 'auth' };
+    // v3.20.0: the server only routes media tasks (images/voice notes) to
+    // miners that advertise a version new enough to handle `attachment`.
+    authMsg.app_version = require('../../package.json').version;
     if (this.walletAddress.startsWith('kz_')) {
       authMsg.miner_token = this.walletAddress;
       authMsg.e2e = 1;
@@ -139,7 +142,7 @@ class MinerWebSocket {
   }
 
   async handleTask(msg) {
-    const { task_id, prompt, model } = msg;
+    const { task_id, prompt, model, attachment } = msg;
     console.log(`📥 Received task #${task_id} (${model})`);
 
     try {
@@ -151,7 +154,21 @@ class MinerWebSocket {
         plainPrompt = decrypt(deriveKey(this.walletAddress), prompt);
       }
 
-      const result = await this.onTask(plainPrompt, model);
+      // v3.20.0: optional media payload — { type, name, mime, data(base64) }.
+      // Encrypted as a JSON string when e2e is negotiated, plain object otherwise.
+      let media = null;
+      if (attachment) {
+        let plainAttachment = attachment;
+        if (typeof attachment === 'string' && isEncrypted(attachment)) {
+          if (!this.walletAddress.startsWith('kz_')) {
+            throw new Error('Encrypted attachment but no e2e key');
+          }
+          plainAttachment = decrypt(deriveKey(this.walletAddress), attachment);
+        }
+        media = typeof plainAttachment === 'string' ? JSON.parse(plainAttachment) : plainAttachment;
+      }
+
+      const result = await this.onTask(plainPrompt, model, media);
 
       if (!result || !result.response) {
         throw new Error('Empty response from model');

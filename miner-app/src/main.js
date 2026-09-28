@@ -83,8 +83,11 @@ app.whenReady().then(() => {
 
   wsClient = new MinerWebSocket(
     config.miner_token || process.env.WALLET_ADDRESS || '',
-    async (prompt, model) => {
+    async (prompt, model, media) => {
       ollamaService.setModel(model);
+      if (media) {
+        return ollamaService.chat(prompt, model, media);
+      }
       const result = await ollamaService.generate(prompt, model);
       return result;
     }
