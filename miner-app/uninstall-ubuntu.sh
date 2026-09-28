@@ -8,7 +8,7 @@
 
 set -e
 
-KRELZ_VERSION="3.21.0"
+KRELZ_VERSION="3.22.0"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -18,6 +18,30 @@ NC='\033[0m'
 BOLD='\033[1m'
 
 INSTALL_DIR="$HOME/krelz-miner"
+
+# Tell the Krelz server this machine is gone so the row leaves "My Miners"
+# (earnings stay in History instead of lingering as offline forever).
+# The token lives in the config we are about to delete, so read it first.
+# Never blocks or fails the uninstall — worst case the user removes the
+# entry from the dashboard by hand.
+notify_uninstall() {
+  local cfg="$INSTALL_DIR/miner-app/config.json"
+  local token=""
+  if [ -f "$cfg" ]; then
+    token=$(grep -o '"miner_token"[[:space:]]*:[[:space:]]*"[^"]*"' "$cfg" | head -n 1 | sed 's/.*"miner_token"[[:space:]]*:[[:space:]]*"//; s/"$//')
+  fi
+  if [ -z "$token" ]; then
+    echo -e "  ${YELLOW}! No saved miner token - remove this miner from the dashboard (My Miners)${NC}"
+    return 0
+  fi
+  if curl -fsS --max-time 15 -X POST https://krelz.xyz/api/miners/unregister \
+      -H 'Content-Type: application/json' \
+      -d "{\"miner_token\":\"${token}\"}" > /dev/null 2>&1; then
+    echo -e "  ${GREEN}✓ Removed from your Krelz dashboard (earnings kept in History)${NC}"
+  else
+    echo -e "  ${YELLOW}! Could not reach krelz.xyz - remove it from the dashboard (My Miners)${NC}"
+  fi
+}
 SUCCESS=""
 
 echo ""
@@ -38,6 +62,8 @@ case $choice in
   1)
     echo ""
     echo -e "${YELLOW}Removing miner...${NC}"
+
+    notify_uninstall
 
     # Stop service
     if systemctl is-active --quiet krelz-miner 2>/dev/null; then
@@ -83,6 +109,8 @@ case $choice in
   2)
     echo ""
     echo -e "${RED}Removing everything...${NC}"
+
+    notify_uninstall
 
     # Stop miner service
     if systemctl is-active --quiet krelz-miner 2>/dev/null; then

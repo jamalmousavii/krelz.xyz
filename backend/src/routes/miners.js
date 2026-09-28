@@ -62,17 +62,24 @@ router.post('/', authenticate, async (req, res) => {
 
 // GET /api/miners/mine — get current user's miners (all, incl. offline)
 // v3.14.0: hide miner_token after first successful connect (token_used_at set).
+// GET /api/miners/mine — active miners of the logged-in user.
+// v3.22.0: excludes removed rows AND miners with no contact for > 10 days
+// (they live in GET /api/miners/history and come back automatically if the
+// miner reconnects).
 router.get('/mine', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
 
     const result = await pool.query(
       `SELECT id, wallet_address, gpu_model, ram, cpu, models, current_model,
-              status, uptime, total_tasks, earnings, created_at,
+              status, uptime, total_tasks, earnings, created_at, last_seen,
               gpu_usage, ram_usage, cpu_usage, disk_usage,
               machine_id, name, miner_token, token_used_at,
               CASE WHEN token_used_at IS NOT NULL THEN NULL ELSE miner_token END AS visible_token
-       FROM miners WHERE user_id = $1 AND (status IS NULL OR status != 'removed')
+       FROM miners
+       WHERE user_id = $1
+         AND (status IS NULL OR status != 'removed')
+         AND COALESCE(last_seen, created_at) >= NOW() - INTERVAL '10 days'
        ORDER BY created_at ASC`,
       [userId]
     );
@@ -216,7 +223,7 @@ router.delete('/mine/:id', authenticate, async (req, res) => {
     }
 
     const result = await pool.query(
-      `UPDATE miners SET status = 'removed', updated_at = CURRENT_TIMESTAMP
+      `UPDATE miners SET status = 'removed', uninstalled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
        WHERE id = $1 AND user_id = $2 AND (status IS NULL OR status != 'removed')
        RETURNING id`,
       [minerId, userId]
@@ -297,7 +304,7 @@ router.post('/setup', async (req, res) => {
         `UPDATE miners SET gpu_model = $1, ram = $2, cpu = $3, models = $4,
                 machine_id = COALESCE($5, machine_id), name = COALESCE($6, name),
                 status = 'online', token_used_at = COALESCE(token_used_at, CURRENT_TIMESTAMP),
-                updated_at = CURRENT_TIMESTAMP
+                last_seen = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
          WHERE id = $7 RETURNING *`,
         [gpu_model, ram, cpu, modelsJson, machine_id || null, (name || '').trim() || null, minerId]
       );
@@ -322,7 +329,7 @@ router.post('/setup', async (req, res) => {
         );
         if (owned.rows.length === 1) {
           const result = await pool.query(
-            `UPDATE miners SET gpu_model = $1, ram = $2, cpu = $3, models = $4, status = 'online', updated_at = CURRENT_TIMESTAMP
+            `UPDATE miners SET gpu_model = $1, ram = $2, cpu = $3, models = $4, status = 'online', last_seen = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
              WHERE id = $5 RETURNING *`,
             [gpu_model, ram, cpu, modelsJson, owned.rows[0].id]
           );
@@ -345,6 +352,80 @@ router.post('/setup', async (req, res) => {
 // POST /api/miners/register — DISABLED (use /setup with email + token instead)
 router.post('/register', authenticate, async (req, res) => {
   return res.status(403).json({ error: 'Manual registration disabled. Use /api/miners/setup with email and miner token.' });
+});
+
+// POST /api/miners/unregister — called by uninstall-*.sh (v3.22.0).
+// The miner_token itself is the credential (same trust model as /setup): it
+// proves control of that machine. Idempotent — an unknown or already-removed
+// token still answers success so uninstall never fails on the server side.
+router.post('/unregister', async (req, res) => {
+  try {
+    const { miner_token } = req.body || {};
+    if (!miner_token || typeof miner_token !== 'string') {
+      return res.status(400).json({ error: 'miner_token required' });
+    }
+
+    const result = await pool.query(
+      `UPDATE miners SET status = 'removed', uninstalled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE miner_token = $1 AND (status IS NULL OR status != 'removed')
+       RETURNING id`,
+      [miner_token]
+    );
+
+    if (result.rows.length > 0) {
+      // Drop a live WS connection so dispatch stops immediately.
+      const wsServer = req.app.get('wsServer');
+      if (wsServer && wsServer.miners && wsServer.miners.get(result.rows[0].id)) {
+        try {
+          const entry = wsServer.miners.get(result.rows[0].id);
+          wsServer.miners.delete(result.rows[0].id);
+          if (entry.ws) entry.ws.close();
+        } catch (e) {}
+      }
+      invalidateCache('/api/miners');
+      invalidateCache('/api/stats');
+    }
+
+    res.json({ success: true, unregistered: result.rows.length > 0 });
+  } catch (err) {
+    logger.error({ err }, 'Miner unregister failed');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/miners/history — miners removed from the dashboard or by the
+// uninstall script, plus miners with no contact for > 10 days (auto-archived;
+// they return to /mine automatically if they ever reconnect).
+router.get('/history', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const result = await pool.query(
+      `SELECT id, name, gpu_model, status, total_tasks, earnings,
+              created_at, last_seen, uninstalled_at,
+              CASE WHEN status = 'removed' THEN 'uninstalled' ELSE 'offline>10d' END AS reason
+       FROM miners
+       WHERE user_id = $1
+         AND (status = 'removed'
+              OR COALESCE(last_seen, created_at) < NOW() - INTERVAL '10 days')
+       ORDER BY COALESCE(uninstalled_at, last_seen, created_at) DESC`,
+      [userId]
+    );
+
+    // Summary over ALL miners ever added by this user (active included).
+    const summary = await pool.query(
+      `SELECT COUNT(*)::int AS total_added,
+              COALESCE(SUM(total_tasks), 0)::int AS total_tasks,
+              COALESCE(SUM(earnings), 0)::float AS total_earnings
+       FROM miners WHERE user_id = $1`,
+      [userId]
+    );
+
+    res.json({ success: true, miners: result.rows, summary: summary.rows[0] });
+  } catch (err) {
+    logger.error({ err }, 'Miner history route failed');
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // PUT /api/miners/:id/heartbeat — requires the miner's own token (v3.18.4)
@@ -373,6 +454,7 @@ router.put('/:id/heartbeat', async (req, res) => {
            uptime = CASE WHEN $1 = 'online' THEN LEAST(uptime + 0.1, 100) ELSE uptime END,
            total_tasks = total_tasks + $2,
            current_model = COALESCE($4, current_model),
+           last_seen = CURRENT_TIMESTAMP,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $3 AND (status IS NULL OR status != 'removed')
        RETURNING *`,

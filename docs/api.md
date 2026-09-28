@@ -181,6 +181,14 @@
 ### `GET /api/miners/mine`
 
 ماینرهای خودِ کاربر (به‌جز `removed`)؛ `miner_token` بعد از اولین اتصال `null` می‌شود.
+از `v3.22.0` ماینرهایی که بیش از **۱۰ روز** است تماس نگرفته‌اند هم از این لیست حذف و به History می‌روند (با اتصال دوباره خودبه‌خود برمی‌گردند).
+
+### `GET /api/miners/history` (نیازمند JWT)
+
+تاریخچه ماینرها: ماینرهای `removed` + ماینرهای بیش از ۱۰ روز آفلاین.
+
+- هر ردیف: `id`, `name`, `gpu_model`, `total_tasks`, `earnings`, `created_at`, `last_seen`, `uninstalled_at`, `reason` (`uninstalled` | `offline>10d`)
+- `summary`: `total_added`, `total_tasks`, `total_earnings` (روی همه ماینرهای کاربر)
 
 ### متدهای مدیریت (نیازمند JWT و مالکیت)
 
@@ -189,7 +197,7 @@
 | `PUT /api/miners/mine/model` | تغییر مدل (`model`, `miner_id` اختیاری) |
 | `PUT /api/miners/mine/:id` | تغییر نام |
 | `PUT /api/miners/mine/:id/token` | ساخت توکن جدید (نصب مجدد) |
-| `DELETE /api/miners/mine/:id` | حذف نرم — تاریخچه محفوظ می‌ماند |
+| `DELETE /api/miners/mine/:id` | حذف نرم — `uninstalled_at` ثبت، تاریخچه در History محفوظ می‌ماند |
 
 ### `POST /api/token` (نیازمند JWT)
 
@@ -204,6 +212,14 @@
 - توکنِ ماینرِ اختصاصی → بلافاصله ثبت/به‌روزرسانی.
 - توکنِ سطح حساب → فقط وقتی کاربر دقیقاً یک ماینر فعال دارد؛ در غیر این صورت `409`.
 - ماینرِ `removed` دوباره زنده نمی‌شود → `401`.
+
+### `POST /api/miners/unregister` (عمومی، با توکن)
+
+```json
+{ "miner_token": "kz_..." }
+```
+
+از `v3.22.0` — توسط اسکریپت‌های `uninstall-*.sh` قبل از حذف فایل‌ها صدا زده می‌شود: ماینر `removed` + `uninstalled_at` ثبت و اتصال WS آن بسته می‌شود. **Idempotent**: توکل نامعتبر/تکراری هم `200 { success: true, unregistered: false }` برمی‌گرداند تا uninstall هرگز به‌خاطر سرور شکست نخورد.
 
 ### `PUT /api/miners/:id/heartbeat`
 
@@ -282,6 +298,7 @@
 | `GET /api/models/categories` | دسته‌بندی‌ها |
 | `GET /api/leaderboard/miners` | ۵۰ ماینر برتر |
 | `GET /api/leaderboard/users` | ۵۰ کاربر برتر |
+| `GET /api/leaderboard/mine` | رتبه خودِ کاربر بین ماینرها (نیازمند JWT؛ `RANK()` روی درآمد) |
 
 ---
 

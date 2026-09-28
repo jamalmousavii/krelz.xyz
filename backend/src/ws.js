@@ -201,7 +201,7 @@ class WSServer {
         minerId = minerRow.rows[0].id;
         // v3.14.0: first successful auth marks token as used (hide from profile)
         await pool.query(
-          "UPDATE miners SET status = 'online', token_used_at = COALESCE(token_used_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+          "UPDATE miners SET status = 'online', token_used_at = COALESCE(token_used_at, CURRENT_TIMESTAMP), last_seen = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
           [minerId]
         );
         invalidateCache('/api/miners');
@@ -222,7 +222,7 @@ class WSServer {
         );
         if (owned.rows.length === 1) {
           minerId = owned.rows[0].id;
-          await pool.query("UPDATE miners SET status = 'online', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [minerId]);
+          await pool.query("UPDATE miners SET status = 'online', last_seen = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1", [minerId]);
         } else if (owned.rows.length > 1) {
           ws.send(JSON.stringify({ type: 'auth_error', message: 'Multiple miners found. Use the per-miner token from your profile for this machine.' }));
           return;
@@ -307,7 +307,7 @@ class WSServer {
 
     // Update DB (v3.14.0: also mark token_used on first auth)
     await pool.query(
-      "UPDATE miners SET status = 'online', token_used_at = COALESCE(token_used_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+      "UPDATE miners SET status = 'online', token_used_at = COALESCE(token_used_at, CURRENT_TIMESTAMP), last_seen = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
       [minerId]
     );
     invalidateCache('/api/miners');
@@ -348,6 +348,7 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
              ram_usage = $5,
              cpu_usage = $6,
              disk_usage = $7,
+             last_seen = CURRENT_TIMESTAMP,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = $2`,
         [statusValue, miner.id, current_model,

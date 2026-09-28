@@ -51,12 +51,14 @@ export default function Miners() {
   const [regenTokenVal, setRegenTokenVal] = useState('');
   const [loading, setLoading] = useState(true);
   const [copiedInstall, setCopiedInstall] = useState(null);
+  const [history, setHistory] = useState(null);
 
   const { ready, user } = useAuth();
 
   useEffect(() => {
     if (user) {
       fetchMiners();
+      fetchHistory();
       if (!localStorage.getItem('krelz-guide-seen')) {
         setGuideForAdd(false);
         setShowGuideModal(true);
@@ -72,6 +74,16 @@ export default function Miners() {
       if (data.success) setMiners(data.miners || (data.miner ? [data.miner] : []));
     } catch (err) {}
   };
+
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch('/api/miners/history', { headers: authHeaders() });
+      const data = await res.json();
+      if (data.success) setHistory(data);
+    } catch (err) {}
+  };
+
+  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
 
   const switchModel = async (modelId, minerId) => {
     try {
@@ -119,6 +131,7 @@ export default function Miners() {
         setMiners(prev => prev.filter(m => m.id !== minerId));
         setMinerMsg(`✅ ${minerName || ''} ${t('profile.minerRemoved')}`);
         fetchMiners();
+        fetchHistory();
       } else {
         setMinerMsg(`❌ ${data.error}`);
       }
@@ -450,6 +463,47 @@ export default function Miners() {
             </div>
           )}
         </div>
+
+        {/* History: uninstalled + offline >10 days (v3.22.0) */}
+        {history && history.miners?.length > 0 && (
+          <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-5 md:p-6 mt-6">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-lg font-bold text-gray-800">📜 {t('profile.historyTitle')}</h2>
+              <span className="text-xs text-gray-400">
+                {t('profile.historySummary')
+                  .replace('{added}', history.summary?.total_added ?? history.miners.length)
+                  .replace('{tasks}', history.summary?.total_tasks ?? 0)
+                  .replace('{earnings}', Number(history.summary?.total_earnings || 0).toFixed(4))}
+              </span>
+            </div>
+            <div className="space-y-2 mt-3">
+              {history.miners.map(h => (
+                <div key={h.id} className="bg-sky-50 rounded-lg p-3 border border-sky-100 flex items-center gap-3">
+                  <div className="text-xl">{h.reason === 'uninstalled' ? '🗑️' : '🕐'}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-gray-800 font-bold text-sm truncate">{h.name || h.gpu_model || `#${h.id}`}</div>
+                    <div className="text-gray-400 text-xs">
+                      {h.gpu_model ? `${h.gpu_model} • ` : ''}
+                      {t('profile.historyRowMeta')
+                        .replace('{tasks}', h.total_tasks || 0)
+                        .replace('{earnings}', Number(h.earnings || 0).toFixed(4))}
+                    </div>
+                    <div className="text-gray-400 text-xs">
+                      {t('profile.historyAddedLabel')} {fmtDate(h.created_at)}
+                      {' • '}
+                      {h.uninstalled_at || h.reason === 'uninstalled'
+                        ? `${t('profile.historyRemovedLabel')} ${fmtDate(h.uninstalled_at || h.last_seen || h.created_at)}`
+                        : `${t('profile.historyLastSeenLabel')} ${fmtDate(h.last_seen || h.created_at)}`}
+                    </div>
+                  </div>
+                  <span className={`text-xs font-bold px-2 py-1 rounded-full flex-shrink-0 ${h.reason === 'uninstalled' ? 'bg-red-50 text-red-500' : 'bg-amber-50 text-amber-600'}`}>
+                    {h.reason === 'uninstalled' ? t('profile.reasonUninstalled') : t('profile.reasonStale')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

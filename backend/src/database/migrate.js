@@ -339,6 +339,32 @@ const migrate = async () => {
     `);
     console.log('✅ Column tasks.media + miners.app_version added');
 
+    // === Miner history (v3.22.0) ===
+    // miners.last_seen: last time the miner actually talked to us (auth /
+    // heartbeat / resource report). NOT updated_at — that also moves on
+    // rename/soft-delete. The dashboard uses COALESCE(last_seen, created_at)
+    // to archive miners offline for > 10 days into the history section.
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE miners ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    // miners.uninstalled_at: when the miner was removed (dashboard 🗑️ or the
+    // uninstall script calling POST /api/miners/unregister).
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE miners ADD COLUMN IF NOT EXISTS uninstalled_at TIMESTAMP;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    // Backfill: existing rows have no last_seen — treat last known contact as
+    // updated_at so the 10-day archive rule starts from real data.
+    await client.query(
+      'UPDATE miners SET last_seen = updated_at WHERE last_seen IS NULL AND updated_at IS NOT NULL'
+    );
+    console.log('✅ Columns miners.last_seen + miners.uninstalled_at added');
+
     // === Daily Free Tokens ===
     await client.query(`
       CREATE TABLE IF NOT EXISTS daily_tokens (

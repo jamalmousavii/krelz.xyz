@@ -27,7 +27,7 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Miner CLI Mode** — Headless CLI for servers (no Electron needed)
 - **Resource Monitoring** — CPU, RAM, GPU VRAM, Disk usage tracking
 - **Auth System** — Google OAuth + email/password, password reset
-- **Uninstall Scripts** — Clean removal for Ubuntu/Debian and RedHat/Fedora
+- **Uninstall Scripts** — Clean removal for Ubuntu/Debian and RedHat/Fedora; unregisters from your dashboard (v3.22.0) — earnings stay in the Miner History section on `/miners`
 - **Smart Model Fallback** — Auto-selects closest available model when exact model not found
 - **Free Cloud AI** — Round-robin routing across Groq, OpenRouter, Cerebras, Cloudflare (free tiers)
 - **Install Self-Cleanup (v3.10.0)** — Install scripts auto-delete after successful installation
@@ -137,7 +137,7 @@ krelz.xyz/
 │   │   ├── index.js           # Chat homepage (chat-first; fullscreen frame; attachments/voice v3.20.0)
 │   │   ├── chat.js            # Redirects to / (chat is homepage now)
 │   │   ├── profile.js         # Dashboard (balance, daily tokens, leaderboard rank card)
-│   │   ├── miners.js          # Miner management + Quick Install copy (v3.16.0)
+│   │   ├── miners.js          # Miner management + Quick Install copy + history (v3.22.0)
 │   │   ├── settings.js        # Settings (USD wallet, 33-lang dropdown, password)
 │   │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)
 │   │   ├── explorer.js        # Network explorer (not in nav)

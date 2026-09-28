@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.22.0] - 2026-09-28
+
+### Added
+- **Uninstall now unregisters** — `uninstall-ubuntu.sh` / `uninstall-redhat.sh` read the saved `miner_token` from `config.json` before deleting it and call the new `POST /api/miners/unregister` (idempotent, token-authenticated, closes any live WS). The miner row leaves **My Miners** immediately instead of lingering as offline forever.
+- **Miner History section** on `/miners` — `GET /api/miners/history` (authenticated) lists uninstalled miners and miners with no contact for >10 days, each with name/GPU, tasks, pool earnings, added date, removed/last-seen date and a reason badge (`uninstalled` / `offline>10d`), plus an all-time summary (miners added, total tasks, total earned).
+- **Automatic archiving of stale miners** — `GET /api/miners/mine` now excludes miners whose `COALESCE(last_seen, created_at)` is older than 10 days (no cron: a filter at query time; a reconnecting miner returns to the active list automatically).
+
+### Changed
+- `miners.last_seen` column (touched only by real miner traffic: WS auth, heartbeats, `/setup`, HTTP heartbeat — not by rename/remove) + `miners.uninstalled_at` set by both the dashboard 🗑️ button and the uninstall script; backfilled from `updated_at` on migrate.
+
 ## [3.21.0] - 2026-09-28
 
 ### Added

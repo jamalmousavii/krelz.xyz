@@ -59,7 +59,7 @@ frontend/
 │   ├── index.js           # Chat homepage (chat-first; fullscreen frame; attachments/voice v3.20.0)
 │   ├── chat.js            # Redirects to /
 │   ├── profile.js         # Dashboard (balance, daily tokens, leaderboard rank card)
-│   ├── miners.js          # Miner mgmt + Quick Install copy buttons (v3.16.0)
+│   ├── miners.js          # Miner mgmt + Quick Install copy + history (v3.22.0)
 │   ├── settings.js         # Settings (USD wallet, 33-lang dropdown, password)
 │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)
 │   ├── explorer.js        # Network explorer (not in main nav)
