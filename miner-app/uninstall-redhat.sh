@@ -8,6 +8,8 @@
 
 set -e
 
+KRELZ_VERSION="3.19.0"
+
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
@@ -20,7 +22,7 @@ SUCCESS=""
 
 echo ""
 echo -e "${RED}========================================${NC}"
-echo -e "${RED}  Krelz Miner Uninstaller (RedHat/Fedora)${NC}"
+echo -e "${RED}  Krelz Miner Uninstaller (RedHat/Fedora) v${KRELZ_VERSION}${NC}"
 echo -e "${RED}========================================${NC}"
 echo ""
 echo -e "  What do you want to remove?"

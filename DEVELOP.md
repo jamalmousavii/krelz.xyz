@@ -84,7 +84,7 @@ Node.js/Express API with PostgreSQL + Redis.
 ```
 backend/
 ├── src/
-│   ├── server.js          # Entry point (v3.18.4)
+│   ├── server.js          # Entry point (v3.19.0)
 │   ├── models.js          # AI models + per-model pricing
 │   ├── cache.js           # Redis caching
 │   ├── database/

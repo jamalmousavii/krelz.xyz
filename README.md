@@ -28,8 +28,8 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Uninstall Scripts** — Clean removal for Ubuntu/Debian and RedHat/Fedora
 - **Smart Model Fallback** — Auto-selects closest available model when exact model not found
 - **Free Cloud AI** — Round-robin routing across Groq, OpenRouter, Cerebras, Cloudflare (free tiers)
-- **Install Self-Cleanup** — Install scripts auto-delete after successful installation
-- **Uninstall Self-Cleanup** — Uninstall scripts delete themselves after a successful removal (cancel or a failed step keeps the file so it can be rerun)
+- **Install Self-Cleanup (v3.10.0)** — Install scripts auto-delete after successful installation
+- **Uninstall Self-Cleanup (v3.19.0)** — Uninstall scripts delete themselves after a successful removal (cancel or a failed step keeps the file so it can be rerun)
 - **Miner Earnings** — 90% of paid usage goes to miners
 - **Multi-Miner Accounts** — unlimited miners per user, each with its own unique token; add/remove/rename from `/miners`, no cap
 - **Internationalization (v3.16.0)** — 33 languages with country flags; browser auto-detect; session-persisted user choice; RTL for FA/AR/HE/UR
@@ -38,7 +38,6 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Chat-First Homepage (v3.15.0)** — Landing page IS the chat: centered model picker + input; after start, history sidebar left + input bottom
 - **Split Pages (v3.15.0)** — Dashboard (`/profile`), Miners (`/miners`), Settings (`/settings`) separated
 - **Light Sky Theme (v3.15.0)** — Sky-blue light UI across all pages
-- **Install Self-Cleanup** — Install scripts auto-delete after successful installation (`rm -f "$0"`)
 - **Miner Docs vs Interactive (v3.16.0)** — `/miner`: full install/connect/delete guide + GitHub; `/miners`: copy-command Quick Install + miner cards
 
 ## Quick Install (Miner)
@@ -114,7 +113,7 @@ Every user gets **1,000 free AI inference tokens per day**:
 krelz.xyz/
 ├── backend/                    # API Server (Node.js/Express)
 │   ├── src/
-│   │   ├── server.js          # Entry point (v3.18.4)
+│   │   ├── server.js          # Entry point (v3.19.0)
 │   │   ├── models.js          # AI models + pricing
 │   │   ├── database/
 │   │   │   ├── pool.js        # PostgreSQL connection

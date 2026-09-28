@@ -9,6 +9,8 @@
 
 set -e
 
+KRELZ_VERSION="3.19.0"
+
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
@@ -74,7 +76,7 @@ SCRIPT_START=$(date +%s)
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  Krelz Network Miner Installer (RedHat/Fedora)${NC}"
+echo -e "${GREEN}  Krelz Network Miner Installer (RedHat/Fedora) v${KRELZ_VERSION}${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 

@@ -15,7 +15,9 @@ export default function Home() {
   const [selectedModel, setSelectedModel] = useState('llama3.1:8b');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
-  const messagesEndRef = useRef(null);
+  const messagesRef = useRef(null);
+  const inputRef = useRef(null);
+  const instantScrollRef = useRef(false);
 
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
@@ -44,9 +46,37 @@ export default function Home() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  const scrollToBottom = (instant = false) => {
+    const el = messagesRef.current;
+    if (!el) return;
+    if (instant) {
+      // After a paint (and a second frame for layout) so refreshed/loaded
+      // sessions land on the latest message even before fonts settle.
+      requestAnimationFrame(() => requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; }));
+    } else {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    }
+  };
+
+  // Always show the latest message: instantly on session load / refresh,
+  // smoothly on every new message or typing indicator — even if the user
+  // scrolled up while waiting for the reply.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chat, loading]);
+    if (!hasStarted) return;
+    const instant = instantScrollRef.current;
+    instantScrollRef.current = false;
+    scrollToBottom(instant);
+  }, [chat.length, loading]);
+
+  // Keep the input ready for the next message: refocus when a reply lands
+  // or a session is loaded, but never steal focus from another field
+  // (subject rename input, dropdown) — activeElement is only body when the
+  // user is not typing anywhere.
+  useEffect(() => {
+    if (loading || dropdownOpen) return;
+    const active = document.activeElement;
+    if (!active || active === document.body) inputRef.current?.focus();
+  }, [loading, hasStarted, dropdownOpen]);
 
   const authHeaders = (tkn) => ({
     'Content-Type': 'application/json',
@@ -87,6 +117,7 @@ export default function Home() {
         data.messages.forEach(m => {
           if (m.content) msgs.push({ role: m.role, content: m.content });
         });
+        instantScrollRef.current = true;
         setChat(msgs);
       }
     } catch (err) { console.error('Failed to load session'); }
@@ -153,11 +184,12 @@ export default function Home() {
   };
 
   const sendMessage = async () => {
-    if (!message.trim()) return;
+    if (loading || !message.trim()) return;
     const userMessage = message;
     setMessage('');
     setChat(prev => [...prev, { role: 'user', content: userMessage }]);
     setLoading(true);
+    inputRef.current?.focus();
 
     try {
       const res = await fetch('/api/chat', {
@@ -270,8 +302,8 @@ export default function Home() {
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
                 placeholder={t('chat.placeholder')}
-                className="flex-1 bg-sky-50 text-gray-800 placeholder-gray-400 border border-sky-100 px-4 md:px-6 py-3 md:py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 text-sm md:text-base"
-                disabled={loading}
+                className="flex-1 bg-sky-50 text-gray-800 placeholder-gray-500 border border-sky-100 px-4 md:px-6 py-3 md:py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 text-sm md:text-base"
+                autoFocus
               />
               <button
                 onClick={sendMessage}
@@ -380,7 +412,7 @@ export default function Home() {
           )}
 
           {/* Messages */}
-          <div className={`bg-white border border-sky-100 ${isLoggedIn && activeSessionId ? 'rounded-b-xl' : 'rounded-xl'} p-3 md:p-5 flex-1 overflow-y-auto mb-3 shadow-sm`}>
+          <div ref={messagesRef} className={`bg-white border border-sky-100 ${isLoggedIn && activeSessionId ? 'rounded-b-xl' : 'rounded-xl'} p-3 md:p-5 flex-1 overflow-y-auto mb-3 shadow-sm`}>
             {chat.map((msg, i) => (
               <div key={i} className={`mb-4 ${msg.role === 'user' ? (isRtl(lang) ? 'text-right' : 'text-left') : (isRtl(lang) ? 'text-left' : 'text-right')}`}>
                 <div className={`inline-block max-w-[85%] md:max-w-[80%] p-3 md:p-4 rounded-2xl text-sm md:text-base ${
@@ -413,20 +445,20 @@ export default function Home() {
                 <div className="inline-block bg-sky-50 text-gray-600 border border-sky-100 p-3 md:p-4 rounded-2xl text-sm md:text-base">{t('chat.typing')}</div>
               </div>
             )}
-            <div ref={messagesEndRef} />
+            <div />
           </div>
 
           {/* Input bar — pinned bottom */}
           <div className="flex flex-col md:flex-row gap-2 md:gap-3">
             <ModelDropdown upward={true} />
             <input
+              ref={inputRef}
               type="text"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
               placeholder={t('chat.placeholder')}
-              className="flex-1 bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-4 md:px-6 py-3 md:py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 text-sm md:text-base shadow-sm"
-              disabled={loading}
+              className="flex-1 bg-white text-gray-800 placeholder-gray-500 border border-sky-200 px-4 md:px-6 py-3 md:py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 text-sm md:text-base shadow-sm"
             />
             <button
               onClick={sendMessage}

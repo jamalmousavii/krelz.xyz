@@ -40,7 +40,7 @@ const he = {
     startChat: 'התחל צ\'אט',
     footer: 'כל הזכויות שמורות.',
     installMetaMask: 'אנא התקן את MetaMask',
-    version: 'v3.18.4',
+    version: 'v3.19.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — פלטפורמת הסקת LLM מבוזרת, גרסה {version}. כל הזכויות שמורות.',
