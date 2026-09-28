@@ -1,5 +1,25 @@
 # Changelog
 
+## [3.23.0] - 2026-09-28
+
+Mobile-first UI pass — the whole site is now usable on a phone.
+
+### Fixed
+- **On-screen keyboard covered the chat composer** (worst iOS bug): while a field is focused, `visualViewport` measurements are applied to the fixed chat frame (`--app-vv-height` / `--app-vv-shift` in `_app.js`, driven from `index.js`), so the input sits *above* the keyboard instead of under it; viewport meta now has `interactive-widget=resizes-content` + `viewport-fit=cover`.
+- **iOS focus zoom** — every input/textarea/select is forced to ≥16px on screens ≤767px (`globals.css`, deliberate `!important` so Tailwind's `text-sm` cannot regress it); inputs never zoom again.
+- **Session sidebar squashed the chat column** to ~0 width on phones — it is now an overlay drawer (85% width + backdrop, closes on session pick ✕/backdrop).
+- **Session delete button was hover-only** (invisible on touch) — always visible on mobile, hidden on desktop until hover/focus; 40px target.
+- Long URLs / unbreakable strings no longer overflow message bubbles (`break-words whitespace-pre-wrap` + `overflow-x-hidden` on the message list) or the profile email (`break-all`).
+- Hamburger menu was clipped by the fixed `100dvh` chat frame — mobile nav is now a **full-screen overlay** (own header + ✕, scrollable, auto-closes on route change).
+
+### Changed
+- **Touch targets ≥40px** across chat (☰ ✕ ✏️ attachment-chip ✕), navbar (44px ☰/✕), tabs and quick-nav pills; `touch-action: manipulation` + tap-highlight removed on interactive elements.
+- **Mobile composer layout** — phone: `[model | 📎🎙]` + `[input | send]` rows; `md:contents` restores the exact single-row desktop layout.
+- Hero input no longer auto-focuses on phones (keyboard popped open during first paint); desktop keeps autofocus.
+- Model dropdown / language dropdown heights capped with `dvh` units so they fit above the keyboard.
+- Wallet stat cards stack (`grid-cols-1 sm:grid-cols-3`) instead of overflowing at 320px; miner guide modal is a scrollable bottom sheet (`max-h-[85dvh]`).
+- **Safe-area insets** for notched phones: chat bottom padding and footer use `env(safe-area-inset-bottom)`.
+
 ## [3.22.0] - 2026-09-28
 
 ### Added

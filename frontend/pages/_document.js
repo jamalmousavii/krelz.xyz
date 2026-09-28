@@ -5,7 +5,10 @@ export default function Document() {
     <Html lang="en" dir="ltr">
       <Head>
         <meta charSet="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        {/* viewport-fit=cover enables env(safe-area-inset-*) for notched iPhones;
+            interactive-widget makes Android resize the layout when the keyboard
+            opens. Neither restricts pinch-zoom (no maximum-scale — keep it that way). */}
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
         <meta name="theme-color" content="#e0f2fe" />
         <meta name="description" content="Krelz Network - Decentralized LLM Inference Network. Earn KRELZ tokens by sharing your GPU power for AI inference." />
         <meta name="keywords" content="decentralized AI, LLM inference, GPU mining, KRELZ, blockchain AI, earn crypto, open source AI" />

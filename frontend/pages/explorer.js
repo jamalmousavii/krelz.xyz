@@ -54,7 +54,7 @@ export default function Explorer() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-4 md:px-6 py-2 md:py-3 rounded-xl transition font-bold whitespace-nowrap text-sm md:text-base ${
+              className={`px-4 md:px-6 py-2 md:py-3 min-h-[40px] rounded-xl transition font-bold whitespace-nowrap text-sm md:text-base ${
                 activeTab === tab.id
                   ? 'bg-sky-500 text-white'
                   : 'bg-white text-gray-600 border border-sky-200 hover:bg-sky-50'

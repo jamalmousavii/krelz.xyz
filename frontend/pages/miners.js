@@ -220,8 +220,8 @@ export default function Miners() {
 
       {/* Guide modal */}
       {showGuideModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
-          <div className="bg-white border border-sky-200 rounded-xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4" role="dialog" aria-modal="true">
+          <div className="bg-white border border-sky-200 rounded-t-2xl sm:rounded-xl p-6 max-w-md w-full space-y-4 shadow-2xl max-h-[85dvh] overflow-y-auto overscroll-contain pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:pb-6">
             <h3 className="text-lg font-bold text-gray-800">{t('profile.minerGuideTitle')}</h3>
             <div className="space-y-2 text-sm text-gray-600">
               <p>{t('profile.minerGuideStep1')}</p>
@@ -247,9 +247,9 @@ export default function Miners() {
       <main className="container mx-auto px-4 md:px-6 py-6 md:py-12 max-w-3xl">
         {/* Quick nav */}
         <div className="flex gap-2 mb-6 flex-wrap">
-          <Link href="/profile" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">📊 {t('nav.dashboard')}</Link>
-          <Link href="/miners" className="px-4 py-2 rounded-lg text-sm font-bold bg-sky-500 text-white">⛏️ {t('nav.miners')}</Link>
-          <Link href="/settings" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⚙️ {t('nav.settings')}</Link>
+          <Link href="/profile" className="px-4 py-2 min-h-[40px] inline-flex items-center rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">📊 {t('nav.dashboard')}</Link>
+          <Link href="/miners" className="px-4 py-2 min-h-[40px] inline-flex items-center rounded-lg text-sm font-bold bg-sky-500 text-white">⛏️ {t('nav.miners')}</Link>
+          <Link href="/settings" className="px-4 py-2 min-h-[40px] inline-flex items-center rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⚙️ {t('nav.settings')}</Link>
         </div>
 
         {/* Quick Install with copy buttons */}

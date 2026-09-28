@@ -78,9 +78,9 @@ export default function Profile() {
       <main className="container mx-auto px-4 md:px-6 py-6 md:py-12 max-w-2xl">
         {/* Quick nav */}
         <div className="flex gap-2 mb-6 flex-wrap">
-          <Link href="/profile" className="px-4 py-2 rounded-lg text-sm font-bold bg-sky-500 text-white">📊 {t('nav.dashboard')}</Link>
-          <Link href="/miners" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⛏️ {t('nav.miners')}</Link>
-          <Link href="/settings" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⚙️ {t('nav.settings')}</Link>
+          <Link href="/profile" className="px-4 py-2 min-h-[40px] inline-flex items-center rounded-lg text-sm font-bold bg-sky-500 text-white">📊 {t('nav.dashboard')}</Link>
+          <Link href="/miners" className="px-4 py-2 min-h-[40px] inline-flex items-center rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⛏️ {t('nav.miners')}</Link>
+          <Link href="/settings" className="px-4 py-2 min-h-[40px] inline-flex items-center rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⚙️ {t('nav.settings')}</Link>
         </div>
 
         {/* Dashboard card */}
@@ -96,12 +96,12 @@ export default function Profile() {
             )}
             <div>
               <h3 className="text-lg font-bold text-gray-800">{user.name || 'User'}</h3>
-              <p className="text-gray-500 text-sm">{user.email}</p>
+              <p className="text-gray-500 text-sm break-all">{user.email}</p>
               <span className="text-xs text-sky-600">{user.role}</span>
             </div>
           </div>
           {usdBalance && (
-            <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
               <div className="bg-sky-50 rounded-xl p-4 text-center border border-sky-100">
                 <div className="text-xl font-bold text-emerald-600">${parseFloat(usdBalance.available || 0).toFixed(2)}</div>
                 <div className="text-gray-500 text-xs">{t('profile.available')}</div>

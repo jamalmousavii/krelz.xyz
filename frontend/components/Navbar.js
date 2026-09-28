@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import { useLanguage } from '../i18n/LanguageContext';
 import LanguageSwitcher from './LanguageSwitcher';
 import GoogleLogin from './GoogleLogin';
 
 export default function Navbar() {
   const { t } = useLanguage();
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [user, setUser] = useState(null);
@@ -33,6 +35,11 @@ export default function Navbar() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // The mobile menu is a full-screen overlay; any route change dismisses it.
+  useEffect(() => { setMenuOpen(false); }, [router.pathname]);
+
+  const closeMenu = () => setMenuOpen(false);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -311,24 +318,40 @@ export default function Navbar() {
           </div>
         </div>
 
-        <button onClick={() => setMenuOpen(!menuOpen)} className="md:hidden text-gray-700 text-2xl p-2">
+        <button
+          onClick={() => setMenuOpen(!menuOpen)}
+          aria-label="Menu"
+          aria-expanded={menuOpen}
+          className="md:hidden flex items-center justify-center w-11 h-11 -mr-2 text-gray-700 text-2xl rounded-lg active:bg-sky-50"
+        >
           {menuOpen ? '✕' : '☰'}
         </button>
       </div>
 
+      {/* Mobile menu — full-screen overlay: not clipped by the fixed chat
+          frame, scrollable on its own, 44px close target, safe-area padded. */}
       {menuOpen && (
-        <div className="md:hidden mt-4 pb-4 border-t border-sky-200">
-          <div className="flex flex-col gap-3 pt-4">
-            <LanguageSwitcher />
-            <Link href="/miner" className="text-gray-600 hover:text-sky-700 transition py-2">{t('nav.miner')}</Link>
-            <Link href="/leaderboard" className="text-gray-600 hover:text-sky-700 transition py-2">🏆 Leaderboard</Link>
+        <div className="md:hidden fixed inset-0 z-[60] bg-white flex flex-col">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-sky-200 flex-shrink-0">
+            <Link href="/" onClick={closeMenu} className="text-xl font-bold text-gray-800">🚀 Krelz Network</Link>
+            <button
+              onClick={closeMenu}
+              aria-label="Close menu"
+              className="flex items-center justify-center w-11 h-11 text-gray-700 text-2xl rounded-lg active:bg-sky-50"
+            >✕</button>
+          </div>
+          <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-[max(2rem,env(safe-area-inset-bottom))]">
+            <div className="flex flex-col gap-3 pt-4">
+              <LanguageSwitcher />
+              <Link href="/miner" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">{t('nav.miner')}</Link>
+              <Link href="/leaderboard" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">🏆 Leaderboard</Link>
 
             {user ? (
               <>
-                <Link href="/profile" className="text-gray-600 hover:text-sky-700 transition py-2">📊 {t('nav.dashboard')}</Link>
-                <Link href="/miners" className="text-gray-600 hover:text-sky-700 transition py-2">⛏️ {t('nav.miners')}</Link>
-                <Link href="/settings" className="text-gray-600 hover:text-sky-700 transition py-2">⚙️ {t('nav.settings')}</Link>
-                <button onClick={handleLogout} className="text-red-500 hover:text-red-600 transition py-2 text-left">
+                <Link href="/profile" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">📊 {t('nav.dashboard')}</Link>
+                <Link href="/miners" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">⛏️ {t('nav.miners')}</Link>
+                <Link href="/settings" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">⚙️ {t('nav.settings')}</Link>
+                <button onClick={handleLogout} className="text-red-500 hover:text-red-600 transition py-2.5 text-left text-base">
                   🚪 {t('profile.logout')}
                 </button>
               </>
@@ -416,6 +439,7 @@ export default function Navbar() {
                 )}
               </div>
             )}
+            </div>
           </div>
         </div>
       )}

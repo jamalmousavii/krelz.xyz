@@ -14,10 +14,15 @@ export default function App({ Component, pageProps }) {
         {/* Chat home is a fixed frame: exactly one viewport tall (dvh with a
             100vh fallback for older browsers) and overflow-hidden, so the page
             itself never scrolls — only the message list does. Other routes
-            keep normal document scrolling. */}
+            keep normal document scrolling.
+            When a field is focused on phones, visualViewport (index.js) sets
+            --app-vv-height/--app-vv-shift so the frame fits the space above
+            the on-screen keyboard instead of being covered by it. */}
         <div
           className={`${isChatHome ? 'h-screen overflow-hidden' : 'min-h-screen'} flex flex-col`}
-          style={isChatHome ? { height: '100dvh' } : undefined}
+          style={isChatHome
+            ? { height: 'var(--app-vv-height, 100dvh)', transform: 'translateY(var(--app-vv-shift, 0px))' }
+            : undefined}
         >
           <Component {...pageProps} />
           <Footer />

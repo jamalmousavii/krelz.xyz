@@ -70,7 +70,7 @@ export default function Admin() {
         <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
           {['dashboard', 'users', 'miners', 'tasks'].map(tb => (
             <button key={tb} onClick={() => switchTab(tb)}
-              className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap ${tab === tb ? 'bg-sky-500 text-white' : 'bg-white text-gray-600 border border-sky-200 hover:bg-sky-50'}`}>
+              className={`px-4 py-2 min-h-[40px] rounded-lg text-sm font-bold whitespace-nowrap ${tab === tb ? 'bg-sky-500 text-white' : 'bg-white text-gray-600 border border-sky-200 hover:bg-sky-50'}`}>
               {tb.charAt(0).toUpperCase() + tb.slice(1)}
             </button>
           ))}

@@ -138,18 +138,59 @@ export default function Home() {
     };
   }, []);
 
+  // Mobile keyboard (v3.23.0): iOS overlays the keyboard on top of the layout
+  // viewport — the 100dvh frame does NOT shrink, so the composer ends up under
+  // the keyboard with no scrollable ancestor to reveal it. While a field is
+  // focused, fit the frame to the *visual* viewport via CSS vars consumed by
+  // _app.js; released as soon as focus leaves.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const FIELDS = ['INPUT', 'TEXTAREA'];
+    const apply = () => {
+      const focused = document.activeElement && FIELDS.includes(document.activeElement.tagName);
+      if (vv && focused) {
+        document.documentElement.style.setProperty('--app-vv-height', `${vv.height}px`);
+        document.documentElement.style.setProperty('--app-vv-shift', `${vv.offsetTop}px`);
+        scrollToBottom(true);
+      } else {
+        document.documentElement.style.removeProperty('--app-vv-height');
+        document.documentElement.style.removeProperty('--app-vv-shift');
+      }
+    };
+    vv?.addEventListener('resize', apply);
+    vv?.addEventListener('scroll', apply);
+    document.addEventListener('focusin', apply);
+    document.addEventListener('focusout', apply);
+    return () => {
+      vv?.removeEventListener('resize', apply);
+      vv?.removeEventListener('scroll', apply);
+      document.removeEventListener('focusin', apply);
+      document.removeEventListener('focusout', apply);
+      document.documentElement.style.removeProperty('--app-vv-height');
+      document.documentElement.style.removeProperty('--app-vv-shift');
+    };
+  }, []);
+
   // Keep the input ready for the next message: refocus when a reply lands
   // or a session is loaded, but never steal focus from another field
   // (subject rename input, dropdown) — activeElement is only body when the
-  // user is not typing anywhere.
+  // user is not typing anywhere. Never on touch: refocusing would pop the
+  // keyboard open again after every reply.
   useEffect(() => {
     if (loading || dropdownOpen) return;
+    if (typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches) return;
     const active = document.activeElement;
     if (!active || active === document.body) inputRef.current?.focus();
   }, [loading, hasStarted, dropdownOpen]);
 
   // Unmount cleanup for the recording auto-stop timer.
   useEffect(() => () => clearTimeout(recTimerRef.current), []);
+
+  // Desktop-only initial focus: autoFocus on phones would open the on-screen
+  // keyboard during first paint and squeeze the hero out of the fixed frame.
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth >= 768) inputRef.current?.focus();
+  }, []);
 
   const authHeaders = (tkn) => ({
     'Content-Type': 'application/json',
@@ -186,6 +227,8 @@ export default function Home() {
       if (data.success) {
         setActiveSessionId(sessionId);
         setSubject(data.session.subject || 'New Chat');
+        // Mobile drawer: picking a session closes the overlay so the chat is visible.
+        setSidebarOpen(false);
         const msgs = [];
         data.messages.forEach(m => {
           if (m.content !== null && m.content !== undefined) {
@@ -392,7 +435,7 @@ export default function Home() {
   };
 
   const ModelDropdown = ({ upward }) => (
-    <div className="relative w-full md:w-auto" ref={dropdownRef}>
+    <div className="relative flex-1 md:flex-none md:w-auto min-w-0" ref={dropdownRef}>
       <button
         onClick={() => setDropdownOpen(!dropdownOpen)}
         className="w-full md:w-auto bg-white hover:bg-sky-50 text-gray-700 border border-sky-200 px-4 py-3 md:py-3.5 rounded-xl transition flex items-center gap-2 min-w-[180px] justify-between text-sm shadow-sm"
@@ -403,7 +446,7 @@ export default function Home() {
         <span className="text-gray-400 text-xs">▼</span>
       </button>
       {dropdownOpen && (
-        <div className={`absolute ${upward ? 'bottom-full mb-2' : 'top-full mt-2'} left-0 w-full md:w-72 bg-white border border-sky-200 rounded-xl shadow-xl overflow-hidden z-50 max-h-[300px] overflow-y-auto`}>
+        <div className={`absolute ${upward ? 'bottom-full mb-2' : 'top-full mt-2'} left-0 w-full md:w-72 bg-white border border-sky-200 rounded-xl shadow-xl overflow-hidden z-50 max-h-[min(300px,40dvh)] overflow-y-auto`}>
           {models.map((model) => {
             const isSelected = selectedModel === model.id;
             const isCloud = model.id === 'free-cloud-ai';
@@ -482,7 +525,7 @@ export default function Home() {
       <button
         type="button"
         onClick={removeAttachment}
-        className="text-gray-400 hover:text-red-500 font-bold px-1"
+        className="flex items-center justify-center w-9 h-9 -my-1.5 -mr-1.5 text-gray-400 hover:text-red-500 font-bold rounded-md active:bg-red-50"
         title={t('chat.removeAttachment')}
       >✕</button>
     </div>
@@ -516,25 +559,32 @@ export default function Home() {
                 {attachErrorLine}
               </div>
             )}
-            <div className="flex flex-col md:flex-row gap-3">
-              <ModelDropdown upward={false} />
-              <MediaButtons />
-              <input
-                type="text"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                placeholder={t('chat.placeholder')}
-                className="flex-1 bg-sky-50 text-gray-800 placeholder-gray-500 border border-sky-100 px-4 md:px-6 py-3 md:py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 text-sm md:text-base"
-                autoFocus
-              />
-              <button
-                onClick={sendMessage}
-                disabled={loading}
-                className="bg-sky-500 hover:bg-sky-600 text-white px-6 md:px-8 py-3 md:py-3.5 rounded-xl transition disabled:opacity-50 font-bold text-sm md:text-base shadow-sm"
-              >
-                {loading ? '...' : t('chat.send')}
-              </button>
+            {/* Mobile: [model | 📎🎙] on one row, [input | send] on the next.
+                md:contents dissolves the wrappers so desktop keeps the original
+                single row (model, media, input, send). */}
+            <div className="flex flex-col md:flex-row gap-2 md:gap-3">
+              <div className="flex items-center gap-2 md:contents">
+                <ModelDropdown upward={false} />
+                <MediaButtons />
+              </div>
+              <div className="flex gap-2 md:contents">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                  placeholder={t('chat.placeholder')}
+                  className="flex-1 min-w-0 bg-sky-50 text-gray-800 placeholder-gray-500 border border-sky-100 px-4 md:px-6 py-3 md:py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 text-sm md:text-base"
+                />
+                <button
+                  onClick={sendMessage}
+                  disabled={loading}
+                  className="w-auto md:w-auto bg-sky-500 hover:bg-sky-600 text-white px-6 md:px-8 py-3 md:py-3.5 rounded-xl transition disabled:opacity-50 font-bold text-sm md:text-base shadow-sm flex-shrink-0"
+                >
+                  {loading ? '...' : t('chat.send')}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -551,16 +601,21 @@ export default function Home() {
 
       <Navbar />
 
-      <main className="flex-1 container mx-auto px-2 md:px-6 pb-4 md:pb-6 max-w-6xl flex gap-0 md:gap-4 min-h-0">
-        {/* Sidebar — history */}
+      <main className="flex-1 container mx-auto px-2 md:px-6 pb-[max(1rem,env(safe-area-inset-bottom))] md:pb-6 max-w-6xl flex gap-0 md:gap-4 min-h-0">
+        {/* Sidebar — history. On phones it is an overlay drawer (fixed, 85%
+            wide + backdrop) so it never squashes the chat column to 0 width;
+            from md up it is the normal in-flow column. */}
+        {isLoggedIn && sidebarOpen && (
+          <div className="md:hidden fixed inset-0 z-30 bg-black/40" onClick={() => setSidebarOpen(false)} />
+        )}
         {isLoggedIn && (
-          <div className={`${sidebarOpen ? 'flex' : 'hidden'} md:flex w-full md:w-64 flex-shrink-0 mb-2 md:mb-0 flex-col min-h-0`}>
+          <div className={`${sidebarOpen ? 'flex' : 'hidden'} md:flex fixed md:static inset-y-0 left-0 md:inset-auto z-40 w-[85%] max-w-xs md:w-64 md:max-w-none flex-shrink-0 md:mb-0 flex-col min-h-0 pt-4 md:pt-0 px-2 md:px-0`}>
             <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-3 h-full flex flex-col">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-gray-700 font-bold text-sm">💬 {t('chat.history')}</span>
                 <button
                   onClick={() => setSidebarOpen(false)}
-                  className="md:hidden text-gray-400 hover:text-gray-600 text-lg"
+                  className="md:hidden flex items-center justify-center text-gray-400 hover:text-gray-600 text-lg min-w-[40px] min-h-[40px] -mr-2 -mt-2"
                 >✕</button>
               </div>
               <button
@@ -587,7 +642,7 @@ export default function Home() {
                       <span className="flex-1 truncate">{session.subject || t('chat.untitled')}</span>
                       <button
                         onClick={(e) => { e.stopPropagation(); deleteSession(session.id); }}
-                        className="hidden group-hover:block text-red-400 hover:text-red-500 text-xs flex-shrink-0"
+                        className="flex items-center justify-center w-10 h-10 -my-2 flex-shrink-0 text-red-400 hover:text-red-500 text-sm rounded-md active:bg-red-50 md:hidden md:group-hover:flex group-focus-within:flex"
                         title={t('chat.deleteSession')}
                       >
                         ✕
@@ -606,7 +661,7 @@ export default function Home() {
           {isLoggedIn && activeSessionId && (
             <div className="bg-white border border-sky-100 rounded-t-xl px-4 py-2.5 flex items-center gap-2 mb-0 shadow-sm">
               {isLoggedIn && !sidebarOpen && (
-                <button onClick={() => setSidebarOpen(true)} className="md:hidden text-gray-400 hover:text-sky-600 mr-1">☰</button>
+                <button onClick={() => setSidebarOpen(true)} className="md:hidden flex items-center justify-center text-gray-400 hover:text-sky-600 min-w-[40px] min-h-[40px] -my-2 -ml-2 mr-1 text-lg">☰</button>
               )}
               {editingSubject ? (
                 <input
@@ -624,7 +679,7 @@ export default function Home() {
                   <span className="text-gray-700 text-sm font-medium truncate">{subject || t('chat.untitled')}</span>
                   <button
                     onClick={() => { setSubjectInput(subject); setEditingSubject(true); }}
-                    className="text-gray-400 hover:text-sky-600 text-xs transition"
+                    className="flex items-center justify-center text-gray-400 hover:text-sky-600 text-sm transition min-w-[40px] min-h-[40px] -my-2"
                     title={t('chat.renameSession')}
                   >
                     ✏️
@@ -635,7 +690,7 @@ export default function Home() {
           )}
 
           {/* Messages */}
-          <div ref={messagesRef} className={`bg-white border border-sky-100 ${isLoggedIn && activeSessionId ? 'rounded-b-xl' : 'rounded-xl'} p-3 md:p-5 flex-1 min-h-0 overflow-y-auto overscroll-contain mb-3 shadow-sm`}>
+          <div ref={messagesRef} className={`bg-white border border-sky-100 ${isLoggedIn && activeSessionId ? 'rounded-b-xl' : 'rounded-xl'} p-3 md:p-5 flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain mb-3 shadow-sm`}>
             {chat.map((msg, i) => (
               <div key={i} className={`mb-4 ${msg.role === 'user' ? (isRtl(lang) ? 'text-right' : 'text-left') : (isRtl(lang) ? 'text-left' : 'text-right')}`}>
                 <div className={`inline-block max-w-[85%] md:max-w-[80%] p-3 md:p-4 rounded-2xl text-sm md:text-base ${
@@ -658,7 +713,7 @@ export default function Home() {
                       <span className="truncate max-w-[180px]">{msg.media.name}</span>
                     </div>
                   )}
-                  {msg.content ? <div>{msg.content}</div> : null}
+                  {msg.content ? <div className="break-words whitespace-pre-wrap">{msg.content}</div> : null}
                 </div>
                 {msg.role === 'assistant' && (
                   <div className={`text-xs text-gray-400 mt-1 ${isRtl(lang) ? 'text-right' : 'text-left'}`}>
@@ -693,25 +748,30 @@ export default function Home() {
               {attachErrorLine}
             </div>
           )}
+          {/* Mobile: two compact rows; md:contents restores the single desktop row. */}
           <div className="flex flex-col md:flex-row gap-2 md:gap-3">
-            <ModelDropdown upward={true} />
-            <MediaButtons />
-            <input
-              ref={inputRef}
-              type="text"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-              placeholder={t('chat.placeholder')}
-              className="flex-1 bg-white text-gray-800 placeholder-gray-500 border border-sky-200 px-4 md:px-6 py-3 md:py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 text-sm md:text-base shadow-sm"
-            />
-            <button
-              onClick={sendMessage}
-              disabled={loading}
-              className="bg-sky-500 hover:bg-sky-600 text-white px-6 md:px-8 py-3 md:py-3.5 rounded-xl transition disabled:opacity-50 font-bold text-sm md:text-base shadow-sm"
-            >
-              {loading ? '...' : t('chat.send')}
-            </button>
+            <div className="flex items-center gap-2 md:contents">
+              <ModelDropdown upward={true} />
+              <MediaButtons />
+            </div>
+            <div className="flex gap-2 md:contents">
+              <input
+                ref={inputRef}
+                type="text"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                placeholder={t('chat.placeholder')}
+                className="flex-1 min-w-0 bg-white text-gray-800 placeholder-gray-500 border border-sky-200 px-4 md:px-6 py-3 md:py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 text-sm md:text-base shadow-sm"
+              />
+              <button
+                onClick={sendMessage}
+                disabled={loading}
+                className="bg-sky-500 hover:bg-sky-600 text-white px-6 md:px-8 py-3 md:py-3.5 rounded-xl transition disabled:opacity-50 font-bold text-sm md:text-base shadow-sm flex-shrink-0"
+              >
+                {loading ? '...' : t('chat.send')}
+              </button>
+            </div>
           </div>
         </div>
       </main>

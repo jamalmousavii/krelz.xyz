@@ -174,9 +174,9 @@ export default function Settings() {
       <main className="container mx-auto px-4 md:px-6 py-6 md:py-12 max-w-2xl">
         {/* Quick nav */}
         <div className="flex gap-2 mb-6 flex-wrap">
-          <Link href="/profile" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">📊 {t('nav.dashboard')}</Link>
-          <Link href="/miners" className="px-4 py-2 rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⛏️ {t('nav.miners')}</Link>
-          <Link href="/settings" className="px-4 py-2 rounded-lg text-sm font-bold bg-sky-500 text-white">⚙️ {t('nav.settings')}</Link>
+          <Link href="/profile" className="px-4 py-2 min-h-[40px] inline-flex items-center rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">📊 {t('nav.dashboard')}</Link>
+          <Link href="/miners" className="px-4 py-2 min-h-[40px] inline-flex items-center rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⛏️ {t('nav.miners')}</Link>
+          <Link href="/settings" className="px-4 py-2 min-h-[40px] inline-flex items-center rounded-lg text-sm font-bold bg-sky-500 text-white">⚙️ {t('nav.settings')}</Link>
         </div>
 
         <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-5 md:p-6 mb-6">
@@ -218,7 +218,7 @@ export default function Settings() {
           <div className="mb-5">
             <h3 className="text-sm font-medium text-gray-600 mb-2">💰 Wallet (USD)</h3>
             <div className="bg-sky-50 rounded-lg p-4 border border-sky-100">
-              <div className="grid grid-cols-3 gap-2 mb-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
                 <div className="text-center">
                   <div className="text-lg font-bold text-emerald-600">${parseFloat(usdBalance.available || 0).toFixed(2)}</div>
                   <div className="text-gray-500 text-xs">Available</div>

@@ -8,4 +8,28 @@ body {
 
 html {
   background-color: #f0f9ff;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overscroll-behavior: none;
+}
+
+/* Reliable taps: no 300ms double-tap delay, no gray flash over the sky theme. */
+button,
+a,
+[role="button"],
+select,
+summary {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(14, 165, 233, 0.15);
+}
+
+/* iOS Safari zooms the whole page when a focused field is below 16px.
+   !important is deliberate: Tailwind's .text-sm (14px) has higher specificity
+   than an element selector, and this must win on phones no matter the class. */
+@media (max-width: 767px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
 }
