@@ -56,7 +56,7 @@ Next.js 14 frontend with Tailwind CSS and i18n support.
 ```
 frontend/
 ├── pages/
-│   ├── index.js           # Chat homepage (chat-first; default llama3.1:8b, v3.18.4)
+│   ├── index.js           # Chat homepage (chat-first; fullscreen frame v3.19.1)
 │   ├── chat.js            # Redirects to /
 │   ├── profile.js         # Dashboard (balance, daily tokens)
 │   ├── miners.js          # Miner mgmt + Quick Install copy buttons (v3.16.0)

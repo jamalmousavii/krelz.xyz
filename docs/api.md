@@ -1,6 +1,6 @@
 # مستندات API — Krelz Network
 
-نسخه بک‌اند: `3.18.4` — پایه: `https://krelz.xyz` (نمونه: `https://krelz.xyz/api/chat`)
+نسخه بک‌اند: `3.19.1` — پایه: `https://krelz.xyz` (نمونه: `https://krelz.xyz/api/chat`)
 
 همه پاسخ‌ها JSON هستند. در حالت موفقیت معمولاً `success: true` برمی‌گردد و در حالت خطا `error` (رشته) یا `details` (لیست خطاهای اعتبارسنجی).
 

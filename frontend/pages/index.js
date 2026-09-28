@@ -62,11 +62,23 @@ export default function Home() {
   // smoothly on every new message or typing indicator — even if the user
   // scrolled up while waiting for the reply.
   useEffect(() => {
-    if (!hasStarted) return;
+    if (chat.length === 0) return;
     const instant = instantScrollRef.current;
     instantScrollRef.current = false;
     scrollToBottom(instant);
   }, [chat.length, loading]);
+
+  // Window resize / orientation change re-fits the viewport frame — snap the
+  // chat back to the newest message so the latest reply stays visible.
+  useEffect(() => {
+    const onViewportChange = () => scrollToBottom(true);
+    window.addEventListener('resize', onViewportChange);
+    window.addEventListener('orientationchange', onViewportChange);
+    return () => {
+      window.removeEventListener('resize', onViewportChange);
+      window.removeEventListener('orientationchange', onViewportChange);
+    };
+  }, []);
 
   // Keep the input ready for the next message: refocus when a reply lands
   // or a session is loaded, but never steal focus from another field
@@ -323,15 +335,15 @@ export default function Home() {
 
   // ===== ACTIVE STATE: sidebar + messages + bottom input =====
   return (
-    <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex flex-col ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
+    <div className={`flex-1 min-h-0 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex flex-col ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
       <Head><title>{t('chat.title')}</title></Head>
 
       <Navbar />
 
-      <main className="flex-1 container mx-auto px-2 md:px-6 pb-4 md:pb-6 max-w-6xl flex gap-0 md:gap-4 min-h-0" style={{ height: 'calc(100vh - 130px)' }}>
+      <main className="flex-1 container mx-auto px-2 md:px-6 pb-4 md:pb-6 max-w-6xl flex gap-0 md:gap-4 min-h-0">
         {/* Sidebar — history */}
         {isLoggedIn && (
-          <div className={`${sidebarOpen ? 'flex' : 'hidden'} md:flex w-full md:w-64 flex-shrink-0 mb-2 md:mb-0 flex-col`}>
+          <div className={`${sidebarOpen ? 'flex' : 'hidden'} md:flex w-full md:w-64 flex-shrink-0 mb-2 md:mb-0 flex-col min-h-0`}>
             <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-3 h-full flex flex-col">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-gray-700 font-bold text-sm">💬 {t('chat.history')}</span>
@@ -378,7 +390,7 @@ export default function Home() {
         )}
 
         {/* Chat area */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
           {/* Subject bar */}
           {isLoggedIn && activeSessionId && (
             <div className="bg-white border border-sky-100 rounded-t-xl px-4 py-2.5 flex items-center gap-2 mb-0 shadow-sm">
@@ -412,7 +424,7 @@ export default function Home() {
           )}
 
           {/* Messages */}
-          <div ref={messagesRef} className={`bg-white border border-sky-100 ${isLoggedIn && activeSessionId ? 'rounded-b-xl' : 'rounded-xl'} p-3 md:p-5 flex-1 overflow-y-auto mb-3 shadow-sm`}>
+          <div ref={messagesRef} className={`bg-white border border-sky-100 ${isLoggedIn && activeSessionId ? 'rounded-b-xl' : 'rounded-xl'} p-3 md:p-5 flex-1 min-h-0 overflow-y-auto overscroll-contain mb-3 shadow-sm`}>
             {chat.map((msg, i) => (
               <div key={i} className={`mb-4 ${msg.role === 'user' ? (isRtl(lang) ? 'text-right' : 'text-left') : (isRtl(lang) ? 'text-left' : 'text-right')}`}>
                 <div className={`inline-block max-w-[85%] md:max-w-[80%] p-3 md:p-4 rounded-2xl text-sm md:text-base ${

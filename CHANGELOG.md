@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.19.1] - 2026-09-28
+
+Chat UX pass (fit-to-viewport frame) + version display sync.
+
+### Added
+- **Fullscreen chat frame** — the chat route is now a fixed frame of exactly one viewport (`100dvh` with `100vh` fallback, `overflow-hidden` wrapper in `_app.js`): the page itself never scrolls at any resolution or browser zoom; only the message list scrolls. Footer stays as a slim line inside the frame
+- **Viewport-change re-snap** — `resize`/`orientationchange` snaps the chat back to the newest message
+
+### Fixed
+- **Chat input lost focus after every send** — both inputs were `disabled={loading}`, which blurred them; they now stay enabled (re-entry guarded in `sendMessage`) and focus returns when a reply lands or a session loads, never stealing focus from the subject-rename field or the model dropdown
+- **Latest message not always visible** — replaced `scrollIntoView` racing the layout with a container-based `scrollToBottom`: instant (double `requestAnimationFrame`) on session load/refresh, smooth on every new message, even when the user had scrolled up
+- **Removed the `calc(100vh - 130px)` magic height** — layout is pure flex now (`flex-1 min-h-0` chain through sidebar/chat area/messages with `overscroll-contain`), so navbar/footer height estimates can no longer cut the input off the screen
+
+### Changed
+- **Version display synced to 3.19.1** — site footer in all 33 locales, miner install/uninstall banners (`KRELZ_VERSION`), `frontend`/`miner-app` package versions, `docs/api.md`, README/DEVELOP annotations
+
 ## [3.19.0] - 2026-09-26
 
 Comprehensive security / correctness / stability pass. Full findings with `file:line` in **[docs/AUDIT.md](docs/AUDIT.md)**; API reference rewritten in **[docs/api.md](docs/api.md)**.

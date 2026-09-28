@@ -45,7 +45,7 @@ const en = {
     startChat: 'Start Chat',
     footer: 'All rights reserved.',
     installMetaMask: 'Please install MetaMask',
-    version: 'v3.19.0',
+    version: 'v3.19.1',
   },
   footer: {
     sentence: '© 2026 Krelz Network — Decentralized LLM inference platform, version {version}. All rights reserved.',
