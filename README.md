@@ -29,6 +29,7 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Smart Model Fallback** — Auto-selects closest available model when exact model not found
 - **Free Cloud AI** — Round-robin routing across Groq, OpenRouter, Cerebras, Cloudflare (free tiers)
 - **Install Self-Cleanup** — Install scripts auto-delete after successful installation
+- **Uninstall Self-Cleanup** — Uninstall scripts delete themselves after a successful removal (cancel or a failed step keeps the file so it can be rerun)
 - **Miner Earnings** — 90% of paid usage goes to miners
 - **Multi-Miner Accounts** — unlimited miners per user, each with its own unique token; add/remove/rename from `/miners`, no cap
 - **Internationalization (v3.16.0)** — 33 languages with country flags; browser auto-detect; session-persisted user choice; RTL for FA/AR/HE/UR

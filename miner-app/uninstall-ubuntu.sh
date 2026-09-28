@@ -16,6 +16,7 @@ NC='\033[0m'
 BOLD='\033[1m'
 
 INSTALL_DIR="$HOME/krelz-miner"
+SUCCESS=""
 
 echo ""
 echo -e "${RED}========================================${NC}"
@@ -71,8 +72,10 @@ case $choice in
     echo -e "${GREEN}========================================${NC}"
     echo ""
     echo -e "  Ollama and models are still installed."
-    echo -e "  To remove them, run this script again and choose option 2."
+    echo -e "  To remove them, re-download this script (it deletes itself once done) and choose option 2:"
+    echo -e " ${CYAN}wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/uninstall-ubuntu.sh && bash uninstall-ubuntu.sh${NC}"
     echo ""
+    SUCCESS=1
     ;;
 
   2)
@@ -146,6 +149,7 @@ case $choice in
     echo -e "${GREEN}  Everything removed successfully!${NC}"
     echo -e "${GREEN}========================================${NC}"
     echo ""
+    SUCCESS=1
     ;;
 
   0)
@@ -160,3 +164,15 @@ case $choice in
     echo ""
     ;;
 esac
+
+# --- Self-cleanup ---
+# Deletes itself once removal actually succeeded. Cancel, an invalid choice or
+# a failed step (set -e exits first) leave the file on disk so it can be run
+# again. The content check means a piped run (`curl | bash`, where $0 is the
+# shell itself) never deletes anything that is not this script.
+SELF="$0"
+if [ "$SUCCESS" = "1" ] && [ -f "$SELF" ] && head -n 6 "$SELF" | grep -q "Krelz Network Miner - .* Uninstall"; then
+  rm -f -- "$SELF"
+  echo -e "  ${GREEN}✓ Uninstaller removed itself${NC}"
+  echo ""
+fi

@@ -475,12 +475,26 @@ When a provider returns 429 (rate limited):
 - Next request skips it and tries the next provider
 - After cooldown, provider is available again
 
-## Install Script Self-Cleanup (v3.10.0)
+## Installer / Uninstaller Self-Cleanup (v3.10.0 install, v3.19.0 uninstall)
 
 Install scripts auto-delete themselves after successful installation:
 
 ```bash
 rm -f "$0"  # Last line of install-ubuntu.sh / install-redhat.sh
+```
+
+Uninstall scripts (`uninstall-ubuntu.sh` / `uninstall-redhat.sh`) self-delete
+too, but only after the removal actually succeeded (options `1`/`2`). Cancel, an
+invalid choice, or a failed step (`set -e` exits first) leaves the file on disk
+so it can be rerun. The `head` check identifies the script by its header, so a
+piped run — `curl | bash`, where `$0` is the shell itself — never deletes
+anything that is not this script:
+
+```bash
+SELF="$0"
+if [ "$SUCCESS" = "1" ] && [ -f "$SELF" ] && head -n 6 "$SELF" | grep -q "Krelz Network Miner - .* Uninstall"; then
+  rm -f -- "$SELF"
+fi
 ```
 
 ## VPS Deployment

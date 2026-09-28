@@ -12,6 +12,7 @@ Comprehensive security / correctness / stability pass. Full findings with `file:
 - **IPN fail-closed** — HMAC-SHA512 + `timingSafeEqual`; rejected when `NOWPAYMENTS_IPN_SECRET` is unset
 - Guest chat gets its own **6 req/min/IP** limiter; dedicated **10/15min** limiter on forgot/reset password; WS client IP no longer trusts `cf-connecting-ip`
 - nginx: `limit_req`/`limit_conn` in front of `/api` and a **Content-Security-Policy**; server IP/SSH removed from `DEVELOP.md`
+- nginx resolves the **real client IP behind Cloudflare** (`set_real_ip_from` + `real_ip_header CF-Connecting-IP`, single-value `X-Forwarded-For`) — before this every request was keyed by a CF *edge* IP, so per-IP rate limits bound to random edge addresses instead of users (and one busy edge could throttle unrelated visitors together)
 
 ### Fixed
 - **Daily free allowance reset on every request** (unlimited free usage) — `pg` now returns `DATE` as a string *and* `todayKey()`/`toDateKey()` use one consistent calendar (`backend/src/database/pool.js`, `routes/chat.js`). Regression-tested
@@ -23,6 +24,8 @@ Comprehensive security / correctness / stability pass. Full findings with `file:
 - `heartbeat` whitelists `status`, clamps `tasks_completed`, cannot resurrect a removed miner; `/api/miners/setup` returns 401 for `removed` miners
 - `/health` returns **503** when Postgres is down (+ new `/health/live`); graceful shutdown drains HTTP/WS and closes pool/Redis; `unhandledRejection`/`uncaughtException` handled
 - `migrate.js` exits non-zero on failure; adds `coin_deposits.order_id` + indexes (additive, idempotent)
+- `migrate.js` now loads `.env` before `./pool` reads `DATABASE_URL` — a standalone `node src/database/migrate.js` (the documented deploy step) used to fall back to the local-dev DSN and die with `password authentication failed for user "krelz"`
+- Logger `version` field reads `package.json` instead of a hardcoded `3.18.4` fallback (systemd/unit runs don't set `npm_package_version`)
 - Install menu no longer offers `qwen3.6:27b` (not in the catalog) and preset `f)` no longer drops a model
 - `systemd` unit runs the headless CLI (not Electron) as a hardened unit without a hardcoded wallet
 - Frontend: render-time redirects replaced by `useAuth`, 401 handling in `utils/api.js`, `Number(x).toFixed()` guards, `404`/`500` pages, `next/link` navigation, env-driven API rewrite, generated favicon/PWA/OG assets
@@ -31,6 +34,7 @@ Comprehensive security / correctness / stability pass. Full findings with `file:
 - **43 unit/integration tests** (`backend/tests/`, jest + supertest, no DB/Redis required) and **GitHub Actions CI** (syntax check, tests, `next build`, `next lint`, install-script syntax)
 - `docs/AUDIT.md` (full report), rewritten `docs/api.md`
 - `scripts/generate_assets.py` (reproducible PWA/social assets), `DISABLE_CACHE=1` switch for local/test runs
+- **Uninstall self-cleanup** — `uninstall-ubuntu.sh`/`uninstall-redhat.sh` delete themselves after a successful removal (cancel/invalid choice/failed step keeps the file; content-checked so a piped `curl | bash` run deletes nothing else)
 
 ## [3.18.4] - 2026-09-26
 
