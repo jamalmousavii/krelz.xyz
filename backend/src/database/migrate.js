@@ -1,3 +1,8 @@
+// CLI entrypoint: load env BEFORE ./pool reads DATABASE_URL (server.js does
+// this at startup, but running `node src/database/migrate.js` directly did not,
+// so production migrations fell back to the local-dev DSN and failed auth).
+require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
+
 const pool = require('./pool');
 
 const migrate = async () => {

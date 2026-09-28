@@ -1,4 +1,5 @@
 const pino = require('pino');
+const pkg = require('../package.json');
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -22,7 +23,7 @@ const logger = pino({
   timestamp: pino.stdTimeFunctions.isoTime,
   base: {
     service: 'krelz-backend',
-    version: process.env.npm_package_version || '3.18.4',
+    version: process.env.npm_package_version || pkg.version,
   },
 });
 
