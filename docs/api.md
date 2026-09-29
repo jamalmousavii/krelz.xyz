@@ -106,20 +106,18 @@
   "tokens_used": 420,
   "cost": 0.00007,
   "coin": "USD",
-  "payment_status": "free | free_daily | paid",
+  "payment_status": "free | paid | insufficient_balance",
   "miner_id": 7,
-  "source": "miner | external | local",
-  "provider_name": "Groq",
-  "daily_tokens": { "limit": 1000, "used": 100, "remaining": 900 }
+  "source": "miner | local"
 }
 ```
 
 **پرداخت:**
 
-1. ابتدا از سهمیه روزانه (۱۰۰۰ توکن ≈ ۱ دلار اعتبار) کم می‌شود.
-2. باقیمانده از کیف پول USD کاربر.
-3. سهم ماینر = ۹۰٪ مبلغ پرداخت‌شده (فقط اگر واقعاً ماینر جواب داده باشد).
-4. اگر نه سهمیه‌ای مانده باشد نه موجودی → **`402`** با `payment_status: "insufficient_balance"`.
+1. کل `cost` از کیف پول USD کاربرِ وارد‌شده کم می‌شود (یک تراکنش با قفل ردیف).
+2. سهم ماینر = ۹۰٪ مبلغ پرداخت‌شده (فقط اگر واقعاً ماینر جواب داده باشد).
+3. موجودی خالی → **`402`** با `payment_status: "insufficient_balance"` و پیام «Wallet balance is empty».
+4. کاربر مهمان (بدون توکن) رایگان است → `payment_status: "free"` (با rate-limit).
 
 قیمت‌گذاری: `cost = tokens × outputPrice / 1e6` (قیمت مدل انتخاب‌شده از `src/models.js`).
 
@@ -280,7 +278,7 @@
 ### `GET /api/token/balance` (نیازمند JWT)
 
 ```json
-{ "success": true, "tokens": 820, "daily_tokens": { "limit": 1000, "used": 180, "remaining": 820 } }
+{ "success": true, "available": 5.0, "total_earned": 2.0, "total_spent": 0.5 }
 ```
 
 ### `POST /api/token/deposit|deduct|transfer`
@@ -338,7 +336,7 @@
 |----|------|
 | `400` | اعتبارسنجی ناموفق (`details` شامل فیلدهاست) |
 | `401` | توکن نامعتبر/نبودن توکن/توکنِ ماینر نامعتبر |
-| `402` | موجودی و سهمیه روزانه کافی نیست |
+| `402` | موجودی کیف پول کافی نیست (پیام: Wallet balance is empty) |
 | `403` | دسترسی ادمین لازم است / CORS |
 | `404` | پیدا نشد |
 | `409` | تعارض (چند ماینر با توکن سطح حساب) |

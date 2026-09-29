@@ -69,12 +69,6 @@ describe('findMinerForModel media gating (v3.20.0)', () => {
     const ws = makeServer([online({ status: 'offline', app_version: '3.20.0' })]);
     expect(ws.findMinerForModel('llama3.1:8b', true)).toBeNull();
   });
-
-  it('keeps free-cloud-ai miner-free', () => {
-    const ws = makeServer([online({ app_version: '3.20.0' })]);
-    expect(ws.findMinerForModel('free-cloud-ai', true)).toBeNull();
-    expect(ws.findMinerForModel('free-cloud-ai', false)).toBeNull();
-  });
 });
 
 describe('dispatchTask attachment payload', () => {

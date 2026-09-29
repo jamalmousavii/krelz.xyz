@@ -4,10 +4,8 @@ const { logger } = require('../logger');
 // Parse numeric/decimal as float instead of string
 types.setTypeParser(1700, (val) => (val === null ? null : parseFloat(val)));
 
-// DATE (1082) stays a 'YYYY-MM-DD' string. pg's default parser turns it into a
-// local-midnight Date, which can never equal the UTC date string we store in
-// daily_tokens.last_reset_date — that mismatch made the daily free allowance
-// reset on every single request (unlimited free tokens).
+// DATE (1082) stays a 'YYYY-MM-DD' string instead of pg's default local-midnight
+// Date, so date columns always compare cleanly against the strings we store.
 types.setTypeParser(1082, (val) => (val === null ? null : val));
 
 const connectionString = process.env.DATABASE_URL;

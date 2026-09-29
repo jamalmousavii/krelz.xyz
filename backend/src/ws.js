@@ -541,10 +541,6 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
         return { minerId, model: miner.current_model };
       }
     }
-    // Prefer free-cloud-ai never needs a miner — skip miner for it
-    if (model === 'free-cloud-ai') {
-      return null;
-    }
     // Fallback: any online miner (use its model)
     for (const [minerId, miner] of this.miners) {
       if (usable(miner)) {

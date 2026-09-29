@@ -120,16 +120,15 @@ IPN had no signature verification in the shipped path, no idempotency (replayed 
 
 ## 4. Money-flow invariants (chat billing)
 
-The billing path is now a single transaction with row locks — the only place in the codebase that mutates a balance:
+Since v3.24.0 (daily allowance removed) billing is a single transaction with a row lock — the only place in the codebase that mutates a balance:
 
-1. `INSERT … ON CONFLICT DO NOTHING` the daily row, then `SELECT … FOR UPDATE`.
-2. Reset only if `toDateKey(last_reset_date) !== todayKey()` (**C1**).
-3. Cover what the allowance allows (`remaining × $0.001/token`), then lock `user_coin_balances` with `FOR UPDATE` and debit the remainder.
-4. Credit the miner **only if it actually served the task** (`minerId && servedByMiner`), at 90% (`MINER_REVENUE_SHARE`).
-5. Insufficient funds → the transaction still commits the daily usage that *was* consumed, and the API answers `402 insufficient_balance`; the response body is not returned to the caller.
-6. Pre-flight `hasSpendableAllowance()` rejects paid-model requests **before** any GPU/provider work.
+1. Lock `user_coin_balances` with `FOR UPDATE` and debit the full `cost` (wallet only).
+2. Credit the miner **only if it actually served the task** (`minerId && servedByMiner`), at 90% (`MINER_REVENUE_SHARE`).
+3. Insufficient funds → rollback of nothing (no debit happened), the API answers `402 insufficient_balance`, and the pre-stored task answer is not returned to the caller.
+4. Pre-flight `hasWalletFunds()` rejects paid-model requests **before** any GPU/Ollama work when the wallet is empty.
+5. Guests (no JWT) never enter the payment block — free by product decision (see §H-limits).
 
-Invariants asserted by tests: pricing = `tokens × outputPrice / 1e6`, revenue share `0.9`, free allowance `0.001 $/token`, catalog/default-model consistency (`tests/models.pricing.test.js`).
+Invariants asserted by tests: pricing = `tokens × outputPrice / 1e6`, revenue share `0.9`, catalog/default-model consistency (`tests/models.pricing.test.js`).
 
 ---
 
@@ -182,4 +181,4 @@ Invariants asserted by tests: pricing = `tokens × outputPrice / 1e6`, revenue s
 5. `nginx -t && systemctl reload nginx` — verify `/health` still returns 200 in production (it will return **503 if Postgres is down** — that is intentional; update the monitor to expect 200 only when healthy).
 6. `systemctl restart krelz-backend` — SIGTERM now drains HTTP + WS and closes pool/Redis.
 7. Miner hosts: `systemctl daemon-reload && systemctl restart krelz-miner` (unit now runs `src/cli.js`).
-8. Smoke: `curl -s https://krelz.xyz/health`, send one chat message as a guest and one as a signed-in user, confirm `payment_status` and `daily_tokens` behave.
+8. Smoke: `curl -s https://krelz.xyz/health`, send one chat message as a guest and one as a signed-in user, confirm `payment_status` behaves (`free` for guests, `paid` for signed-in users).

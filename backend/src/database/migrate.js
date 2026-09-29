@@ -365,7 +365,10 @@ const migrate = async () => {
     );
     console.log('✅ Columns miners.last_seen + miners.uninstalled_at added');
 
-    // === Daily Free Tokens ===
+    // === Daily Free Tokens — legacy ===
+    // The daily-free-allowance feature was removed in v3.24.0. The table is
+    // kept (existing data, no destructive migration) but nothing reads it
+    // anymore; CREATE IF NOT EXISTS stays so old and new envs match.
     await client.query(`
       CREATE TABLE IF NOT EXISTS daily_tokens (
         user_id INTEGER PRIMARY KEY REFERENCES users(id),

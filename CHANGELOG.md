@@ -1,5 +1,25 @@
 # Changelog
 
+## [3.24.0] - 2026-09-29
+
+Free Cloud AI removed end-to-end — the site no longer serves inference for free (guest chat aside).
+
+### Removed
+- **`free-cloud-ai` model** — dropped from the catalog (`models.js`), chat model dropdown, miner model list and `findMinerForModel` (11 → 10 models).
+- **Free provider round-robin** (Groq / OpenRouter / Cerebras / Cloudflare) — both the `free-cloud-ai` backend and the silent fallback that let **paid** models answer from free provider keys with `cost = 0` when no miner was online. Provider env keys (`GROQ_API_KEY`, `OPENROUTER_API_KEY`, `CEREBRAS_API_KEY`, `CLOUDFLARE_*`) are no longer read and were removed from the server `.env`.
+- **Daily free tokens** — the 1,000-token/day allowance (`daily_tokens` table reads/writes, `FREE_DAILY_TOKEN_VALUE`, `payment_status: 'free_daily'`, the `/api/token/balance` `daily_tokens` field, the profile "Daily Free Tokens" card and all its i18n keys). The DB table itself is kept (no destructive migration) but nothing reads it.
+- **`⚡ via provider` source badge** — replies now only show `⛏️ via miner` / `💻 local`; API responses no longer carry `provider_name` and `source` is `miner | local`.
+
+### Changed
+- **Inference sources**: miner (WebSocket) → **local Ollama** → explicit failure. Ollama is now installed on the server (`llama3.1:8b`, CPU) as the interim source until a GPU miner reconnects; local calls got `timeout: 120s` and `num_predict: 768` so CPU replies can't pin all cores.
+- **Payment is wallet-only**: signed-in users are pre-flighted with `Wallet balance is empty` (402) and charged the full cost from their USD wallet in one row-locked transaction; miner revenue share (90%) unchanged. `payment_status`: `free` (guest) | `paid` | `insufficient_balance`.
+- **Guest (anonymous) chat stays free** with its existing per-IP rate limit — unchanged by design.
+- No miners online + Ollama down → explicit `503 No inference source available`; image/voice with no capable miner → `409 MEDIA_NO_MINER` (as before).
+- `/miner` how-it-works copy rewritten (top up wallet → choose model → pay per message); `userStep2/userStep4` updated in en+fa, other languages fall back to English.
+
+### Tests
+- 77 → 71 (removed the daily date-key suite and the `free-cloud-ai` miner-free case).
+
 ## [3.23.0] - 2026-09-28
 
 Mobile-first UI pass — the whole site is now usable on a phone.

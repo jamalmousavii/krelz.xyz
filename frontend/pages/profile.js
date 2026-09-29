@@ -9,9 +9,7 @@ import { useAuth, clearSession } from '../utils/api';
 
 export default function Profile() {
   const { t, lang } = useLanguage();
-  const [balance, setBalance] = useState(null);
   const [usdBalance, setUsdBalance] = useState(null);
-  const [dailyTokens, setDailyTokens] = useState(null);
   const [myRank, setMyRank] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -19,23 +17,11 @@ export default function Profile() {
 
   useEffect(() => {
     if (user) {
-      fetchBalance();
       fetchUsdBalance();
       fetchRank();
     }
     setLoading(false);
   }, [user]);
-
-  const fetchBalance = async () => {
-    try {
-      const res = await fetch('/api/token/balance', { headers: authHeaders() });
-      const data = await res.json();
-      if (data.success) {
-        setBalance(data);
-        setDailyTokens(data.daily_tokens);
-      }
-    } catch (err) {}
-  };
 
   const fetchUsdBalance = async () => {
     try {
@@ -113,32 +99,6 @@ export default function Profile() {
               <div className="bg-sky-50 rounded-xl p-4 text-center border border-sky-100">
                 <div className="text-xl font-bold text-red-500">${parseFloat(usdBalance.total_spent || 0).toFixed(2)}</div>
                 <div className="text-gray-500 text-xs">{t('profile.spent')}</div>
-              </div>
-            </div>
-          )}
-          {dailyTokens && (
-            <div className="bg-gradient-to-r from-sky-50 to-cyan-50 rounded-xl p-4 border border-sky-100">
-              <div className="flex justify-between items-center mb-2">
-                <span className="font-semibold text-gray-700">🕐 {t('profile.dailyTokens')}</span>
-                <span className="text-sm text-gray-400">UTC 00:00</span>
-              </div>
-              <div className="flex gap-4 mb-2">
-                <div className="flex-1">
-                  <div className="text-sm text-gray-500">{t('profile.remaining')}</div>
-                  <div className="text-lg font-bold text-emerald-600">
-                    {dailyTokens.remaining} / {dailyTokens.limit}
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <div className="text-sm text-gray-500">{t('profile.usedToday')}</div>
-                  <div className="text-lg font-bold text-amber-500">{dailyTokens.used}</div>
-                </div>
-              </div>
-              <div className="h-2 bg-sky-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-sky-400 to-cyan-400 transition-all"
-                  style={{ width: `${dailyTokens.limit > 0 ? (dailyTokens.used / dailyTokens.limit) * 100 : 0}%` }}
-                />
               </div>
             </div>
           )}

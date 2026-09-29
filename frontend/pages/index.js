@@ -415,7 +415,6 @@ export default function Home() {
         setChat(prev => [...prev, {
           role: 'assistant',
           content: data.response,
-          provider_name: data.provider_name || null,
           source: data.source || null,
           miner_id: data.miner_id || null,
         }]);
@@ -449,9 +448,8 @@ export default function Home() {
         <div className={`absolute ${upward ? 'bottom-full mb-2' : 'top-full mt-2'} left-0 w-full md:w-72 bg-white border border-sky-200 rounded-xl shadow-xl overflow-hidden z-50 max-h-[min(300px,40dvh)] overflow-y-auto`}>
           {models.map((model) => {
             const isSelected = selectedModel === model.id;
-            const isCloud = model.id === 'free-cloud-ai';
             const hasMiners = model.miners_online > 0;
-            const canSelect = isCloud || hasMiners;
+            const canSelect = hasMiners;
             return (
               <button
                 key={model.id}
@@ -467,9 +465,7 @@ export default function Home() {
                   <span className="text-sky-600 text-xs">{model.size}</span>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  {isCloud ? (
-                    <span className="text-sky-500 text-xs">☁️ cloud</span>
-                  ) : hasMiners ? (
+                  {hasMiners ? (
                     <span className="text-emerald-600 text-xs">✅ {model.miners_online}</span>
                   ) : (
                     <span className="text-red-400 text-xs">⚠️ 0</span>
@@ -720,14 +716,8 @@ export default function Home() {
                     {msg.source === 'miner' && (
                       <span className="text-emerald-600">⛏️ {t('chat.viaMiner')}{msg.miner_id ? ` #${msg.miner_id}` : ''}</span>
                     )}
-                    {msg.source === 'external' && msg.provider_name && (
-                      <span>⚡ via {msg.provider_name}</span>
-                    )}
                     {msg.source === 'local' && (
                       <span>💻 {t('chat.viaLocal')}</span>
-                    )}
-                    {!msg.source && msg.provider_name && (
-                      <span>⚡ via {msg.provider_name}</span>
                     )}
                   </div>
                 )}

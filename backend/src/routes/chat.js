@@ -10,126 +10,19 @@ const { logger } = require('../logger');
 const { prepareAttachment, AttachmentError } = require('../services/attachments');
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
-const SUPPORTED_COINS = ['USD'];
-const DAILY_TOKEN_LIMIT = 1000;
 // Single source of truth for the default model (was split between
 // 'llama3:8b' — which exists in no catalog — and 'llama3.1:8b').
 const DEFAULT_MODEL = 'llama3.1:8b';
-const FREE_DAILY_TOKEN_VALUE = 0.001; // $1 of free credit == 1000 tokens
 const MINER_REVENUE_SHARE = 0.9;
-
-// Free Cloud AI — Round-robin providers
-let roundRobinIndex = 0;
-const FREE_PROVIDERS = [
-  {
-    name: 'Groq',
-    url: 'https://api.groq.com/openai/v1/chat/completions',
-    key: process.env.GROQ_API_KEY,
-    models: { 'llama3.1:8b': 'llama-3.1-8b-instant', 'llama3.3:70b': 'llama-3.3-70b-versatile', 'free-cloud-ai': 'llama-3.1-8b-instant' },
-    cooldownUntil: 0
-  },
-  {
-    name: 'OpenRouter',
-    url: 'https://openrouter.ai/api/v1/chat/completions',
-    key: process.env.OPENROUTER_API_KEY,
-    models: { 'llama3.1:8b': 'meta-llama/llama-3.1-8b-instruct:free', 'deepseek-r1:70b': 'deepseek/deepseek-r1:free', 'free-cloud-ai': 'meta-llama/llama-3.1-8b-instruct:free' },
-    cooldownUntil: 0
-  },
-  {
-    name: 'Cerebras',
-    url: 'https://api.cerebras.ai/v1/chat/completions',
-    key: process.env.CEREBRAS_API_KEY,
-    models: { 'llama3.1:8b': 'llama-3.1-8b', 'llama3.3:70b': 'llama-3.3-70b', 'free-cloud-ai': 'llama-3.1-8b' },
-    cooldownUntil: 0
-  },
-  {
-    name: 'Cloudflare',
-    url: `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/meta/llama-3.1-8b-instruct`,
-    key: process.env.CLOUDFLARE_API_TOKEN,
-    models: { 'llama3.1:8b': '@cf/meta/llama-3.1-8b-instruct', 'llama3.3:70b': '@cf/meta/llama-3.3-70b-instruct-fp8-fast', 'free-cloud-ai': '@cf/meta/llama-3.1-8b-instruct' },
-    cooldownUntil: 0
-  }
-];
-
-function getNextProvider() {
-  const start = roundRobinIndex;
-  const now = Date.now();
-  do {
-    const provider = FREE_PROVIDERS[roundRobinIndex];
-    roundRobinIndex = (roundRobinIndex + 1) % FREE_PROVIDERS.length;
-    if (provider.key && (!provider.cooldownUntil || now > provider.cooldownUntil)) {
-      return provider;
-    }
-  } while (roundRobinIndex !== start);
-  return null;
-}
-
-async function callExternalProvider(provider, model, message) {
-  const mappedModel = provider.models[model] || provider.models['free-cloud-ai'];
-  if (!mappedModel) return null;
-
-  const isCloudflare = provider.name === 'Cloudflare';
-
-  const headers = { 'Content-Type': 'application/json' };
-  if (isCloudflare) {
-    headers['Authorization'] = `Bearer ${provider.key}`;
-  } else {
-    headers['Authorization'] = `Bearer ${provider.key}`;
-  }
-
-  const body = isCloudflare
-    ? { messages: [{ role: 'user', content: message }], stream: false }
-    : { model: mappedModel, messages: [{ role: 'user', content: message }], stream: false };
-
-  const res = await axios.post(provider.url, body, { headers, timeout: 30000 });
-  const data = res.data;
-
-  if (isCloudflare) {
-    return data.result?.response || null;
-  }
-  return data.choices?.[0]?.message?.content || null;
-}
 
 const getModelPricing = (modelId) => {
   const found = MODELS.find(m => m.id === modelId);
   return found ? { inputPrice: found.inputPrice, outputPrice: found.outputPrice } : { inputPrice: 0.088, outputPrice: 0.176 };
 };
 
-// Date helpers — daily_tokens.last_reset_date must be compared as 'YYYY-MM-DD'.
-// BOTH sides use the server's local calendar (the VPS runs UTC). A pg DATE
-// column comes back either as 'YYYY-MM-DD' (string, see database/pool.js) or as
-// a Date pinned to LOCAL midnight; converting that with toISOString() shifted
-// the date back one day in any UTC+n zone and made the allowance reset on
-// every single request. Never mix the two bases here.
-const todayKey = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
-const toDateKey = (value) => {
-  if (!value) return null;
-  if (value instanceof Date) {
-    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
-  }
-  return String(value).slice(0, 10);
-};
-
-// Cheap pre-flight: does this user have ANY way to pay for a paid model?
-async function hasSpendableAllowance(userId) {
-  const today = todayKey();
-  const daily = await pool.query(
-    'SELECT tokens_used_today, last_reset_date FROM daily_tokens WHERE user_id = $1',
-    [userId]
-  );
-
-  if (daily.rows.length > 0) {
-    const used = parseFloat(daily.rows[0].tokens_used_today || 0);
-    const lastReset = toDateKey(daily.rows[0].last_reset_date);
-    if (lastReset === today && used < DAILY_TOKEN_LIMIT) return true;
-    if (lastReset !== today) return true; // allowance resets today
-  } else {
-    return true; // fresh row → full allowance
-  }
-
+// Cheap pre-flight: is there any USD balance to charge a paid model against?
+// (The daily free allowance was removed in v3.24.0 — wallet only.)
+async function hasWalletFunds(userId) {
   const balance = await pool.query(
     "SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = 'USD'",
     [userId]
@@ -328,14 +221,14 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
       }
     }
 
-    // Pre-flight for paid models: don't burn GPU time for a user who has
-    // neither daily allowance nor wallet balance. free-cloud-ai stays free.
+    // Pre-flight for paid models: don't burn inference time for a user whose
+    // wallet is empty (guests are exempt — they chat free by design).
     const requestedPricing = getModelPricing(model || DEFAULT_MODEL);
     if (userId && requestedPricing.outputPrice > 0) {
-      const canPay = await hasSpendableAllowance(userId);
+      const canPay = await hasWalletFunds(userId);
       if (!canPay) {
         return res.status(402).json({
-          error: 'Daily free allowance exhausted and wallet balance is empty. Top up to keep chatting.',
+          error: 'Wallet balance is empty. Top up to keep chatting.',
           payment_status: 'insufficient_balance',
         });
       }
@@ -389,7 +282,7 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
     );
 
     const taskId = taskResult.rows[0].id;
-    let response, tokensUsed, cost, providerUsed = null;
+    let response, tokensUsed, cost;
     let lastMinerError = null;
     let servedByMiner = false;
 
@@ -453,12 +346,15 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
               model: ollamaModel,
               messages: [{ role: 'user', content: effectiveMessage, images: [media.data] }],
               stream: false
-            }, { timeout: 60000 })
+            }, { timeout: 120000 })
           : await axios.post(`${OLLAMA_URL}/api/generate`, {
               model: ollamaModel,
               prompt: effectiveMessage,
-              stream: false
-            }, { timeout: 30000 });
+              stream: false,
+              // CPU inference on the VPS: cap output so one long reply can't
+              // pin all cores for minutes.
+              options: { num_predict: 768 }
+            }, { timeout: 120000 });
 
         response = media
           ? (ollamaResponse.data.message && ollamaResponse.data.message.content)
@@ -468,69 +364,33 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
         cost = (tokensUsed * pricing.outputPrice) / 1000000;
 
       } catch (ollamaError) {
-        // Fallback: try free external providers (round-robin) — text only.
-        // Image/voice requests can't be served by these chat APIs, so instead
-        // of silently losing the attachment we fail explicitly below.
-        let externalError = null;
-        // Skip the provider loop for media: these chat APIs take no images/
-        // audio, so a "success" would answer without seeing the attachment.
-        const providerCount = media ? 0 : FREE_PROVIDERS.length;
-        for (let i = 0; i < providerCount; i++) {
-          const provider = getNextProvider();
-          if (!provider) break;
+        logger.warn({ err: ollamaError.message, model }, 'Local Ollama unavailable');
 
-          try {
-            const externalResponse = await callExternalProvider(provider, model, effectiveMessage);
-            if (externalResponse) {
-              response = externalResponse;
-              providerUsed = provider.name;
-              tokensUsed = 0;
-              const pricing = getModelPricing(model || DEFAULT_MODEL);
-              cost = 0;
-              logger.info({ provider: provider.name, model }, 'Free Cloud AI used');
-              break;
-            }
-          } catch (providerError) {
-            externalError = providerError;
-            // Rate limit → cooldown
-            if (providerError.response?.status === 429) {
-              provider.cooldownUntil = Date.now() + 60000;
-              logger.warn({ provider: provider.name }, 'Provider rate limited, cooldown 60s');
-            }
-            continue;
-          }
-        }
-
-        if (!response) {
-          if (media) {
-            // Attachment was valid but no capable source existed — fail with a
-            // stable code and keep the failure visible in history instead of
-            // retrying forever or dropping the attachment.
-            await pool.query(
-              "UPDATE tasks SET response = 'No capable source for attachment', status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $1",
-              [taskId]
-            );
-            return res.status(409).json({
-              error: `No online miner or local model can handle this ${media.type === 'image' ? 'image' : 'voice note'} right now. Try again shortly or switch model.`,
-              code: 'MEDIA_NO_MINER',
-              task_id: taskId,
-            });
-          }
+        if (media) {
+          // Attachment was valid but no capable source existed — fail with a
+          // stable code and keep the failure visible in history instead of
+          // retrying forever or dropping the attachment.
           await pool.query(
-            "UPDATE tasks SET response = 'No providers available', status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $1",
+            "UPDATE tasks SET response = 'No capable source for attachment', status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $1",
             [taskId]
           );
-          const detail = lastMinerError
-            ? ` (miner: ${lastMinerError})`
-            : '';
-          const noKeys = !FREE_PROVIDERS.some(p => p.key);
-          return res.status(503).json({
-            error: noKeys
-              ? `No inference source available. Local models unavailable and free AI API keys not configured.${detail}`
-              : `No miners or free providers available. Please try again later.${detail}`,
-            task_id: taskId
+          return res.status(409).json({
+            error: `No online miner or local model can handle this ${media.type === 'image' ? 'image' : 'voice note'} right now. Try again shortly or switch model.`,
+            code: 'MEDIA_NO_MINER',
+            task_id: taskId,
           });
         }
+        await pool.query(
+          "UPDATE tasks SET response = 'No inference source available', status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $1",
+          [taskId]
+        );
+        const detail = lastMinerError
+          ? ` (miner: ${lastMinerError})`
+          : '';
+        return res.status(503).json({
+          error: `No inference source available. No miners are online and the local model is unreachable. Please try again later.${detail}`,
+          task_id: taskId
+        });
       }
     }
 
@@ -542,18 +402,17 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
       [response, tokensUsed, cost, taskId]
     );
 
-    // Miner throughput counter. Revenue is accounted for separately below so a
-    // free/daily-covered task still counts as completed work for the miner.
+    // Miner throughput counter. Revenue is accounted for separately below, so
+    // a guest (free) task still counts as completed work for the miner.
     if (servedByMiner && minerId) {
       await pool.query('UPDATE miners SET total_tasks = total_tasks + 1 WHERE id = $1', [minerId])
         .catch((err) => logger.error({ err, minerId }, 'Failed to increment miner total_tasks'));
     }
 
-    // Payment: daily free allowance first, then the USD wallet.
-    // Everything happens in ONE transaction with row locks so two parallel
-    // requests can't both spend the same balance or the same daily allowance.
+    // Payment: the signed-in user's USD wallet, in ONE transaction with a row
+    // lock so two parallel requests can't spend the same balance. Guests
+    // (no userId) chat free by design and never enter this block.
     let paymentStatus = 'free';
-    let dailyTokensInfo = { limit: DAILY_TOKEN_LIMIT, used: 0, remaining: DAILY_TOKEN_LIMIT };
     let insufficientBalance = false;
 
     if (userId && cost > 0) {
@@ -561,81 +420,38 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
       try {
         await client.query('BEGIN');
 
-        const today = todayKey();
-        await client.query(
-          `INSERT INTO daily_tokens (user_id, tokens_used_today, last_reset_date)
-           VALUES ($1, 0, $2)
-           ON CONFLICT (user_id) DO NOTHING`,
-          [userId, today]
+        const balanceResult = await client.query(
+          'SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = $2 FOR UPDATE',
+          [userId, paymentCoin]
         );
+        const userBalance = parseFloat(balanceResult.rows[0]?.available || 0);
 
-        const dailyLock = await client.query(
-          'SELECT tokens_used_today, last_reset_date FROM daily_tokens WHERE user_id = $1 FOR UPDATE',
-          [userId]
-        );
-
-        let used = parseFloat(dailyLock.rows[0]?.tokens_used_today || 0);
-        if (toDateKey(dailyLock.rows[0]?.last_reset_date) !== today) {
-          used = 0;
+        if (userBalance >= cost) {
           await client.query(
-            'UPDATE daily_tokens SET tokens_used_today = 0, last_reset_date = $1 WHERE user_id = $2',
-            [today, userId]
+            `UPDATE user_coin_balances
+                SET available = available - $1, total_spent = total_spent + $1
+              WHERE user_id = $2 AND coin = $3`,
+            [cost, userId, paymentCoin]
           );
-        }
 
-        let remaining = Math.max(0, DAILY_TOKEN_LIMIT - used);
-        dailyTokensInfo = { limit: DAILY_TOKEN_LIMIT, used, remaining };
-
-        const dailyCoverage = Math.min(cost, remaining * FREE_DAILY_TOKEN_VALUE);
-        const paidPortion = cost - dailyCoverage;
-
-        if (dailyCoverage > 0) {
-          const tokensToDeduct = dailyCoverage / FREE_DAILY_TOKEN_VALUE;
-          await client.query(
-            'UPDATE daily_tokens SET tokens_used_today = tokens_used_today + $1 WHERE user_id = $2',
-            [tokensToDeduct, userId]
-          );
-          used += tokensToDeduct;
-          remaining = Math.max(0, remaining - tokensToDeduct);
-          dailyTokensInfo = { limit: DAILY_TOKEN_LIMIT, used, remaining };
-        }
-
-        if (paidPortion > 0 && SUPPORTED_COINS.includes(paymentCoin)) {
-          const balanceResult = await client.query(
-            'SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = $2 FOR UPDATE',
-            [userId, paymentCoin]
-          );
-          const userBalance = parseFloat(balanceResult.rows[0]?.available || 0);
-
-          if (userBalance >= paidPortion) {
+          // Only a miner that actually served the task earns — a local-Ollama
+          // fallback must never credit earnings to the miner of record.
+          if (minerId && servedByMiner) {
+            const minerEarning = cost * MINER_REVENUE_SHARE;
             await client.query(
-              `UPDATE user_coin_balances
-                  SET available = available - $1, total_spent = total_spent + $1
-                WHERE user_id = $2 AND coin = $3`,
-              [paidPortion, userId, paymentCoin]
+              'UPDATE miners SET earnings = earnings + $1 WHERE id = $2',
+              [minerEarning, minerId]
             );
-
-            // Only a miner that actually served the task earns — a cloud/Ollama
-            // fallback must never credit earnings to the miner of record.
-            if (minerId && servedByMiner) {
-              const minerEarning = paidPortion * MINER_REVENUE_SHARE;
-              await client.query(
-                'UPDATE miners SET earnings = earnings + $1 WHERE id = $2',
-                [minerEarning, minerId]
-              );
-              await client.query(
-                `INSERT INTO miner_coin_earnings (miner_id, coin, amount, task_id)
-                 VALUES ($1, $2, $3, $4)`,
-                [minerId, paymentCoin, minerEarning, taskId]
-              );
-            }
-            paymentStatus = 'paid';
-          } else {
-            paymentStatus = 'insufficient_balance';
-            insufficientBalance = true;
+            await client.query(
+              `INSERT INTO miner_coin_earnings (miner_id, coin, amount, task_id)
+               VALUES ($1, $2, $3, $4)`,
+              [minerId, paymentCoin, minerEarning, taskId]
+            );
           }
-        } else if (paidPortion <= 0) {
-          paymentStatus = 'free_daily';
+          paymentStatus = 'paid';
+        } else {
+          paymentStatus = 'insufficient_balance';
+          insufficientBalance = true;
         }
 
         await client.query('COMMIT');
@@ -649,14 +465,13 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
       if (paymentStatus === 'paid') invalidateCache('/api/payments/balance');
     }
 
-    // Daily allowance exhausted and wallet empty: refuse instead of serving
-    // paid inference for free. The answer is already stored in `tasks`.
+    // Wallet empty: refuse instead of serving paid inference for free. The
+    // answer is already stored in `tasks`.
     if (insufficientBalance) {
       return res.status(402).json({
-        error: 'Insufficient balance. Top up your wallet, or wait for the daily free allowance to reset.',
+        error: 'Insufficient balance. Top up your wallet to keep chatting.',
         payment_status: 'insufficient_balance',
         cost,
-        daily_tokens: dailyTokensInfo,
         task_id: taskId
       });
     }
@@ -671,9 +486,7 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
       coin: paymentCoin,
       payment_status: paymentStatus,
       miner_id: servedByMiner ? minerId : null,
-      source: servedByMiner ? 'miner' : providerUsed ? 'external' : 'local',
-      provider_name: providerUsed,
-      daily_tokens: dailyTokensInfo
+      source: servedByMiner ? 'miner' : 'local'
     });
 
   } catch (err) {
@@ -700,12 +513,9 @@ router.get('/history', authenticate, async (req, res) => {
   }
 });
 
-// Exposed for the test suite (pricing + date-key rules are money-adjacent).
+// Exposed for the test suite (pricing rules are money-adjacent).
 router.getModelPricing = getModelPricing;
-router.todayKey = todayKey;
-router.toDateKey = toDateKey;
 router.DEFAULT_MODEL = DEFAULT_MODEL;
 router.MINER_REVENUE_SHARE = MINER_REVENUE_SHARE;
-router.FREE_DAILY_TOKEN_VALUE = FREE_DAILY_TOKEN_VALUE;
 
 module.exports = router;

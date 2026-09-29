@@ -16,21 +16,20 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 
 - **Decentralized LLM Inference** — GPU miners serve AI models via WebSocket
 - **Multi-Coin Payments (v3.18.0)** — USD wallet; Top Up via NowPayments (BTC, ETH, BNB, USDT, TRX, DOGE, XRP on checkout); withdraw USDT TRC-20 min $5
-- **Chat Source Badge (v3.18.4)** — each reply shows `⛏️ via miner` / `⚡ via provider` / `💻 local`
-- **Default Model (v3.18.4)** — chat defaults to `llama3.1:8b` (online miner); `free-cloud-ai` always available
+- **Chat Source Badge (v3.18.4)** — each reply shows `⛏️ via miner` / `💻 local`
+- **Default Model (v3.18.4)** — chat defaults to `llama3.1:8b`
+- **Paid Inference (v3.24.0)** — GPU miner first, local Ollama second; every signed-in message is charged from the USD wallet (guest chat is free with a rate limit). No free cloud fallback.
 - **Fullscreen Chat Frame (v3.19.1)** — chat fits the viewport exactly (no page scrolling at any resolution/zoom); input keeps focus while the model answers; the latest message is always in view, including after refresh
 - **Attachments & Voice (v3.20.0)** — 📎 send an image, PDF or text file (file text is read server-side so any model can answer; images go to vision models), 🎤 record a ≤60s voice note (client-side WAV encoder, `gemma4:12b`); gated per model with explicit errors — attachments are never silently dropped
-- **Daily Free Tokens** — 1,000 free AI inference tokens per user per day (UTC reset)
-- **Per-Model Pricing** — 11 models from 300M to 70B parameters, priced 30-50% cheaper than DeepSeek
+- **Per-Model Pricing** — 10 models from 300M to 70B parameters, priced 30-50% cheaper than DeepSeek
 - **Chat Sessions** — Persistent chat history with auto-generated subjects
-- **Profile Dashboard** — USD balance, daily tokens, logout, quick-nav; leaderboard rank card for miners (v3.21.0)
+- **Profile Dashboard** — USD balance, logout, quick-nav; leaderboard rank card for miners (v3.21.0)
 - **Miner CLI Mode** — Headless CLI for servers (no Electron needed)
 - **Resource Monitoring** — CPU, RAM, GPU VRAM, Disk usage tracking
 - **Auth System** — Google OAuth + email/password, password reset
 - **Uninstall Scripts** — Clean removal for Ubuntu/Debian and RedHat/Fedora; unregisters from your dashboard (v3.22.0) — earnings stay in the Miner History section on `/miners`
 - **Mobile-Friendly UI (v3.23.0)** — usable on any phone: keyboard never covers the chat input (iOS visual-viewport fix), no focus zoom, touch targets ≥40px, full-screen mobile menu, overlay session drawer, safe-area insets for notched devices
 - **Smart Model Fallback** — Auto-selects closest available model when exact model not found
-- **Free Cloud AI** — Round-robin routing across Groq, OpenRouter, Cerebras, Cloudflare (free tiers)
 - **Install Self-Cleanup (v3.10.0)** — Install scripts auto-delete after successful installation
 - **Uninstall Self-Cleanup (v3.19.0)** — Uninstall scripts delete themselves after a successful removal (cancel or a failed step keeps the file so it can be rerun)
 - **Miner Earnings** — 90% of paid usage goes to miners
@@ -102,13 +101,12 @@ Choose to remove miner only or everything (miner + Ollama + models).
 
 **Reference:** DeepSeek V4 Flash — $0.14 input / $0.28 output per 1M tokens
 
-## Daily Free Tokens
+## Payments (wallet only)
 
-Every user gets **1,000 free AI inference tokens per day**:
-- Resets at UTC 00:00
-- Does not accumulate
-- If exceeded, charges from paid USD balance (NowPayments deposits)
-- Tracked in `daily_tokens` table
+Every signed-in message is charged from the USD wallet (deposits via NowPayments):
+- Miner serving the reply earns 90% of the cost
+- Empty wallet → `402` with "Wallet balance is empty"
+- Guest (signed-out) chat is free, with a per-IP rate limit
 
 ## Project Structure
 
@@ -124,9 +122,9 @@ krelz.xyz/
 │   │   ├── routes/
 │   │   │   ├── auth.js        # Authentication
 │   │   │   ├── miners.js      # Miner management
-│   │   │   ├── chat.js        # LLM chat + daily tokens
+│   │   │   ├── chat.js        # LLM chat + wallet payment
 │   │   │   ├── payments.js    # USD wallet + NowPayments
-│   │   │   ├── token.js       # Balance + daily tokens
+│   │   │   ├── token.js       # Balance snapshot
 │   │   │   ├── stats.js       # Network stats
 │   │   │   └── models.js      # Model list API
 │   │   ├── middleware/
@@ -137,7 +135,7 @@ krelz.xyz/
 │   ├── pages/
 │   │   ├── index.js           # Chat homepage (chat-first; fullscreen frame; attachments/voice v3.20.0)
 │   │   ├── chat.js            # Redirects to / (chat is homepage now)
-│   │   ├── profile.js         # Dashboard (balance, daily tokens, leaderboard rank card)
+│   │   ├── profile.js         # Dashboard (balance, leaderboard rank card)
 │   │   ├── miners.js          # Miner management + Quick Install copy + history (v3.22.0)
 │   │   ├── settings.js        # Settings (USD wallet, 33-lang dropdown, password)
 │   │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)
@@ -179,7 +177,6 @@ krelz.xyz/
 | coin_withdrawals | Crypto withdrawal history |
 | miner_coin_earnings | Miner earnings |
 | chat_sessions | Chat session groups |
-| daily_tokens | Daily free token tracking |
 
 ## Tech Stack
 
@@ -187,7 +184,7 @@ krelz.xyz/
 |-------|-----------|
 | Frontend | Next.js 14, React 18, Tailwind CSS |
 | Backend | Node.js 20, Express, PostgreSQL, Redis |
-| LLM | Ollama, 11 models (Llama, Qwen, Gemma, DeepSeek, BGE) |
+| LLM | Ollama, 10 models (Llama, Qwen, Gemma, DeepSeek, BGE) |
 | Auth | Google OAuth 2.0, JWT |
 | Payments | NowPayments — USD wallet, 7 coins at checkout, USDT TRC-20 withdraw |
 | Server | Ubuntu 24.04, Nginx, Let's Encrypt |

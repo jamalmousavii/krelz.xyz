@@ -58,7 +58,7 @@ frontend/
 ├── pages/
 │   ├── index.js           # Chat homepage (chat-first; fullscreen frame; attachments/voice v3.20.0)
 │   ├── chat.js            # Redirects to /
-│   ├── profile.js         # Dashboard (balance, daily tokens, leaderboard rank card)
+│   ├── profile.js         # Dashboard (balance, leaderboard rank card)
 │   ├── miners.js          # Miner mgmt + Quick Install copy + history (v3.22.0)
 │   ├── settings.js         # Settings (USD wallet, 33-lang dropdown, password)
 │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)
@@ -94,11 +94,11 @@ backend/
 │   │   └── auth.js        # JWT + Google OAuth
 │   └── routes/
 │       ├── auth.js        # Register/Login/Google
-│       ├── chat.js        # LLM chat + daily tokens + sessions
+│       ├── chat.js        # LLM chat + wallet payment + sessions
 │       ├── miners.js      # Miner CRUD + model switch
 │       ├── models.js      # Model list API
 │       ├── payments.js    # NowPayments USD wallet (deposit/withdraw/IPN)
-│       ├── token.js       # Balance + daily tokens info
+│       ├── token.js       # Balance snapshot
 │       ├── stats.js       # Network stats
 │       └── leaderboard.js # Top miners
 └── package.json
@@ -141,7 +141,7 @@ miner-app/
 | coin_withdrawals | Crypto withdrawal history |
 | miner_coin_earnings | Miner earnings per coin |
 | chat_sessions | Chat session groups |
-| **daily_tokens** | **Daily free token tracking (v3.5.0)** |
+| **daily_tokens** | *(legacy — feature removed in v3.24.0, table kept but unread)* |
 
 ### Miners Table — Resource Monitoring Columns (v3.8.0)
 
@@ -185,46 +185,6 @@ Models defined in `backend/src/models.js` with per-model pricing:
 | qwen2.5-coder:32b | 32B | $0.094 | $0.188 | -34% |
 | llama3.3:70b | 70B | $0.097 | $0.194 | -32% |
 | deepseek-r1:70b | 70B | $0.098 | $0.196 | -30% |
-
-## Daily Free Tokens System (v3.5.0)
-
-Every user gets **1,000 free AI inference tokens per day**.
-
-### How it works
-
-1. New user → `daily_tokens` row created on first chat
-2. Each chat request → `checkDailyTokens(userId)` called
-3. If UTC day changed → `tokens_used_today` reset to 0
-4. Free tokens cover `tokens_used * 0.001` cost
-5. If daily limit exceeded → charge from paid crypto balance
-
-### Backend flow (chat.js)
-
-```
-1. checkDailyTokens(userId) → { limit: 1000, used, remaining }
-2. dailyTokenValue = remaining * 0.001
-3. dailyCoverage = min(cost, dailyTokenValue)
-4. paidPortion = cost - dailyCoverage
-5. If paidPortion > 0 → deduct from user_coin_balances
-6. Miner gets 90% of paidPortion
-```
-
-### API Response
-
-```json
-GET /api/token/balance
-{
-  "success": true,
-  "available": 5.00,
-  "total_earned": 2.00,
-  "total_spent": 0.50,
-  "daily_tokens": {
-    "limit": 1000,
-    "used": 342,
-    "remaining": 658
-  }
-}
-```
 
 ## Wallet Integration (v3.6.0)
 
@@ -299,9 +259,6 @@ const accounts = await window.ethereum.request({ method: 'eth_accounts' });
 t('profile.available')   → "Available" / "موجود"
 t('profile.earned')      → "Earned" / "کسب شده"
 t('profile.spent')       → "Spent" / "مصرف شده"
-t('profile.dailyTokens') → "Daily Free Tokens" / "توکن رایگان روزانه"
-t('profile.remaining')   → "Remaining" / "باقیمانده"
-t('profile.usedToday')   → "Used Today" / "امروز مصرف شده"
 ```
 
 ## Miner CLI Mode (v3.8.0)
@@ -428,53 +385,6 @@ When a chat request uses a model not installed on VPS Ollama, the backend auto-s
 4. If no family match → use first available model
 5. Log which model was actually used
 
-## Free Cloud AI — Round-Robin Routing (v3.11.0)
-
-A free model that routes across multiple cloud providers using round-robin with automatic failover.
-
-### Providers
-
-| Provider | API URL | Free Tier | Rate Limit |
-|----------|---------|-----------|------------|
-| Groq | `api.groq.com/openai/v1` | Llama 3.1 8B, 3.3 70B | 30 RPM, 14,400 RPD |
-| OpenRouter | `openrouter.ai/api/v1` | 25+ free models (`:free` suffix) | 20 RPM, 50 RPD |
-| Cerebras | `api.cerebras.ai/v1` | Llama 3.1 8B, 3.3 70B | ~1M tokens/day |
-| Cloudflare | `api.cloudflare.com/...` | Llama 3.1 8B, 3.3 70B | 10K neurons/day |
-
-### How it works
-
-1. User selects "🌐 Free Cloud AI" in chat
-2. Backend uses round-robin index to pick next provider
-3. If provider responds → return response
-4. If provider fails (rate limit, timeout) → cooldown 60s, try next
-5. Provider label shown: "⚡ via Groq"
-
-### Model mapping
-
-```
-Krelz Model    → Groq                → OpenRouter              → Cerebras          → Cloudflare
-llama3.1:8b    → llama-3.1-8b-instant → meta-llama/llama-3.1... → llama-3.1-8b       → @cf/meta/llama-3.1...
-llama3.3:70b   → llama-3.3-70b-vers.  → meta-llama/llama-3.3... → llama-3.3-70b      → @cf/meta/llama-3.3...
-free-cloud-ai  → llama-3.1-8b-instant → meta-llama/llama-3.1... → llama-3.1-8b       → @cf/meta/llama-3.1...
-```
-
-### Environment variables
-
-```
-GROQ_API_KEY=
-OPENROUTER_API_KEY=
-CEREBRAS_API_KEY=
-CLOUDFLARE_API_TOKEN=
-CLOUDFLARE_ACCOUNT_ID=
-```
-
-### Cooldown system
-
-When a provider returns 429 (rate limited):
-- Provider enters 60-second cooldown
-- Next request skips it and tries the next provider
-- After cooldown, provider is available again
-
 ## Installer / Uninstaller Self-Cleanup (v3.10.0 install, v3.19.0 uninstall)
 
 Install scripts auto-delete themselves after successful installation:
@@ -591,8 +501,3 @@ systemctl restart krelz-frontend
 docker exec krelz-postgres psql -U krelz -d krelz -c "SELECT 1"
 ```
 
-### Check daily_tokens table
-
-```bash
-docker exec krelz-postgres psql -U krelz -d krelz -c "SELECT * FROM daily_tokens LIMIT 5"
-```

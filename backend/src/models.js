@@ -1,7 +1,4 @@
 const MODELS = [
-  // Free Cloud AI — Round-robin across Groq, OpenRouter, Cerebras, Cloudflare
-  { id: 'free-cloud-ai', name: 'Free Cloud AI', size: 'auto', ram: '0', category: 'chat', desc: 'Free AI powered by multiple cloud providers', inputPrice: 0, outputPrice: 0, vision: false, audio: false },
-
   // Chat — Kamel-tarin
   { id: 'llama3.3:70b', name: 'Llama 3.3', size: '70B', ram: '43 GB', category: 'chat', desc: 'Best large model (MMLU 86.0)', inputPrice: 0.097, outputPrice: 0.194, vision: false, audio: false },
   { id: 'deepseek-r1:70b', name: 'DeepSeek R1', size: '70B', ram: '43 GB', category: 'chat', desc: 'Best reasoning model', inputPrice: 0.098, outputPrice: 0.196, vision: false, audio: false },
