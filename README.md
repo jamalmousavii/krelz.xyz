@@ -19,6 +19,7 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Chat Source Badge (v3.18.4)** — each reply shows `⛏️ via miner` / `💻 local`
 - **Default Model (v3.18.4)** — chat defaults to `llama3.1:8b`
 - **Paid Inference (v3.24.0)** — GPU miner first, local Ollama second; every signed-in message is charged from the USD wallet (guest chat is free with a rate limit). No free cloud fallback.
+- **Miner Free Credit (v3.25.0)** — an online/busy miner earns its host a free **$1/day** chat allowance; platform-funded (no wallet debit, no miner revenue share).
 - **Fullscreen Chat Frame (v3.19.1)** — chat fits the viewport exactly (no page scrolling at any resolution/zoom); input keeps focus while the model answers; the latest message is always in view, including after refresh
 - **Attachments & Voice (v3.20.0)** — 📎 send an image, PDF or text file (file text is read server-side so any model can answer; images go to vision models), 🎤 record a ≤60s voice note (client-side WAV encoder, `gemma4:12b`); gated per model with explicit errors — attachments are never silently dropped
 - **Per-Model Pricing** — 10 models from 300M to 70B parameters, priced 30-50% cheaper than DeepSeek
@@ -101,12 +102,15 @@ Choose to remove miner only or everything (miner + Ollama + models).
 
 **Reference:** DeepSeek V4 Flash — $0.14 input / $0.28 output per 1M tokens
 
-## Payments (wallet only)
+## Payments & Free Miner Credit
 
-Every signed-in message is charged from the USD wallet (deposits via NowPayments):
-- Miner serving the reply earns 90% of the cost
-- Empty wallet → `402` with "Wallet balance is empty"
-- Guest (signed-out) chat is free, with a per-IP rate limit
+Every signed-in message is charged from the USD wallet (deposits via NowPayments), except:
+- **Miner credit (v3.25.0)** — with a miner `online`/`busy`, the first **$1.00 per UTC day** is free (`payment_status: "free_miner"`); platform-funded, so the miner earns nothing from these chats
+- **Guests** — free with a per-IP rate limit
+
+Otherwise:
+- Miner serving a **paid** reply earns 90% of the cost
+- Empty wallet and no credit → `402` with "Wallet balance is empty… or keep a miner online for free daily credit"
 
 ## Project Structure
 
@@ -118,7 +122,7 @@ krelz.xyz/
 │   │   ├── models.js          # AI models + pricing
 │   │   ├── database/
 │   │   │   ├── pool.js        # PostgreSQL connection
-│   │   │   └── migrate.js     # DB migration (14 tables + resource columns)
+│   │   │   └── migrate.js     # DB migration (15 tables + resource columns)
 │   │   ├── routes/
 │   │   │   ├── auth.js        # Authentication
 │   │   │   ├── miners.js      # Miner management
@@ -135,7 +139,7 @@ krelz.xyz/
 │   ├── pages/
 │   │   ├── index.js           # Chat homepage (chat-first; fullscreen frame; attachments/voice v3.20.0)
 │   │   ├── chat.js            # Redirects to / (chat is homepage now)
-│   │   ├── profile.js         # Dashboard (balance, leaderboard rank card)
+│   │   ├── profile.js         # Dashboard (balance, miner credit, leaderboard rank card)
 │   │   ├── miners.js          # Miner management + Quick Install copy + history (v3.22.0)
 │   │   ├── settings.js        # Settings (USD wallet, 33-lang dropdown, password)
 │   │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)

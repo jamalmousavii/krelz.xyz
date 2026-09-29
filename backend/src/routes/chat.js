@@ -8,6 +8,7 @@ const { validate, chatRules } = require('../middleware/validate');
 const MODELS = require('../models');
 const { logger } = require('../logger');
 const { prepareAttachment, AttachmentError } = require('../services/attachments');
+const { chargeMinerCredit, getMinerCreditStatus } = require('../services/minerCredit');
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 // Single source of truth for the default model (was split between
@@ -221,16 +222,20 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
       }
     }
 
-    // Pre-flight for paid models: don't burn inference time for a user whose
-    // wallet is empty (guests are exempt — they chat free by design).
+    // Pre-flight for paid models: don't burn inference time for a user who
+    // can pay neither way. Signed-in users can pay from the wallet or from
+    // the free miner credit (v3.25.0); guests are exempt — they chat free.
     const requestedPricing = getModelPricing(model || DEFAULT_MODEL);
     if (userId && requestedPricing.outputPrice > 0) {
       const canPay = await hasWalletFunds(userId);
       if (!canPay) {
-        return res.status(402).json({
-          error: 'Wallet balance is empty. Top up to keep chatting.',
-          payment_status: 'insufficient_balance',
-        });
+        const credit = await getMinerCreditStatus(userId);
+        if (!credit.eligible || credit.remaining <= 0) {
+          return res.status(402).json({
+            error: 'Wallet balance is empty. Top up to keep chatting, or keep a miner online for free daily credit.',
+            payment_status: 'insufficient_balance',
+          });
+        }
       }
     }
 
@@ -410,48 +415,59 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
     }
 
     // Payment: the signed-in user's USD wallet, in ONE transaction with a row
-    // lock so two parallel requests can't spend the same balance. Guests
-    // (no userId) chat free by design and never enter this block.
+    // lock so two parallel requests can't spend the same balance. The free
+    // miner credit (v3.25.0) is tried first inside the same transaction — it
+    // is platform-funded, so no wallet debit and no miner revenue share (the
+    // miner pool is only touched by paid chats). Guests (no userId) chat
+    // free by design and never enter this block.
     let paymentStatus = 'free';
     let insufficientBalance = false;
+    let minerCreditRemaining = null;
 
     if (userId && cost > 0) {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
 
-        const balanceResult = await client.query(
-          'SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = $2 FOR UPDATE',
-          [userId, paymentCoin]
-        );
-        const userBalance = parseFloat(balanceResult.rows[0]?.available || 0);
+        const creditCharge = await chargeMinerCredit(userId, cost, client);
+        minerCreditRemaining = creditCharge.remaining;
 
-        if (userBalance >= cost) {
-          await client.query(
-            `UPDATE user_coin_balances
-                SET available = available - $1, total_spent = total_spent + $1
-              WHERE user_id = $2 AND coin = $3`,
-            [cost, userId, paymentCoin]
-          );
-
-          // Only a miner that actually served the task earns — a local-Ollama
-          // fallback must never credit earnings to the miner of record.
-          if (minerId && servedByMiner) {
-            const minerEarning = cost * MINER_REVENUE_SHARE;
-            await client.query(
-              'UPDATE miners SET earnings = earnings + $1 WHERE id = $2',
-              [minerEarning, minerId]
-            );
-            await client.query(
-              `INSERT INTO miner_coin_earnings (miner_id, coin, amount, task_id)
-               VALUES ($1, $2, $3, $4)`,
-              [minerId, paymentCoin, minerEarning, taskId]
-            );
-          }
-          paymentStatus = 'paid';
+        if (creditCharge.charged) {
+          paymentStatus = 'free_miner';
         } else {
-          paymentStatus = 'insufficient_balance';
-          insufficientBalance = true;
+          const balanceResult = await client.query(
+            'SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = $2 FOR UPDATE',
+            [userId, paymentCoin]
+          );
+          const userBalance = parseFloat(balanceResult.rows[0]?.available || 0);
+
+          if (userBalance >= cost) {
+            await client.query(
+              `UPDATE user_coin_balances
+                  SET available = available - $1, total_spent = total_spent + $1
+                WHERE user_id = $2 AND coin = $3`,
+              [cost, userId, paymentCoin]
+            );
+
+            // Only a miner that actually served the task earns — a local-Ollama
+            // fallback must never credit earnings to the miner of record.
+            if (minerId && servedByMiner) {
+              const minerEarning = cost * MINER_REVENUE_SHARE;
+              await client.query(
+                'UPDATE miners SET earnings = earnings + $1 WHERE id = $2',
+                [minerEarning, minerId]
+              );
+              await client.query(
+                `INSERT INTO miner_coin_earnings (miner_id, coin, amount, task_id)
+                 VALUES ($1, $2, $3, $4)`,
+                [minerId, paymentCoin, minerEarning, taskId]
+              );
+            }
+            paymentStatus = 'paid';
+          } else {
+            paymentStatus = 'insufficient_balance';
+            insufficientBalance = true;
+          }
         }
 
         await client.query('COMMIT');
@@ -462,7 +478,9 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
         client.release();
       }
 
-      if (paymentStatus === 'paid') invalidateCache('/api/payments/balance');
+      if (paymentStatus === 'paid' || paymentStatus === 'free_miner') {
+        invalidateCache('/api/payments/balance');
+      }
     }
 
     // Wallet empty: refuse instead of serving paid inference for free. The
@@ -486,7 +504,8 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
       coin: paymentCoin,
       payment_status: paymentStatus,
       miner_id: servedByMiner ? minerId : null,
-      source: servedByMiner ? 'miner' : 'local'
+      source: servedByMiner ? 'miner' : 'local',
+      miner_credit_remaining: minerCreditRemaining
     });
 
   } catch (err) {

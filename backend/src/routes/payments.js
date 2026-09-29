@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../database/pool');
 const { authenticate } = require('../middleware/auth');
 const nowpayments = require('../services/nowpayments');
+const { getMinerCreditStatus } = require('../services/minerCredit');
 const { invalidateCache } = require('../cache');
 const { logger } = require('../logger');
 
@@ -170,6 +171,7 @@ router.get('/balance', authenticate, async (req, res) => {
     );
 
     const row = result.rows[0];
+    const minerCredit = await getMinerCreditStatus(userId);
     const balances = {
       USD: {
         available: parseFloat(row?.available || 0),
@@ -178,7 +180,17 @@ router.get('/balance', authenticate, async (req, res) => {
       },
     };
 
-    res.json({ success: true, balances, currency: 'USD' });
+    res.json({
+      success: true,
+      balances,
+      currency: 'USD',
+      miner_credit: {
+        eligible: minerCredit.eligible,
+        limit: minerCredit.limit,
+        used: minerCredit.used,
+        remaining: minerCredit.remaining,
+      },
+    });
 
   } catch (err) {
     logger.error({ err }, 'Request failed');

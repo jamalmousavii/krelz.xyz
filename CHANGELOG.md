@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.25.0] - 2026-09-29
+
+Free daily chat credit for miner hosts — platform-funded, miner pool untouched.
+
+### Added
+- **Miner free chat credit** (`src/services/minerCredit.js`): signed-in users with a miner in `online`/`busy` state get a **$1.00 chat allowance per UTC day**. Spent first inside the payment transaction as `payment_status: "free_miner"` — no wallet debit, **no miner revenue share** (paid chats remain the only source of miner revenue).
+- New table `miner_daily_credit` (row-locked upsert + UTC-day rollover inside the payment txn).
+- `miner_credit: { eligible, limit, used, remaining }` on `GET /api/payments/balance` and `GET /api/token/balance`; `miner_credit_remaining` on the chat response.
+- Profile shows a **Mining Free Credit** card while eligible; chat messages served on credit get a 🎁 badge.
+
+### Changed
+- Chat pre-flight: an empty wallet no longer 402s when free miner credit is available; the 402 message now mentions the credit.
+- `invalidateCache('/api/payments/balance')` also runs when credit is charged.
+
+### Tests
+- `tests/miner.credit.test.js` — 9 unit tests (eligibility, allowance math, charge/refuse, UTC rollover upsert, float-epsilon boundary). Suite: 80 tests, 10 suites green.
+
 ## [3.24.0] - 2026-09-29
 
 Free Cloud AI removed end-to-end — the site no longer serves inference for free (guest chat aside).

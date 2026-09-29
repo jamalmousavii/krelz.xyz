@@ -120,15 +120,16 @@ IPN had no signature verification in the shipped path, no idempotency (replayed 
 
 ## 4. Money-flow invariants (chat billing)
 
-Since v3.24.0 (daily allowance removed) billing is a single transaction with a row lock — the only place in the codebase that mutates a balance:
+Since v3.24.0 billing is a single transaction with row locks — the only place in the codebase that mutates a balance:
 
-1. Lock `user_coin_balances` with `FOR UPDATE` and debit the full `cost` (wallet only).
-2. Credit the miner **only if it actually served the task** (`minerId && servedByMiner`), at 90% (`MINER_REVENUE_SHARE`).
-3. Insufficient funds → rollback of nothing (no debit happened), the API answers `402 insufficient_balance`, and the pre-stored task answer is not returned to the caller.
-4. Pre-flight `hasWalletFunds()` rejects paid-model requests **before** any GPU/Ollama work when the wallet is empty.
-5. Guests (no JWT) never enter the payment block — free by product decision (see §H-limits).
+1. (v3.25.0) `chargeMinerCredit()` runs first: if the user has an `online`/`busy` miner, an `INSERT … ON CONFLICT` upsert row-locks `miner_daily_credit` (UTC-day rollover in the same statement) and, when the $1/day allowance covers `cost`, marks the task `free_miner` — **no wallet debit and no miner revenue share**.
+2. Otherwise lock `user_coin_balances` with `FOR UPDATE` and debit the full `cost`.
+3. Credit the miner **only if it actually served the task** (`minerId && servedByMiner`), at 90% (`MINER_REVENUE_SHARE`) — paid chats only.
+4. Neither covers the cost → no debit happens, the API answers `402 insufficient_balance`, and the pre-stored task answer is not returned to the caller.
+5. Pre-flight: empty wallet **and** no remaining miner credit rejects paid-model requests **before** any GPU/Ollama work.
+6. Guests (no JWT) never enter the payment block — free by product decision (see §H-limits).
 
-Invariants asserted by tests: pricing = `tokens × outputPrice / 1e6`, revenue share `0.9`, catalog/default-model consistency (`tests/models.pricing.test.js`).
+Invariants asserted by tests: pricing = `tokens × outputPrice / 1e6`, revenue share `0.9`, catalog/default-model consistency (`tests/models.pricing.test.js`); credit allowance/rollover/charge-refuse (`tests/miner.credit.test.js`).
 
 ---
 

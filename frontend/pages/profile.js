@@ -87,7 +87,7 @@ export default function Profile() {
             </div>
           </div>
           {usdBalance && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <div className={`grid grid-cols-1 ${usdBalance.miner_credit?.eligible ? 'sm:grid-cols-4' : 'sm:grid-cols-3'} gap-3 mb-4`}>
               <div className="bg-sky-50 rounded-xl p-4 text-center border border-sky-100">
                 <div className="text-xl font-bold text-emerald-600">${parseFloat(usdBalance.available || 0).toFixed(2)}</div>
                 <div className="text-gray-500 text-xs">{t('profile.available')}</div>
@@ -100,6 +100,15 @@ export default function Profile() {
                 <div className="text-xl font-bold text-red-500">${parseFloat(usdBalance.total_spent || 0).toFixed(2)}</div>
                 <div className="text-gray-500 text-xs">{t('profile.spent')}</div>
               </div>
+              {usdBalance.miner_credit?.eligible && (
+                <div className="bg-amber-50 rounded-xl p-4 text-center border border-amber-100">
+                  <div className="text-xl font-bold text-amber-600">
+                    ${parseFloat(usdBalance.miner_credit.remaining || 0).toFixed(2)}
+                  </div>
+                  <div className="text-gray-600 text-xs">{t('profile.minerCredit')}</div>
+                  <div className="text-gray-400 text-[10px]">{t('profile.minerCreditHint')}</div>
+                </div>
+              )}
             </div>
           )}
         </div>

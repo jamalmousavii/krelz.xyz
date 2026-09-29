@@ -106,18 +106,20 @@
   "tokens_used": 420,
   "cost": 0.00007,
   "coin": "USD",
-  "payment_status": "free | paid | insufficient_balance",
+  "payment_status": "free | free_miner | paid | insufficient_balance",
   "miner_id": 7,
-  "source": "miner | local"
+  "source": "miner | local",
+  "miner_credit_remaining": 0.99
 }
 ```
 
 **پرداخت:**
 
-1. کل `cost` از کیف پول USD کاربرِ وارد‌شده کم می‌شود (یک تراکنش با قفل ردیف).
-2. سهم ماینر = ۹۰٪ مبلغ پرداخت‌شده (فقط اگر واقعاً ماینر جواب داده باشد).
-3. موجودی خالی → **`402`** با `payment_status: "insufficient_balance"` و پیام «Wallet balance is empty».
-4. کاربر مهمان (بدون توکن) رایگان است → `payment_status: "free"` (با rate-limit).
+1. **اعتبار رایگان ماینر (v3.25.0)**: اگر کاربر ماینر `online`/`busy` داشته باشد، اول از سقف **$۱ هر روز UTC** کم می‌شود → `payment_status: "free_miner"` (نه از کیف پول، نه سهم ماینر — منبع پلتفرم).
+2. وگرنه کل `cost` از کیف پول USD کاربر (یک تراکنش با قفل ردیف).
+3. سهم ماینر = ۹۰٪ مبلغ **پرداخت‌شده** (فقط اگر واقعاً ماینر جواب داده باشد) — از اعتبار رایگان سهمی نمی‌گیرد.
+4. نه اعتبار کافی نه موجودی → **`402`** با `payment_status: "insufficient_balance"` و پیام «Wallet balance is empty… or keep a miner online for free daily credit».
+5. کاربر مهمان (بدون توکن) رایگان است → `payment_status: "free"` (با rate-limit).
 
 قیمت‌گذاری: `cost = tokens × outputPrice / 1e6` (قیمت مدل انتخاب‌شده از `src/models.js`).
 
@@ -252,7 +254,7 @@
 ### `GET /api/payments/balance` (نیازمند JWT)
 
 ```json
-{ "success": true, "balances": { "USD": { "available": 12.5, "total_earned": 30, "total_spent": 17.5 } } }
+{ "success": true, "balances": { "USD": { "available": 12.5, "total_earned": 30, "total_spent": 17.5 } }, "miner_credit": { "eligible": true, "limit": 1, "used": 0.01, "remaining": 0.99 } }
 ```
 
 ### `POST /api/payments/withdraw`
@@ -278,7 +280,7 @@
 ### `GET /api/token/balance` (نیازمند JWT)
 
 ```json
-{ "success": true, "available": 5.0, "total_earned": 2.0, "total_spent": 0.5 }
+{ "success": true, "available": 5.0, "total_earned": 2.0, "total_spent": 0.5, "miner_credit": { "eligible": true, "limit": 1, "used": 0.01, "remaining": 0.99 } }
 ```
 
 ### `POST /api/token/deposit|deduct|transfer`
@@ -336,7 +338,7 @@
 |----|------|
 | `400` | اعتبارسنجی ناموفق (`details` شامل فیلدهاست) |
 | `401` | توکن نامعتبر/نبودن توکن/توکنِ ماینر نامعتبر |
-| `402` | موجودی کیف پول کافی نیست (پیام: Wallet balance is empty) |
+| `402` | نه موجودی کیف پول کافی است نه اعتبار رایگان ماینر (پیام: Wallet balance is empty…) |
 | `403` | دسترسی ادمین لازم است / CORS |
 | `404` | پیدا نشد |
 | `409` | تعارض (چند ماینر با توکن سطح حساب) |

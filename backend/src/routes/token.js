@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../database/pool');
 const { logger } = require('../logger');
+const { getMinerCreditStatus } = require('../services/minerCredit');
 
 // GET /api/token/balance — USD balance snapshot for the signed-in user.
 // Auth is enforced by `authenticate` mounted in server.js, so req.user is set.
@@ -16,12 +17,19 @@ router.get('/balance', async (req, res) => {
     );
 
     const balance = balanceResult.rows[0] || { available: 0, total_earned: 0, total_spent: 0 };
+    const minerCredit = await getMinerCreditStatus(userId);
 
     res.json({
       success: true,
       available: parseFloat(balance.available),
       total_earned: parseFloat(balance.total_earned),
-      total_spent: parseFloat(balance.total_spent)
+      total_spent: parseFloat(balance.total_spent),
+      miner_credit: {
+        eligible: minerCredit.eligible,
+        limit: minerCredit.limit,
+        used: minerCredit.used,
+        remaining: minerCredit.remaining,
+      }
     });
 
   } catch (err) {

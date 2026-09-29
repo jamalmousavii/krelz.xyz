@@ -417,6 +417,7 @@ export default function Home() {
           content: data.response,
           source: data.source || null,
           miner_id: data.miner_id || null,
+          payment_status: data.payment_status || null,
         }]);
         if (data.session_id && !activeSessionId) {
           setActiveSessionId(data.session_id);
@@ -718,6 +719,9 @@ export default function Home() {
                     )}
                     {msg.source === 'local' && (
                       <span>💻 {t('chat.viaLocal')}</span>
+                    )}
+                    {msg.payment_status === 'free_miner' && (
+                      <span className="text-amber-600"> 🎁 {t('chat.freeMinerCredit')}</span>
                     )}
                   </div>
                 )}

@@ -89,7 +89,7 @@ backend/
 │   ├── cache.js           # Redis caching
 │   ├── database/
 │   │   ├── pool.js        # PostgreSQL connection
-│   │   └── migrate.js     # DB migration (14 tables + resource columns)
+│   │   └── migrate.js     # DB migration (15 tables + resource columns)
 │   ├── middleware/
 │   │   └── auth.js        # JWT + Google OAuth
 │   └── routes/
@@ -124,7 +124,7 @@ miner-app/
         └── api.js         # REST API (register, heartbeat)
 ```
 
-## Database Schema (14 Tables)
+## Database Schema (15 Tables)
 
 | Table | Purpose |
 |-------|---------|
@@ -142,6 +142,7 @@ miner-app/
 | miner_coin_earnings | Miner earnings per coin |
 | chat_sessions | Chat session groups |
 | **daily_tokens** | *(legacy — feature removed in v3.24.0, table kept but unread)* |
+| **miner_daily_credit** | Free daily chat credit for miner hosts ($1/UTC-day, v3.25.0) |
 
 ### Miners Table — Resource Monitoring Columns (v3.8.0)
 
@@ -185,6 +186,35 @@ Models defined in `backend/src/models.js` with per-model pricing:
 | qwen2.5-coder:32b | 32B | $0.094 | $0.188 | -34% |
 | llama3.3:70b | 70B | $0.097 | $0.194 | -32% |
 | deepseek-r1:70b | 70B | $0.098 | $0.196 | -30% |
+
+## Miner Free Chat Credit (v3.25.0)
+
+Signed-in users with at least one miner in `online`/`busy` state get a
+**$1.00 chat allowance per UTC day**. The credit is platform-funded: spending
+it never debits the wallet and never credits a miner — the miner pool is only
+touched by paid chats.
+
+### Flow
+
+1. Pre-flight (`chat.js`): empty wallet → read `getMinerCreditStatus()`; no
+   credit either → `402` (message mentions the credit).
+2. Payment txn: `chargeMinerCredit()` runs **first** — an `INSERT … ON
+   CONFLICT` upsert row-locks the credit row and rolls a stale (pre-UTC-today)
+   usage to zero in the same statement, so parallel requests cannot overspend.
+3. Covered → `payment_status: "free_miner"` — no wallet debit, **no
+   `MINER_REVENUE_SHARE`**, no `miner_coin_earnings` row.
+4. Not covered → the wallet path exactly as before (90% miner share only on
+   this paid leg).
+5. Guests stay free (rate-limited), unchanged.
+
+### Rules
+
+- Reset at UTC midnight: `last_reset_date = (now() AT TIME ZONE 'utc')::date`.
+- Eligibility is checked **at charge time** — registering a miner row is not
+  enough; it must actually be `online`/`busy`.
+- Balance endpoints expose `miner_credit: { eligible, limit, used, remaining }`;
+  the chat response carries `miner_credit_remaining`.
+- Tests: `backend/tests/miner.credit.test.js`.
 
 ## Wallet Integration (v3.6.0)
 

@@ -381,6 +381,19 @@ const migrate = async () => {
     await client.query('CREATE INDEX IF NOT EXISTS idx_daily_tokens_user ON daily_tokens(user_id)');
     console.log('✅ Daily tokens index created');
 
+    // === Miner free chat credit (v3.25.0) ===
+    // Signed-in users with an online/busy miner get a USD allowance per UTC
+    // day. Spent only inside the chat payment txn: platform-funded, so it
+    // never debits the wallet and never credits a miner (no revenue share).
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS miner_daily_credit (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id),
+        usd_used_today DECIMAL(20,8) DEFAULT 0,
+        last_reset_date DATE
+      )
+    `);
+    console.log('✅ جدول miner_daily_credit ایجاد شد');
+
     // === Miner Token + Password Reset ===
     await client.query(`
       DO $$ BEGIN
