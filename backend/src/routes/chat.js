@@ -8,7 +8,7 @@ const { validate, chatRules } = require('../middleware/validate');
 const MODELS = require('../models');
 const { logger } = require('../logger');
 const { prepareAttachment, AttachmentError } = require('../services/attachments');
-const { chargeMinerCredit, getMinerCreditStatus } = require('../services/minerCredit');
+const { chargeMinerCredit } = require('../services/minerCredit');
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 // Single source of truth for the default model (was split between
@@ -20,16 +20,6 @@ const getModelPricing = (modelId) => {
   const found = MODELS.find(m => m.id === modelId);
   return found ? { inputPrice: found.inputPrice, outputPrice: found.outputPrice } : { inputPrice: 0.088, outputPrice: 0.176 };
 };
-
-// Cheap pre-flight: is there any USD balance to charge a paid model against?
-// (The daily free allowance was removed in v3.24.0 — wallet only.)
-async function hasWalletFunds(userId) {
-  const balance = await pool.query(
-    "SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = 'USD'",
-    [userId]
-  );
-  return parseFloat(balance.rows[0]?.available || 0) > 0;
-}
 
 // ======== SESSION CRUD ========
 
@@ -222,22 +212,9 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
       }
     }
 
-    // Pre-flight for paid models: don't burn inference time for a user who
-    // can pay neither way. Signed-in users can pay from the wallet or from
-    // the free miner credit (v3.25.0); guests are exempt — they chat free.
-    const requestedPricing = getModelPricing(model || DEFAULT_MODEL);
-    if (userId && requestedPricing.outputPrice > 0) {
-      const canPay = await hasWalletFunds(userId);
-      if (!canPay) {
-        const credit = await getMinerCreditStatus(userId);
-        if (!credit.eligible || credit.remaining <= 0) {
-          return res.status(402).json({
-            error: 'Wallet balance is empty. Top up to keep chatting, or keep a miner online for free daily credit.',
-            payment_status: 'insufficient_balance',
-          });
-        }
-      }
-    }
+    // No payment pre-flight: chat is never blocked (v3.26.0). A signed-in
+    // user without money still gets a full reply — settled below as 'free'
+    // when neither the miner credit nor the wallet covers the cost.
 
     // Resolve or create session
     let sessionId = session_id ? parseInt(session_id, 10) : null;
@@ -414,14 +391,12 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
         .catch((err) => logger.error({ err, minerId }, 'Failed to increment miner total_tasks'));
     }
 
-    // Payment: the signed-in user's USD wallet, in ONE transaction with a row
-    // lock so two parallel requests can't spend the same balance. The free
-    // miner credit (v3.25.0) is tried first inside the same transaction — it
-    // is platform-funded, so no wallet debit and no miner revenue share (the
-    // miner pool is only touched by paid chats). Guests (no userId) chat
-    // free by design and never enter this block.
+    // Payment (v3.26.0): chat is never blocked. Inside ONE transaction with a
+    // row lock we try, in order: the free miner credit (platform-funded — no
+    // wallet debit, no miner revenue share), then the signed-in user's USD
+    // wallet (miner gets 90% here). If neither covers the cost the reply is
+    // still served as 'free'. Guests (no userId) never enter this block.
     let paymentStatus = 'free';
-    let insufficientBalance = false;
     let minerCreditRemaining = null;
 
     if (userId && cost > 0) {
@@ -464,10 +439,10 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
               );
             }
             paymentStatus = 'paid';
-          } else {
-            paymentStatus = 'insufficient_balance';
-            insufficientBalance = true;
           }
+          // Neither credit nor wallet covers the cost: still serve the reply
+          // (v3.26.0 — chat is never blocked). paymentStatus stays 'free',
+          // no debit and no miner revenue share.
         }
 
         await client.query('COMMIT');
@@ -481,17 +456,6 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
       if (paymentStatus === 'paid' || paymentStatus === 'free_miner') {
         invalidateCache('/api/payments/balance');
       }
-    }
-
-    // Wallet empty: refuse instead of serving paid inference for free. The
-    // answer is already stored in `tasks`.
-    if (insufficientBalance) {
-      return res.status(402).json({
-        error: 'Insufficient balance. Top up your wallet to keep chatting.',
-        payment_status: 'insufficient_balance',
-        cost,
-        task_id: taskId
-      });
     }
 
     res.json({

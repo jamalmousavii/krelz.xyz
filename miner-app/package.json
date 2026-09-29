@@ -1,6 +1,6 @@
 {
   "name": "krelz-miner",
-  "version": "3.25.0",
+  "version": "3.26.0",
   "description": "Krelz Network Miner Application",
   "author": "Krelz Network",
   "main": "src/main.js",

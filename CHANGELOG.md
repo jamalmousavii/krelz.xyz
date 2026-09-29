@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.26.0] - 2026-09-29
+
+Chat is never blocked — empty wallets are served for free.
+
+### Changed
+- **Payment pre-flight and `402` removed from `chat.js`**: a signed-in user with an empty wallet and no miner credit still gets a full reply — settlement falls through to `payment_status: "free"` (no wallet debit, no miner revenue share).
+- Payment order unchanged: free miner credit → wallet (90% miner share on paid chats only). Guests unchanged.
+- Removed `hasWalletFunds()` and every `insufficient_balance` / `402` response (chat no longer returns `402` at all).
+
+### Tests
+- Suite green: 80 tests, 10 suites.
+
 ## [3.25.0] - 2026-09-29
 
 Free daily chat credit for miner hosts — platform-funded, miner pool untouched.

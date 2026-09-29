@@ -46,7 +46,7 @@
 | M6 | Medium | Money | `/api/miners/setup` revived `removed` miners that `ws.js` would then refuse | `backend/src/routes/miners.js:292` | FIXED (401) |
 | M7 | Medium | Correctness | Default model disagreement: `llama3:8b` (chat) vs `llama3.1:8b` (catalog) | `backend/src/routes/chat.js:16` | FIXED |
 | M8 | Medium | Correctness | `/api/models` credited unknown models to the `llama3.1:8b` badge (misleading availability) | `backend/src/routes/models.js:15-50` | FIXED |
-| M9 | Medium | Money | Chat had no pre-flight balance check → expensive inference ran, then failed | `backend/src/routes/chat.js:116,295` | FIXED (402 before dispatch) |
+| M9 | Medium | Money | Chat had no pre-flight balance check → expensive inference ran, then failed | `backend/src/routes/chat.js:116,295` | Superseded by v3.26.0 — pre-flight removed on purpose; empty balance settles as `free` (chat never blocks) |
 | M10 | Medium | Robustness | Chat accepted non-integer `session_id` and 65k subjects → SQL type errors (500) instead of 400 | `backend/src/routes/chat.js` session CRUD | FIXED |
 | M11 | Medium | Robustness | `migrate.js` exited `0` on failure | `backend/src/database/migrate.js` | FIXED |
 | M12 | Medium | Ops | `console.*` scattered through the API (no level/structure/rotation) | throughout `backend/src` | FIXED (pino) |
@@ -125,9 +125,8 @@ Since v3.24.0 billing is a single transaction with row locks — the only place 
 1. (v3.25.0) `chargeMinerCredit()` runs first: if the user has an `online`/`busy` miner, an `INSERT … ON CONFLICT` upsert row-locks `miner_daily_credit` (UTC-day rollover in the same statement) and, when the $1/day allowance covers `cost`, marks the task `free_miner` — **no wallet debit and no miner revenue share**.
 2. Otherwise lock `user_coin_balances` with `FOR UPDATE` and debit the full `cost`.
 3. Credit the miner **only if it actually served the task** (`minerId && servedByMiner`), at 90% (`MINER_REVENUE_SHARE`) — paid chats only.
-4. Neither covers the cost → no debit happens, the API answers `402 insufficient_balance`, and the pre-stored task answer is not returned to the caller.
-5. Pre-flight: empty wallet **and** no remaining miner credit rejects paid-model requests **before** any GPU/Ollama work.
-6. Guests (no JWT) never enter the payment block — free by product decision (see §H-limits).
+4. Neither covers the cost → no debit happens and the reply is still served as `payment_status: "free"` (v3.26.0 — chat has no `402` and no payment pre-flight at all).
+5. Guests (no JWT) never enter the payment block — free by product decision (see §H-limits).
 
 Invariants asserted by tests: pricing = `tokens × outputPrice / 1e6`, revenue share `0.9`, catalog/default-model consistency (`tests/models.pricing.test.js`); credit allowance/rollover/charge-refuse (`tests/miner.credit.test.js`).
 

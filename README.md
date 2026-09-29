@@ -110,7 +110,7 @@ Every signed-in message is charged from the USD wallet (deposits via NowPayments
 
 Otherwise:
 - Miner serving a **paid** reply earns 90% of the cost
-- Empty wallet and no credit → `402` with "Wallet balance is empty… or keep a miner online for free daily credit"
+- Empty wallet and no credit → **still served free** (`payment_status: "free"`) — chat is never blocked (v3.26.0)
 
 ## Project Structure
 

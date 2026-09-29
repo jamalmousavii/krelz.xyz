@@ -40,7 +40,7 @@ const hu = {
     startChat: 'Csevegés indítása',
     footer: 'Minden jog fenntartva.',
     installMetaMask: 'Kérjük, telepítse a MetaMaskot',
-    version: 'v3.25.0',
+    version: 'v3.26.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — decentralizált LLM-inferencia platform, {version} verzió. Minden jog fenntartva.',

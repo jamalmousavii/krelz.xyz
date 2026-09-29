@@ -196,8 +196,8 @@ touched by paid chats.
 
 ### Flow
 
-1. Pre-flight (`chat.js`): empty wallet → read `getMinerCreditStatus()`; no
-   credit either → `402` (message mentions the credit).
+1. No pre-flight (v3.26.0): chat is **never blocked** — an empty wallet alone
+   does not reject the request (there is no `402` in `chat.js` anymore).
 2. Payment txn: `chargeMinerCredit()` runs **first** — an `INSERT … ON
    CONFLICT` upsert row-locks the credit row and rolls a stale (pre-UTC-today)
    usage to zero in the same statement, so parallel requests cannot overspend.
@@ -205,7 +205,9 @@ touched by paid chats.
    `MINER_REVENUE_SHARE`**, no `miner_coin_earnings` row.
 4. Not covered → the wallet path exactly as before (90% miner share only on
    this paid leg).
-5. Guests stay free (rate-limited), unchanged.
+5. Neither covers the cost → the reply is still served with
+   `payment_status: "free"` (no debit, no miner share) — chat never blocks.
+6. Guests stay free (rate-limited), unchanged.
 
 ### Rules
 
