@@ -24,6 +24,9 @@ Free daily allowance for everyone (2M tokens/day) + Krelz Plus (10M/day, $6.99/m
 ### Tests
 - `tests/free.allowance.test.js` (12) + `tests/plans.test.js` (13, incl. the IPN `finished`→`completed` regression) — allowance math, guest keying, UTC rollover upsert, cap/epsilon boundaries, Plus caps, renewal SQL, NowPayments order-id parsing. Suite: **105 tests, 12 suites green**.
 
+### Deploy notes
+- The VPS was downsized to 2 vCPU / 3.7GiB — `llama3.1:8b` OOMs on load, so local Ollama now runs **`qwen2.5:1.5b` (~1GB)** and the unusable `llama3.1:8b` tag was removed from the server (re-pull after any RAM upgrade; the catalog/UI is unchanged — requests for any model fall back to the available local model with a warn log). GPU miners are unaffected.
+
 ## [3.26.0] - 2026-09-29
 
 Chat is never blocked — empty wallets are served for free.
