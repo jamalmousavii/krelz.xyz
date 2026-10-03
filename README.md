@@ -102,15 +102,17 @@ Choose to remove miner only or everything (miner + Ollama + models).
 
 **Reference:** DeepSeek V4 Flash — $0.14 input / $0.28 output per 1M tokens
 
-## Payments & Free Miner Credit
+## Payments, Free Allowance & Plus
 
-Every signed-in message is charged from the USD wallet (deposits via NowPayments), except:
-- **Miner credit (v3.25.0)** — with a miner `online`/`busy`, the first **$1.00 per UTC day** is free (`payment_status: "free_miner"`); platform-funded, so the miner earns nothing from these chats
-- **Guests** — free with a per-IP rate limit
+Every message settles in one row-locked transaction, in order:
+1. **Daily free allowance (v3.27.0)** — **2,000,000 tokens per UTC day** for every subject (signed-in users by account, guests by IP); `payment_status: "free"`, platform-funded
+2. **Miner credit (v3.25.0)** — with a miner `online`/`busy`, the first **$1.00 per UTC day** is free (`payment_status: "free_miner"`); the miner earns nothing from these chats
+3. **USD wallet** (deposits via NowPayments) — a miner serving a **paid** reply earns 90% of the cost
+4. Race fallback — an already-generated reply is still served as `"free"`
 
-Otherwise:
-- Miner serving a **paid** reply earns 90% of the cost
-- Empty wallet and no credit → **still served free** (`payment_status: "free"`) — chat is never blocked (v3.26.0)
+**Wall:** a subject with *zero* coverage (allowance spent + no credit + empty wallet) gets `402 upgrade_required` with the Plus upgrade card — checked **before** dispatch; partial coverage never blocks.
+
+**Krelz Plus (v3.27.0)** — **$6.99/month → 10,000,000 tokens/day** (5× Free): crypto invoice via NowPayments, renewal extends from `max(now, expiry)` by 30 days.
 
 ## Project Structure
 
@@ -122,12 +124,13 @@ krelz.xyz/
 │   │   ├── models.js          # AI models + pricing
 │   │   ├── database/
 │   │   │   ├── pool.js        # PostgreSQL connection
-│   │   │   └── migrate.js     # DB migration (15 tables + resource columns)
+│   │   │   └── migrate.js     # DB migration (18 tables + resource columns)
 │   │   ├── routes/
 │   │   │   ├── auth.js        # Authentication
 │   │   │   ├── miners.js      # Miner management
-│   │   │   ├── chat.js        # LLM chat + wallet payment
-│   │   │   ├── payments.js    # USD wallet + NowPayments
+│   │   │   ├── chat.js        # LLM chat + payment chain + coverage wall
+│   │   │   ├── payments.js    # USD wallet + NowPayments (deposit/Plus IPN)
+│   │   │   ├── plans.js       # Free/Plus plan snapshot + Plus purchase
 │   │   │   ├── token.js       # Balance snapshot
 │   │   │   ├── stats.js       # Network stats
 │   │   │   └── models.js      # Model list API
@@ -139,7 +142,7 @@ krelz.xyz/
 │   ├── pages/
 │   │   ├── index.js           # Chat homepage (chat-first; fullscreen frame; attachments/voice v3.20.0)
 │   │   ├── chat.js            # Redirects to / (chat is homepage now)
-│   │   ├── profile.js         # Dashboard (balance, miner credit, leaderboard rank card)
+│   │   ├── profile.js         # Dashboard (balance, free-today + Plus cards, miner credit, rank)
 │   │   ├── miners.js          # Miner management + Quick Install copy + history (v3.22.0)
 │   │   ├── settings.js        # Settings (USD wallet, 33-lang dropdown, password)
 │   │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)

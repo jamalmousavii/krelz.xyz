@@ -69,6 +69,11 @@ export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [token, setToken] = useState(null);
 
+  // v3.27.0 — Plus upgrade surfaces: the 402 wall (upgrade_wall message) and
+  // the once-per-day upsell banner after a wallet-paid message.
+  const [upgradeNotice, setUpgradeNotice] = useState(null); // { price, daily_tokens } | null
+  const [purchaseError, setPurchaseError] = useState('');
+
   // Attachments & voice (v3.20.0): one pending attachment per message.
   const [attachment, setAttachment] = useState(null); // { type, name, mime, data }
   const [attachError, setAttachError] = useState('');
@@ -196,6 +201,32 @@ export default function Home() {
     'Content-Type': 'application/json',
     ...(tkn ? { Authorization: `Bearer ${tkn}` } : {})
   });
+
+  // Plus purchase: one NowPayments invoice per month; activation happens in
+  // the IPN webhook. The hosted checkout opens in a new tab.
+  const purchasePlus = async () => {
+    if (!token) return;
+    setPurchaseError('');
+    try {
+      const res = await fetch('/api/plans/plus/purchase', {
+        method: 'POST',
+        headers: authHeaders(token),
+      });
+      const data = await res.json();
+      if (data.success && data.invoice?.url) {
+        window.open(data.invoice.url, '_blank', 'noopener');
+      } else {
+        setPurchaseError(data.error || t('chat.errorResponse'));
+      }
+    } catch (err) {
+      setPurchaseError(t('chat.errorConnection'));
+    }
+  };
+
+  const dismissUpgradeNotice = () => {
+    try { localStorage.setItem('krelz_upg_notice', new Date().toISOString().slice(0, 10)); } catch (e) {}
+    setUpgradeNotice(null);
+  };
 
   const fetchModels = async () => {
     try {
@@ -419,12 +450,26 @@ export default function Home() {
           miner_id: data.miner_id || null,
           payment_status: data.payment_status || null,
         }]);
+        // Wallet-funded reply → suggest Plus (once per UTC day, dismissible).
+        if (data.notice === 'upgrade_recommended') {
+          try {
+            const today = new Date().toISOString().slice(0, 10);
+            if (localStorage.getItem('krelz_upg_notice') !== today) setUpgradeNotice(data.plus || null);
+          } catch (e) {}
+        }
         if (data.session_id && !activeSessionId) {
           setActiveSessionId(data.session_id);
           fetchSessions(token);
         } else if (data.session_id && activeSessionId) {
           fetchSessions(token);
         }
+      } else if (res.status === 402 && data.code === 'upgrade_required') {
+        // v3.27.0 wall: no free allowance, no credit, empty wallet.
+        setChat(prev => [...prev, {
+          role: 'assistant',
+          content: t('chat.upgradeDesc'),
+          upgrade_wall: { signed_in: !!data.signed_in, plus: data.plus, free: data.free },
+        }]);
       } else {
         setChat(prev => [...prev, { role: 'assistant', content: data.error || t('chat.errorResponse') }]);
       }
@@ -710,7 +755,30 @@ export default function Home() {
                       <span className="truncate max-w-[180px]">{msg.media.name}</span>
                     </div>
                   )}
-                  {msg.content ? <div className="break-words whitespace-pre-wrap">{msg.content}</div> : null}
+                  {msg.upgrade_wall ? (
+                    <div className="min-w-[240px]">
+                      <div className="font-bold text-violet-800 mb-1">⭐ {t('chat.upgradeTitle')}</div>
+                      <div className="text-gray-700 mb-2 whitespace-pre-wrap">{msg.content}</div>
+                      <div className="text-xs text-gray-500 mb-3">
+                        {t('chat.upgradePrice')
+                          .replace('{price}', `$${msg.upgrade_wall.plus?.price ?? 6.99}`)
+                          .replace('{tokens}', Number(msg.upgrade_wall.plus?.daily_tokens || 10000000).toLocaleString('en-US'))}
+                      </div>
+                      {msg.upgrade_wall.signed_in ? (
+                        <button
+                          onClick={purchasePlus}
+                          className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition"
+                        >
+                          ⭐ {t('chat.upgradeBtn')}
+                        </button>
+                      ) : (
+                        <div className="text-xs text-gray-600 bg-white border border-violet-100 rounded-lg px-3 py-2">
+                          {t('chat.upgradeGuestHint')}
+                        </div>
+                      )}
+                      {purchaseError && <div className="text-red-500 text-xs mt-2">{purchaseError}</div>}
+                    </div>
+                  ) : msg.content ? <div className="break-words whitespace-pre-wrap">{msg.content}</div> : null}
                 </div>
                 {msg.role === 'assistant' && (
                   <div className={`text-xs text-gray-400 mt-1 ${isRtl(lang) ? 'text-right' : 'text-left'}`}>
@@ -735,6 +803,27 @@ export default function Home() {
             <div />
           </div>
 
+          {/* v3.27.0 — Plus upsell after a wallet-paid message (once/day) */}
+          {upgradeNotice && (
+            <div className="flex items-center gap-2 mb-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-3 py-2 text-xs md:text-sm">
+              <span className="flex-1">
+                ⭐ {t('chat.upgradeNotice')}
+                {' '}
+                {t('chat.upgradePrice')
+                  .replace('{price}', `$${upgradeNotice.price ?? 6.99}`)
+                  .replace('{tokens}', Number(upgradeNotice.daily_tokens || 10000000).toLocaleString('en-US'))}
+                {purchaseError && <span className="block text-red-500">{purchaseError}</span>}
+              </span>
+              {isLoggedIn && (
+                <button onClick={purchasePlus} className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition flex-shrink-0">
+                  {t('chat.upgradeBtn')}
+                </button>
+              )}
+              <button onClick={dismissUpgradeNotice} aria-label="dismiss" className="text-amber-500 hover:text-amber-700 px-1.5 font-bold flex-shrink-0">
+                ✕
+              </button>
+            </div>
+          )}
           {/* Input bar — pinned bottom */}
           {(attachment || attachError) && (
             <div className="flex flex-col gap-1.5 mb-2 items-start">

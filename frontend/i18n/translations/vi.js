@@ -40,7 +40,7 @@ const vi = {
     startChat: 'Bắt đầu trò chuyện',
     footer: 'Mọi quyền được bảo lưu.',
     installMetaMask: 'Vui lòng cài đặt MetaMask',
-    version: 'v3.26.0',
+    version: 'v3.27.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — nền tảng suy luận LLM phi tập trung, phiên bản {version}. Mọi quyền được bảo lưu.',

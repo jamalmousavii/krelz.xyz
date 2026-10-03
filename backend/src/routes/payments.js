@@ -4,6 +4,8 @@ const pool = require('../database/pool');
 const { authenticate } = require('../middleware/auth');
 const nowpayments = require('../services/nowpayments');
 const { getMinerCreditStatus } = require('../services/minerCredit');
+const { activatePlus, FREE_DAILY_TOKENS, PLUS_DAILY_TOKENS, PLUS_PRICE_USD, PLUS_INTERVAL_DAYS, getActivePlan } = require('../services/plans');
+const { getFreeStatus } = require('../services/freeAllowance');
 const { invalidateCache } = require('../cache');
 const { logger } = require('../logger');
 
@@ -81,7 +83,10 @@ router.post('/deposit/webhook', async (req, res) => {
     }
 
     const result = await nowpayments.processIPN(payload);
-    if (!result.success || result.status !== 'finished') {
+    // processIPN returns success only for payment_status 'finished' (its
+    // normalized `status` is 'completed') — gate on success alone; checking
+    // `status !== 'finished'` here (v3.18.0) ignored every finished IPN.
+    if (!result.success) {
       return res.json({ status: 'ignored', payment_status: result.status });
     }
 
@@ -89,6 +94,45 @@ router.post('/deposit/webhook', async (req, res) => {
 
     if (!userId || !(amount > 0)) {
       return res.json({ status: 'ignored', reason: 'invalid payload' });
+    }
+
+    // Plus subscription orders (order_id "plus-…"): activate the plan instead
+    // of crediting the wallet. The plan_purchases claim keeps replays
+    // exactly-once — a second 'finished' IPN can never extend twice.
+    if (orderId && orderId.startsWith('plus-')) {
+      const planClient = await pool.connect();
+      let activated = false;
+      try {
+        await planClient.query('BEGIN');
+        const claim = await planClient.query(
+          `UPDATE plan_purchases
+              SET status = 'completed', tx_hash = COALESCE($1, tx_hash)
+            WHERE order_id = $2 AND user_id = $3 AND status = 'pending'
+            RETURNING order_id`,
+          [txHash, orderId, userId]
+        );
+
+        if (claim.rows.length === 0) {
+          await planClient.query('COMMIT');
+          logger.warn({ userId, orderId }, 'IPN replay ignored (plan purchase already processed)');
+          return res.json({ status: 'ok', deduped: true });
+        }
+
+        await activatePlus(userId, planClient);
+        await planClient.query('COMMIT');
+        activated = true;
+      } catch (err) {
+        await planClient.query('ROLLBACK').catch(() => {});
+        throw err;
+      } finally {
+        planClient.release();
+      }
+
+      if (activated) {
+        invalidateCache('/api/payments/balance');
+        logger.info({ userId, orderId }, 'Plus plan activated');
+      }
+      return res.json({ status: 'ok' });
     }
 
     const client = await pool.connect();
@@ -172,6 +216,9 @@ router.get('/balance', authenticate, async (req, res) => {
 
     const row = result.rows[0];
     const minerCredit = await getMinerCreditStatus(userId);
+    const plan = await getActivePlan(userId);
+    const cap = plan ? PLUS_DAILY_TOKENS : FREE_DAILY_TOKENS;
+    const freeStatus = await getFreeStatus({ userId, cap });
     const balances = {
       USD: {
         available: parseFloat(row?.available || 0),
@@ -189,6 +236,19 @@ router.get('/balance', authenticate, async (req, res) => {
         limit: minerCredit.limit,
         used: minerCredit.used,
         remaining: minerCredit.remaining,
+      },
+      free_tokens: {
+        limit: freeStatus.limit,
+        used: freeStatus.used,
+        remaining: freeStatus.remaining,
+      },
+      plan: plan
+        ? { name: 'plus', active: true, expires_at: plan.expires_at }
+        : { name: 'free', active: false, expires_at: null },
+      plus: {
+        price: PLUS_PRICE_USD,
+        daily_tokens: PLUS_DAILY_TOKENS,
+        interval_days: PLUS_INTERVAL_DAYS,
       },
     });
 

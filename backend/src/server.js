@@ -17,6 +17,7 @@ const authRoutes = require('./routes/auth');
 const minerRoutes = require('./routes/miners');
 const chatRoutes = require('./routes/chat');
 const paymentRoutes = require('./routes/payments');
+const planRoutes = require('./routes/plans');
 const tokenRoutes = require('./routes/token');
 const statsRoutes = require('./routes/stats');
 const modelRoutes = require('./routes/models');
@@ -146,6 +147,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/miners', minerRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/plans', planRoutes);
 // Token router reads req.user everywhere: without authenticate every handler saw undefined.
 app.use('/api/token', authenticate, tokenRoutes);
 app.use('/api/stats', cacheMiddleware(30), statsRoutes);

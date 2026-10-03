@@ -36,13 +36,13 @@ class NowPaymentsService {
   }
 
   // Create payment invoice (coin optional — customer picks on NowPayments page)
-  async createInvoice({ userId, coin, amount, orderId }) {
+  async createInvoice({ userId, coin, amount, orderId, description }) {
     const finalOrderId = orderId || `krelz-${userId}-${Date.now()}`;
     const body = {
       price_amount: amount,
       price_currency: 'usd',
       order_id: finalOrderId,
-      order_description: `Krelz Network deposit - $${amount} USD`,
+      order_description: description || `Krelz Network deposit - $${amount} USD`,
       ipn_callback_url: `${process.env.BACKEND_URL || 'https://krelz.xyz'}/api/payments/deposit/webhook`,
     };
     // Optional: pre-select coin; omit so customer chooses on hosted checkout

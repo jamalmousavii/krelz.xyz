@@ -10,6 +10,8 @@ import { useAuth, clearSession } from '../utils/api';
 export default function Profile() {
   const { t, lang } = useLanguage();
   const [usdBalance, setUsdBalance] = useState(null);
+  const [extras, setExtras] = useState(null); // free_tokens / plan / plus from balance
+  const [plusMsg, setPlusMsg] = useState('');
   const [myRank, setMyRank] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -28,7 +30,33 @@ export default function Profile() {
       const res = await fetch('/api/payments/balance', { headers: authHeaders() });
       const data = await res.json();
       if (data.success && data.balances?.USD) setUsdBalance(data.balances.USD);
+      if (data.success && data.free_tokens) {
+        setExtras({ free_tokens: data.free_tokens, plan: data.plan, plus: data.plus });
+      }
     } catch (err) {}
+  };
+
+  // v3.27.0 — Plus invoice: hosted NowPayments checkout opens in a new tab.
+  const purchasePlus = async () => {
+    setPlusMsg('');
+    try {
+      const res = await fetch('/api/plans/plus/purchase', { method: 'POST', headers: authHeaders() });
+      const data = await res.json();
+      if (data.success && data.invoice?.url) {
+        window.open(data.invoice.url, '_blank', 'noopener');
+      } else {
+        setPlusMsg(`❌ ${data.error || 'Error'}`);
+      }
+    } catch (err) {
+      setPlusMsg(`❌ ${t('chat.errorConnection')}`);
+    }
+  };
+
+  const formatTokens = (n) => {
+    const v = Number(n || 0);
+    if (v >= 1000000) return `${(v / 1000000).toFixed(v % 1000000 === 0 ? 0 : 1)}M`;
+    if (v >= 1000) return `${(v / 1000).toFixed(0)}K`;
+    return String(v);
   };
 
   const fetchRank = async () => {
@@ -87,7 +115,7 @@ export default function Profile() {
             </div>
           </div>
           {usdBalance && (
-            <div className={`grid grid-cols-1 ${usdBalance.miner_credit?.eligible ? 'sm:grid-cols-4' : 'sm:grid-cols-3'} gap-3 mb-4`}>
+            <div className={`grid grid-cols-1 ${usdBalance.miner_credit?.eligible ? 'sm:grid-cols-5' : 'sm:grid-cols-4'} gap-3 mb-4`}>
               <div className="bg-sky-50 rounded-xl p-4 text-center border border-sky-100">
                 <div className="text-xl font-bold text-emerald-600">${parseFloat(usdBalance.available || 0).toFixed(2)}</div>
                 <div className="text-gray-500 text-xs">{t('profile.available')}</div>
@@ -100,6 +128,13 @@ export default function Profile() {
                 <div className="text-xl font-bold text-red-500">${parseFloat(usdBalance.total_spent || 0).toFixed(2)}</div>
                 <div className="text-gray-500 text-xs">{t('profile.spent')}</div>
               </div>
+              {extras?.free_tokens && (
+                <div className="bg-indigo-50 rounded-xl p-4 text-center border border-indigo-100">
+                  <div className="text-xl font-bold text-indigo-600">{formatTokens(extras.free_tokens.remaining)}</div>
+                  <div className="text-gray-600 text-xs">{t('profile.freeTokens')}</div>
+                  <div className="text-gray-400 text-[10px]">{t('profile.freeTokensHint')}</div>
+                </div>
+              )}
               {usdBalance.miner_credit?.eligible && (
                 <div className="bg-amber-50 rounded-xl p-4 text-center border border-amber-100">
                   <div className="text-xl font-bold text-amber-600">
@@ -111,6 +146,36 @@ export default function Profile() {
               )}
             </div>
           )}
+        </div>
+
+        {/* v3.27.0 — Plus subscription */}
+        <div className="bg-white rounded-xl border border-violet-100 shadow-sm p-5 md:p-6 mb-6">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold text-gray-800">⭐ {t('profile.plusTitle')}</h2>
+              {extras?.plan?.active ? (
+                <p className="text-sm text-emerald-600 font-medium">
+                  {t('profile.plusActive').replace('{date}', new Date(extras.plan.expires_at).toLocaleDateString())}
+                </p>
+              ) : (
+                <p className="text-sm text-gray-500">
+                  {t('profile.plusDesc')
+                    .replace('{price}', `$${extras?.plus?.price ?? 6.99}`)
+                    .replace('{tokens}', Number(extras?.plus?.daily_tokens || 10000000).toLocaleString('en-US'))}
+                </p>
+              )}
+              {!extras?.plan?.active && (
+                <p className="text-xs text-gray-400 mt-0.5">{t('profile.plusFreeNote')}</p>
+              )}
+            </div>
+            <button
+              onClick={purchasePlus}
+              className="bg-violet-600 hover:bg-violet-700 text-white px-5 py-2.5 rounded-xl transition text-sm font-bold flex-shrink-0"
+            >
+              {extras?.plan?.active ? t('profile.plusRenew') : t('profile.plusUpgrade')}
+            </button>
+          </div>
+          {plusMsg && <p className="text-red-500 text-xs mt-2">{plusMsg}</p>}
         </div>
 
         {/* Leaderboard rank (miners only) */}

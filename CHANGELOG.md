@@ -1,5 +1,29 @@
 # Changelog
 
+## [3.27.0] - 2026-10-03
+
+Free daily allowance for everyone (2M tokens/day) + Krelz Plus (10M/day, $6.99/mo) — chat walls only subjects with zero coverage.
+
+### Added
+- **Daily free allowance** (`src/services/freeAllowance.js`): every subject gets **2,000,000 free tokens per UTC day** — signed-in users in the (re-activated) `daily_tokens` table, guests in the new `daily_tokens_guest` table keyed by client IP. Platform-funded: no wallet debit, no miner revenue share. For market context, the most generous public free tier (Cerebras) is 1M tokens/day — Free is 2× that.
+- **Krelz Plus plan** (`src/services/plans.js`, `src/routes/plans.js`): **10,000,000 tokens/day for $6.99/month** (5× Free), bought with crypto through a NowPayments invoice (`POST /api/plans/plus/purchase`). Activation happens in the IPN webhook behind a `plan_purchases` exactly-once claim (replayed `finished` IPNs can never double-extend); renewal extends from `max(now, expires_at)` by 30 days. New tables: `user_plans`, `plan_purchases`.
+- **Coverage pre-flight wall (`402 upgrade_required`)**: a subject with NO free allowance left, no miner credit and an empty wallet gets the Plus upgrade card instead of a wasted dispatch; guests get a sign-in hint (`signed_in: false`). Anyone with any coverage at all is served exactly as before. Pre-flight failures never block (availability first).
+- **Upsell surfaces**: wallet-paid replies return `notice: "upgrade_recommended"` → once-per-UTC-day dismissible banner in chat; the 402 renders as a violet upgrade card with a purchase button; profile gains a **Free Today** stat card and a **Krelz Plus** card (active/expiry + Upgrade/Renew).
+- Balance endpoints (`GET /api/payments/balance`, `GET /api/token/balance`) gained `free_tokens: {limit, used, remaining}`, `plan: {name, active, expires_at}` and `plus: {price, daily_tokens, interval_days}`; chat responses carry `free_tokens_remaining`. `GET /api/plans` (auth optional — pricing public, allowance block only with a token) returns the full plan snapshot.
+
+### Fixed
+- **Every finished NowPayments IPN was silently ignored (regression since v3.18.0)** — the webhook gate also required `processIPN().status === 'finished'`, but the success branch normalizes to `'completed'`, so deposits *and* Plus activations returned `ignored` and never credited/activated. The gate now checks `result.success` alone (that branch only runs for `finished`). Found by live end-to-end verification during the 3.27.0 deploy.
+- **Plus activation crashed with `column "id" does not exist`** — the `plan_purchases` claim did `RETURNING id` but the table's key is `order_id`. Now `RETURNING order_id`.
+
+### Changed
+- **Payment chain** (one row-locked transaction): daily free allowance (tokens) → miner credit ($1, v3.25) → USD wallet (90% miner share; a balance below the cost is **drained in full** so the wallet can actually reach $0 and the wall becomes reachable) → race fallback still serves an already-generated reply as `free`.
+- v3.26's blanket "chat is never blocked" is now scoped: **zero-coverage subjects are walled before dispatch**; partial coverage never blocks.
+- `invalidateCache('/api/payments/balance')` runs after every settlement (the payload now includes `free_tokens`).
+- `nowpayments.createInvoice()` accepts an optional `description` (deposits unchanged).
+
+### Tests
+- `tests/free.allowance.test.js` (12) + `tests/plans.test.js` (13, incl. the IPN `finished`→`completed` regression) — allowance math, guest keying, UTC rollover upsert, cap/epsilon boundaries, Plus caps, renewal SQL, NowPayments order-id parsing. Suite: **105 tests, 12 suites green**.
+
 ## [3.26.0] - 2026-09-29
 
 Chat is never blocked — empty wallets are served for free.

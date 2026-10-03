@@ -365,10 +365,10 @@ const migrate = async () => {
     );
     console.log('✅ Columns miners.last_seen + miners.uninstalled_at added');
 
-    // === Daily Free Tokens — legacy ===
-    // The daily-free-allowance feature was removed in v3.24.0. The table is
-    // kept (existing data, no destructive migration) but nothing reads it
-    // anymore; CREATE IF NOT EXISTS stays so old and new envs match.
+    // === Daily Free Tokens ===
+    // Legacy table (feature removed in v3.24.0), reactivated in v3.27.0 by
+    // freeAllowance.js: signed-in users spend their daily free allowance
+    // (2M/day Free, 10M/day Plus) here. UTC-day reset is handled per-row.
     await client.query(`
       CREATE TABLE IF NOT EXISTS daily_tokens (
         user_id INTEGER PRIMARY KEY REFERENCES users(id),
@@ -393,6 +393,50 @@ const migrate = async () => {
       )
     `);
     console.log('✅ جدول miner_daily_credit ایجاد شد');
+
+    // === Daily free allowance — guests (v3.27.0) ===
+    // Guests have no users row, so their 2M/day free allowance is tracked by
+    // client IP (req.ip behind nginx; trust proxy is set in server.js).
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS daily_tokens_guest (
+        guest_key TEXT PRIMARY KEY,
+        tokens_used_today DECIMAL(20,8) DEFAULT 0,
+        last_reset_date DATE DEFAULT CURRENT_DATE
+      )
+    `);
+    console.log('✅ جدول daily_tokens_guest ایجاد شد');
+
+    // === Plus subscription (v3.27.0) ===
+    // One active row per user; an expired row simply stops matching
+    // (expires_at > now()) and the user falls back to the Free cap.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_plans (
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        plan_type VARCHAR(32) NOT NULL DEFAULT 'plus',
+        status VARCHAR(16) NOT NULL DEFAULT 'active',
+        started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NOT NULL,
+        PRIMARY KEY (user_id, plan_type)
+      )
+    `);
+    console.log('✅ جدول user_plans ایجاد شد');
+
+    // === Plus purchases — IPN idempotency (v3.27.0) ===
+    // Mirrors coin_deposits: a replayed 'finished' IPN can only claim a
+    // pending row once, so a plan can never be extended twice.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS plan_purchases (
+        order_id VARCHAR(128) PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        invoice_id VARCHAR(64),
+        amount DECIMAL(20,8) NOT NULL,
+        tx_hash VARCHAR(256),
+        status VARCHAR(16) NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_plan_purchases_user ON plan_purchases(user_id)');
+    console.log('✅ جدول plan_purchases ایجاد شد');
 
     // === Miner Token + Password Reset ===
     await client.query(`

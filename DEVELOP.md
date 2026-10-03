@@ -89,15 +89,16 @@ backend/
 │   ├── cache.js           # Redis caching
 │   ├── database/
 │   │   ├── pool.js        # PostgreSQL connection
-│   │   └── migrate.js     # DB migration (15 tables + resource columns)
+│   │   └── migrate.js     # DB migration (18 tables + resource columns)
 │   ├── middleware/
 │   │   └── auth.js        # JWT + Google OAuth
 │   └── routes/
 │       ├── auth.js        # Register/Login/Google
-│       ├── chat.js        # LLM chat + wallet payment + sessions
+│       ├── chat.js        # LLM chat + payment chain + coverage wall
 │       ├── miners.js      # Miner CRUD + model switch
 │       ├── models.js      # Model list API
-│       ├── payments.js    # NowPayments USD wallet (deposit/withdraw/IPN)
+│       ├── payments.js    # NowPayments USD wallet (deposit/withdraw/IPN + Plus IPN)
+│       ├── plans.js       # Free/Plus plan snapshot + Plus purchase
 │       ├── token.js       # Balance snapshot
 │       ├── stats.js       # Network stats
 │       └── leaderboard.js # Top miners
@@ -124,7 +125,7 @@ miner-app/
         └── api.js         # REST API (register, heartbeat)
 ```
 
-## Database Schema (15 Tables)
+## Database Schema (18 Tables)
 
 | Table | Purpose |
 |-------|---------|
@@ -141,8 +142,11 @@ miner-app/
 | coin_withdrawals | Crypto withdrawal history |
 | miner_coin_earnings | Miner earnings per coin |
 | chat_sessions | Chat session groups |
-| **daily_tokens** | *(legacy — feature removed in v3.24.0, table kept but unread)* |
+| **daily_tokens** | Daily free allowance — signed-in users (reactivated in v3.27.0; removed v3.24.0) |
 | **miner_daily_credit** | Free daily chat credit for miner hosts ($1/UTC-day, v3.25.0) |
+| **daily_tokens_guest** | Daily free allowance — guests, keyed by client IP (v3.27.0) |
+| **user_plans** | Active subscription plans (`plus`: 10M tokens/day, v3.27.0) |
+| **plan_purchases** | Plus invoice claims — IPN exactly-once idempotency (v3.27.0) |
 
 ### Miners Table — Resource Monitoring Columns (v3.8.0)
 
@@ -187,6 +191,63 @@ Models defined in `backend/src/models.js` with per-model pricing:
 | llama3.3:70b | 70B | $0.097 | $0.194 | -32% |
 | deepseek-r1:70b | 70B | $0.098 | $0.196 | -30% |
 
+## Daily Free Allowance & Plus Plan (v3.27.0)
+
+Every subject gets a **2,000,000-token free allowance per UTC day** —
+signed-in users in `daily_tokens` (keyed by `user_id`), guests in
+`daily_tokens_guest` (keyed by `req.ip`; `trust proxy` is set in
+`server.js`). The Plus subscription raises the cap to **10,000,000
+tokens/day** for $6.99/month.
+
+### Payment chain (one row-locked transaction in `chat.js`)
+
+1. **Coverage pre-flight (before dispatch)**: free remaining > 0 OR miner
+   credit remaining > 0 OR wallet > 0? If *nothing* covers the next message
+   → `402 { code: 'upgrade_required', free, plus, signed_in }` — the wall.
+   Pre-flight query failures **never block** (availability first).
+2. `chargeFreeTokens()` — the daily allowance upsert (row-locked, UTC-day
+   rollover in the same statement). Covered → `payment_status: "free"`,
+   no wallet debit, **no miner revenue share**.
+3. `chargeMinerCredit()` (v3.25, signed-in only) → `"free_miner"`.
+4. USD wallet (signed-in only) — miner gets `MINER_REVENUE_SHARE` (90%)
+   only on this paid leg. A balance **below** the cost is drained in full
+   (`debit = min(cost, balance)`) so the wallet reaches exactly $0 and the
+   next message hits the wall instead of parking at dust forever.
+   Covered → `"paid"` + `notice: "upgrade_recommended"` (frontend shows a
+   once-per-UTC-day dismissible banner).
+5. Nothing covers (a race after pre-flight) → the reply, which already
+   exists, is served as `"free"` — generation is never wasted or blocked.
+
+### Plus plan
+
+- `GET /api/plans` — `{ plan, daily_limit, free_tokens, plus }`.
+- `POST /api/plans/plus/purchase` (auth) — creates a $6.99 NowPayments
+  invoice with `order_id = plus-<userId>-<ts>` and a pending
+  `plan_purchases` row; the hosted checkout opens in a new tab.
+- IPN (`POST /api/payments/deposit/webhook`): orders whose id starts with
+  `plus-` claim their `plan_purchases` row (`status = 'pending'` →
+  `'completed'`, exactly-once under replay) and then `activatePlus()`:
+  `expires_at = GREATEST(expires_at, now()) + 30 days` — renewing mid-cycle
+  never loses days. Wallet **credit only** happens for `krelz-…` deposit
+  orders; a Plus IPN never touches balances.
+- Expiry is passive: `getActivePlan()` requires `expires_at > now()`, so an
+  expired row silently falls back to the Free cap.
+
+### Rules
+
+- Reset at UTC midnight: `last_reset_date = (now() AT TIME ZONE 'utc')::date`
+  (identical contract to `minerCredit`); a stale row counts as unused.
+- Allowance is counted in `tokensUsed` (the same output-token count that
+  drives `cost`), so Free and pricing always agree.
+- Balance endpoints expose `free_tokens: { limit, used, remaining }` and
+  `plan: { name, active, expires_at }`; the chat response carries
+  `free_tokens_remaining`.
+- Known limitations (documented in AUDIT): the 2M cap is a promise, not
+  throughput — the CPU box sustains ~0.58M tokens/day, so one maxing user
+  can saturate it until miners arrive; guests behind one NAT IP share an
+  allowance.
+- Tests: `backend/tests/free.allowance.test.js`, `backend/tests/plans.test.js`.
+
 ## Miner Free Chat Credit (v3.25.0)
 
 Signed-in users with at least one miner in `online`/`busy` state get a
@@ -194,20 +255,20 @@ Signed-in users with at least one miner in `online`/`busy` state get a
 it never debits the wallet and never credits a miner — the miner pool is only
 touched by paid chats.
 
-### Flow
+### Flow (within the v3.27.0 chain)
 
-1. No pre-flight (v3.26.0): chat is **never blocked** — an empty wallet alone
-   does not reject the request (there is no `402` in `chat.js` anymore).
-2. Payment txn: `chargeMinerCredit()` runs **first** — an `INSERT … ON
-   CONFLICT` upsert row-locks the credit row and rolls a stale (pre-UTC-today)
-   usage to zero in the same statement, so parallel requests cannot overspend.
-3. Covered → `payment_status: "free_miner"` — no wallet debit, **no
+1. Runs **second** in the payment txn, after the daily free allowance
+   (`chargeFreeTokens`) and before the wallet — an `INSERT … ON CONFLICT`
+   upsert row-locks the credit row and rolls a stale (pre-UTC-today) usage
+   to zero in the same statement, so parallel requests cannot overspend.
+2. Covered → `payment_status: "free_miner"` — no wallet debit, **no
    `MINER_REVENUE_SHARE`**, no `miner_coin_earnings` row.
-4. Not covered → the wallet path exactly as before (90% miner share only on
+3. Not covered → the wallet path exactly as before (90% miner share only on
    this paid leg).
-5. Neither covers the cost → the reply is still served with
-   `payment_status: "free"` (no debit, no miner share) — chat never blocks.
-6. Guests stay free (rate-limited), unchanged.
+4. Neither covers (race) → the reply is still served with
+   `payment_status: "free"`; a subject that had *no* coverage at all was
+   already walled by the pre-flight.
+5. Guests never reach the credit (signed-in only).
 
 ### Rules
 

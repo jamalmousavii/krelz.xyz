@@ -46,7 +46,7 @@
 | M6 | Medium | Money | `/api/miners/setup` revived `removed` miners that `ws.js` would then refuse | `backend/src/routes/miners.js:292` | FIXED (401) |
 | M7 | Medium | Correctness | Default model disagreement: `llama3:8b` (chat) vs `llama3.1:8b` (catalog) | `backend/src/routes/chat.js:16` | FIXED |
 | M8 | Medium | Correctness | `/api/models` credited unknown models to the `llama3.1:8b` badge (misleading availability) | `backend/src/routes/models.js:15-50` | FIXED |
-| M9 | Medium | Money | Chat had no pre-flight balance check → expensive inference ran, then failed | `backend/src/routes/chat.js:116,295` | Superseded by v3.26.0 — pre-flight removed on purpose; empty balance settles as `free` (chat never blocks) |
+| M9 | Medium | Money | Chat had no pre-flight balance check → expensive inference ran, then failed | `backend/src/routes/chat.js:116,295` | Superseded twice: v3.26.0 removed the pre-flight on purpose; **v3.27.0 restores a coverage-only pre-flight** — zero coverage → `402 upgrade_required` *before* dispatch, partial coverage still never blocks |
 | M10 | Medium | Robustness | Chat accepted non-integer `session_id` and 65k subjects → SQL type errors (500) instead of 400 | `backend/src/routes/chat.js` session CRUD | FIXED |
 | M11 | Medium | Robustness | `migrate.js` exited `0` on failure | `backend/src/database/migrate.js` | FIXED |
 | M12 | Medium | Ops | `console.*` scattered through the API (no level/structure/rotation) | throughout `backend/src` | FIXED (pino) |
@@ -58,6 +58,7 @@
 | M18 | Medium | Deploy | nginx had no rate limit and no CSP | `deploy/krelz-nginx.conf:7,37,60-61` | FIXED |
 | M19 | Medium | UX | Install menu offered `qwen3.6:27b` (not in catalog) and preset `f)` silently dropped a model | `miner-app/install-*.sh` | FIXED |
 | M20 | Medium | Docs | `docs/api.md` documented endpoints that no longer exist and omitted auth rules | `docs/api.md` | FIXED (rewritten) |
+| M21 | Medium | Money | IPN webhook gated on `result.status !== 'finished'` while `processIPN` normalizes success to `'completed'` → **every finished IPN silently `ignored`** (deposits + Plus) since v3.18.0 | `backend/src/routes/payments.js:86` | FIXED (3.27.0 — gate on `result.success` only; live-verified: `ok` → replay `deduped`) |
 | L1 | Low | Security | Reset token stored in plaintext in DB | `backend/src/routes/auth.js:289` | OPEN |
 | L2 | Low | Security | JWT lives 7 days and is stored in `localStorage` (XSS-exfiltratable) | `backend/src/routes/auth.js:48,87` | OPEN |
 | L3 | Low | Security | No server-side session invalidation: logout is client-side only | `backend/src/routes/auth.js` | OPEN |
@@ -122,13 +123,15 @@ IPN had no signature verification in the shipped path, no idempotency (replayed 
 
 Since v3.24.0 billing is a single transaction with row locks — the only place in the codebase that mutates a balance:
 
-1. (v3.25.0) `chargeMinerCredit()` runs first: if the user has an `online`/`busy` miner, an `INSERT … ON CONFLICT` upsert row-locks `miner_daily_credit` (UTC-day rollover in the same statement) and, when the $1/day allowance covers `cost`, marks the task `free_miner` — **no wallet debit and no miner revenue share**.
-2. Otherwise lock `user_coin_balances` with `FOR UPDATE` and debit the full `cost`.
-3. Credit the miner **only if it actually served the task** (`minerId && servedByMiner`), at 90% (`MINER_REVENUE_SHARE`) — paid chats only.
-4. Neither covers the cost → no debit happens and the reply is still served as `payment_status: "free"` (v3.26.0 — chat has no `402` and no payment pre-flight at all).
-5. Guests (no JWT) never enter the payment block — free by product decision (see §H-limits).
+0. (v3.27.0) **Coverage pre-flight before dispatch:** free allowance remaining (daily tokens for the resolved subject — `user_id` or guest IP) OR miner credit remaining OR wallet balance > 0? If *nothing* covers the next message → `402 upgrade_required` (`free`/`plus`/`signed_in` in the body). The pre-flight query itself **fails open** — a DB error never blocks chat.
+1. (v3.27.0) `chargeFreeTokens()` runs first: row-locked upsert of `daily_tokens` / `daily_tokens_guest` (UTC-day rollover in the same statement, epsilon-rounded) — when the 2M (10M Plus) daily token cap covers the usage, the task is `free`: **no wallet debit and no miner revenue share**.
+2. (v3.25.0) `chargeMinerCredit()`: if the user has an `online`/`busy` miner, an `INSERT … ON CONFLICT` upsert row-locks `miner_daily_credit` (UTC-day rollover in the same statement) and, when the $1/day allowance covers `cost`, marks the task `free_miner` — **no wallet debit and no miner revenue share**.
+3. Otherwise lock `user_coin_balances` with `FOR UPDATE` and debit — `min(cost, balance)`, so a dust balance is drained to exactly $0 instead of parking forever; a `paid` result carries `notice: "upgrade_recommended"`.
+4. Credit the miner **only if it actually served the task** (`minerId && servedByMiner`), at 90% (`MINER_REVENUE_SHARE`) — paid chats only.
+5. Nothing covers (a race after pre-flight — a concurrent request spent the last unit) → no debit happens and the already-generated reply is served as `payment_status: "free"`; generation is never wasted.
+6. Guests (no JWT) enter the same chain with `daily_tokens_guest` (keyed by `req.ip`); no credit and no wallet, so an exhausted guest hits the same `402` wall.
 
-Invariants asserted by tests: pricing = `tokens × outputPrice / 1e6`, revenue share `0.9`, catalog/default-model consistency (`tests/models.pricing.test.js`); credit allowance/rollover/charge-refuse (`tests/miner.credit.test.js`).
+Invariants asserted by tests: pricing = `tokens × outputPrice / 1e6`, revenue share `0.9`, catalog/default-model consistency (`tests/models.pricing.test.js`); credit allowance/rollover/charge-refuse (`tests/miner.credit.test.js`); allowance rollover/exhaustion/guest-key/wall (`tests/free.allowance.test.js`); plan caps + Plus activation/idempotent claim (`tests/plans.test.js`).
 
 ---
 
@@ -164,7 +167,7 @@ Invariants asserted by tests: pricing = `tokens × outputPrice / 1e6`, revenue s
 | 3 | 7-day JWT in `localStorage` (L2/L3) | Short-lived access token + server-side revocation list (Redis) wired into `authenticate` | M |
 | 4 | Payout vs ledger not atomic (L4) | Wrap debit+payout-insert in one transaction, or write the ledger row first with `status='pending'` and update it | M |
 | 5 | Missing rate limits on secondary auth routes (L5) | Reuse `authLimiter` for `/google`, `/set-password`, `/change-password` | S |
-| 6 | Guest chat is free by design (product decision) | Current mitigation is 6 req/min/IP + the global limiter + nginx `limit_req`. Revisit if abused; a per-IP daily token bucket is the natural next step | M |
+| 6 | ~~Guest chat is free by design (product decision)~~ | **Resolved in v3.27.0:** guests now draw on a per-IP daily token allowance (2M/UTC-day, `daily_tokens_guest`) with the same `402` wall as users when exhausted; 6 req/min/IP + global limiter + nginx `limit_req` remain | — |
 | 7 | `krelz-private/` is empty (config/contracts/scripts/secrets placeholders) | Decide whether this repo stays public-only; secrets must never land here. `.env` is git-ignored | — |
 | 8 | Docs describe burning/KRELZ token flows the code never implements (L7) | Either implement or mark `tokenomics.md`/`architecture.md` as "planned" | S |
 | 9 | No DB-backed integration tests | Add a dockerised Postgres job to CI and cover register→login→chat-billing→IPN end-to-end | L |
@@ -181,4 +184,4 @@ Invariants asserted by tests: pricing = `tokens × outputPrice / 1e6`, revenue s
 5. `nginx -t && systemctl reload nginx` — verify `/health` still returns 200 in production (it will return **503 if Postgres is down** — that is intentional; update the monitor to expect 200 only when healthy).
 6. `systemctl restart krelz-backend` — SIGTERM now drains HTTP + WS and closes pool/Redis.
 7. Miner hosts: `systemctl daemon-reload && systemctl restart krelz-miner` (unit now runs `src/cli.js`).
-8. Smoke: `curl -s https://krelz.xyz/health`, send one chat message as a guest and one as a signed-in user, confirm `payment_status` behaves (`free` for guests, `paid` for signed-in users).
+8. Smoke: `curl -s https://krelz.xyz/health`, send one chat message as a guest and one as a signed-in user, confirm `payment_status` behaves (`free` + `free_tokens_remaining` below the cap); then force-exhaust a subject (set `tokens_used_today = 2000000`) and confirm `402 upgrade_required` with the Plus card; `GET /api/plans` and `POST /api/plans/plus/purchase` return caps/`invoice_url`.

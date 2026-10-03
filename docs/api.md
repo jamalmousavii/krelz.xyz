@@ -109,17 +109,24 @@
   "payment_status": "free | free_miner | paid",
   "miner_id": 7,
   "source": "miner | local",
-  "miner_credit_remaining": 0.99
+  "miner_credit_remaining": 0.99,
+  "free_tokens_remaining": 1999580,
+  "notice": "upgrade_recommended",
+  "plus": { "price": 6.99, "daily_tokens": 10000000 }
 }
 ```
 
-**پرداخت:**
+`notice` فقط روی پیام‌های `paid` می‌آید (فرانت‌اند بنر روزانهٔ ارتقا نشان می‌دهد).
 
-1. **اعتبار رایگان ماینر (v3.25.0)**: اگر کاربر ماینر `online`/`busy` داشته باشد، اول از سقف **$۱ هر روز UTC** کم می‌شود → `payment_status: "free_miner"` (نه از کیف پول، نه سهم ماینر — منبع پلتفرم).
-2. وگرنه کل `cost` از کیف پول USD کاربر (یک تراکنش با قفل ردیف).
-3. سهم ماینر = ۹۰٪ مبلغ **پرداخت‌شده** (فقط اگر واقعاً ماینر جواب داده باشد) — از اعتبار رایگان سهمی نمی‌گیرد.
-4. نه اعتبار کافی نه موجودی → باز هم پاسخ کامل سرو می‌شود با `payment_status: "free"` (**چت هرگز بلاک نمی‌شود**، v3.26.0 — نه ۴۰۲، نه کم‌کردن موجودی).
-5. کاربر مهمان (بدون توکن) رایگان است → `payment_status: "free"` (با rate-limit).
+**پیش‌بررسی پوشش (v3.27.0):** قبل از dispatch بررسی می‌شود: سقف رایگان روزانه > 0 یا اعتبار ماینر > 0 یا کیف پول > 0؟ اگر **هیچ پوششی** نباشد → `402 { code: "upgrade_required", free, plus, signed_in }` (دیوار ارتقای پلاس؛ برای مهمان با پیام ثبت‌نام). خطای خودِ این بررسی هرگز چت را بلاک نمی‌کند.
+
+**زنجیره پرداخت (یک تراکنش با قفل ردیف):**
+
+1. **سقف رایگان روزانه (v3.27.0)**: ۲,۰۰۰,۰۰۰ توکن به ازای هر UTC-day — کاربران عضو در `daily_tokens`، مهمان‌ها با IP در `daily_tokens_guest`؛ اعضای پلاس سقف ۱۰,۰۰۰,۰۰۰ دارند → `payment_status: "free"` (منبع پلتفرم، **بدون سهم ماینر**).
+2. **اعتبار رایگان ماینر (v3.25.0)**: ماینر `online`/`busy` → سقف **$۱ هر روز UTC** → `"free_miner"` (نه از کیف پول، نه سهم ماینر).
+3. **کیف پول USD**: سهم ماینر ۹۰٪ فقط روی این پایهٔ پولی (فقط اگر واقعاً ماینر جواب داده باشد). اگر موجودی از `cost` کمتر باشد **به‌طور کامل** کم می‌شود تا کیف پول به صفر برسد و دیوار در پیام بعدی نمایان شود → `"paid"` + `notice: "upgrade_recommended"`.
+4. مسابقه بعد از pre-flight (سقف همزمان تمام شده) → پاسخِ تولیدشده سرو می‌شود با `"free"` — تولیدِ انجام‌شده هرگز تلف نمی‌شود.
+5. مهمان بدون پوشش → از همان pre-flight دیوار می‌بیند.
 
 قیمت‌گذاری: `cost = tokens × outputPrice / 1e6` (قیمت مدل انتخاب‌شده از `src/models.js`).
 
@@ -250,11 +257,12 @@
 - اعتبارسنجی HMAC-SHA512 با `NOWPAYMENTS_IPN_SECRET` (**fail-closed**: بدون تنظیم بودنِ secret هیچ وب‌هوکی پذیرفته نمی‌شود).
 - ادعا (claim) ایدمپوتنت با `order_id`/`processor_id` در یک تراکنش: وب‌هوکِ تکراری اعتباری اضافه نمی‌کند.
 - مبلغ از **ردیف دیتابیس** خوانده می‌شود، نه از payload.
+- `order_id` با `plus-` → اشتراک پلاس: ادعای `plan_purchases` (`pending` → `completed`، دقیقاً یک‌بار) و سپس فعال‌سازی ۳۰ روزه (`expires_at = max(expires, now) + 30d`)؛ **هرگز** موجودی کیف پول را تغییر نمی‌دهد. واریزهای معمولی (`krelz-…`) فقط موجودی را شارژ می‌کنند.
 
 ### `GET /api/payments/balance` (نیازمند JWT)
 
 ```json
-{ "success": true, "balances": { "USD": { "available": 12.5, "total_earned": 30, "total_spent": 17.5 } }, "miner_credit": { "eligible": true, "limit": 1, "used": 0.01, "remaining": 0.99 } }
+{ "success": true, "balances": { "USD": { "available": 12.5, "total_earned": 30, "total_spent": 17.5 } }, "miner_credit": { "eligible": true, "limit": 1, "used": 0.01, "remaining": 0.99 }, "free_tokens": { "limit": 2000000, "used": 420, "remaining": 1999580 }, "plan": { "name": "plus", "active": false, "expires_at": null } }
 ```
 
 ### `POST /api/payments/withdraw`
@@ -275,12 +283,32 @@
 
 ---
 
+## طرح‌ها (v3.27.0)
+
+### `GET /api/plans` (عمومی)
+
+```json
+{ "success": true, "plan": "free", "daily_limit": 2000000, "free_tokens": 2000000, "plus": { "price": 6.99, "daily_tokens": 10000000, "interval": "month" } }
+```
+
+### `POST /api/plans/plus/purchase` (نیازمند JWT)
+
+بدون body → فاکتور NowPayments به مبلغ **$6.99** (crypto-only) + ردیف `plan_purchases` با وضعیت `pending`:
+
+```json
+{ "success": true, "invoice_url": "https://nowpayments.io/payment/?iid=...", "order_id": "plus-12-1759480000000" }
+```
+
+پرداخت موفق → IPN همان مسیر وب‌هوک قبلی، اما با پیشوند `plus-` → فعال‌سازی/تمدید طرح. تمدید از `max(now, expiry)` + ۳۰ روز شروع می‌شود؛ `GET /api/payments/balance` فیلد `plan.active` را `true` می‌کند.
+
+---
+
 ## توکن (legacy)
 
 ### `GET /api/token/balance` (نیازمند JWT)
 
 ```json
-{ "success": true, "available": 5.0, "total_earned": 2.0, "total_spent": 0.5, "miner_credit": { "eligible": true, "limit": 1, "used": 0.01, "remaining": 0.99 } }
+{ "success": true, "available": 5.0, "total_earned": 2.0, "total_spent": 0.5, "miner_credit": { "eligible": true, "limit": 1, "used": 0.01, "remaining": 0.99 }, "free_tokens": { "limit": 2000000, "used": 420, "remaining": 1999580 }, "plan": { "name": "plus", "active": false, "expires_at": null } }
 ```
 
 ### `POST /api/token/deposit|deduct|transfer`
@@ -338,7 +366,7 @@
 |----|------|
 | `400` | اعتبارسنجی ناموفق (`details` شامل فیلدهاست) |
 | `401` | توکن نامعتبر/نبودن توکن/توکنِ ماینر نامعتبر |
-| `402` | *(دیگر برنمی‌گردد — چت هرگز بلاک نمی‌شود، v3.26.0)* |
+| `402` | **دیوار ارتقا (v3.27.0)**: هیچ پوششی برای پیام بعدی — `code: "upgrade_required"` + `free`/`plus`/`signed_in` (سقف رایگان تمام‌شده + بدون اعتبار ماینر + کیف پول خالی) |
 | `403` | دسترسی ادمین لازم است / CORS |
 | `404` | پیدا نشد |
 | `409` | تعارض (چند ماینر با توکن سطح حساب) |
