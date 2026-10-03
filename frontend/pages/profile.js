@@ -10,8 +10,10 @@ import { useAuth, clearSession } from '../utils/api';
 export default function Profile() {
   const { t, lang } = useLanguage();
   const [usdBalance, setUsdBalance] = useState(null);
-  const [extras, setExtras] = useState(null); // free_tokens / plan / plus from balance
-  const [plusMsg, setPlusMsg] = useState('');
+  const [extras, setExtras] = useState(null); // free_tokens / plan / plans / token_bundle
+  const [planMsg, setPlanMsg] = useState('');
+  const [bundleMsg, setBundleMsg] = useState('');
+  const [bundleAmount, setBundleAmount] = useState('5'); // whole dollars for the token bundle
   const [myRank, setMyRank] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -31,24 +33,54 @@ export default function Profile() {
       const data = await res.json();
       if (data.success && data.balances?.USD) setUsdBalance(data.balances.USD);
       if (data.success && data.free_tokens) {
-        setExtras({ free_tokens: data.free_tokens, plan: data.plan, plus: data.plus });
+        setExtras({
+          free_tokens: data.free_tokens,
+          plan: data.plan,
+          plans: data.plans || [],
+          token_bundle: data.token_bundle || null,
+        });
       }
     } catch (err) {}
   };
 
-  // v3.27.0 — Plus invoice: hosted NowPayments checkout opens in a new tab.
-  const purchasePlus = async () => {
-    setPlusMsg('');
+  // v3.28.0 — invoice purchases (plan tier or token bundle): hosted
+  // NowPayments checkout opens in a new tab; credit/activation via IPN.
+  const purchasePlan = async (tier) => {
+    setPlanMsg('');
     try {
-      const res = await fetch('/api/plans/plus/purchase', { method: 'POST', headers: authHeaders() });
+      const res = await fetch(`/api/plans/${tier}/purchase`, { method: 'POST', headers: authHeaders() });
       const data = await res.json();
       if (data.success && data.invoice?.url) {
         window.open(data.invoice.url, '_blank', 'noopener');
       } else {
-        setPlusMsg(`❌ ${data.error || 'Error'}`);
+        setPlanMsg(`❌ ${data.error || 'Error'}`);
       }
     } catch (err) {
-      setPlusMsg(`❌ ${t('chat.errorConnection')}`);
+      setPlanMsg(`❌ ${t('chat.errorConnection')}`);
+    }
+  };
+
+  const purchaseTokens = async () => {
+    setBundleMsg('');
+    const amount = parseInt(bundleAmount, 10);
+    if (!(amount >= 1 && amount <= 500)) {
+      setBundleMsg(`❌ ${t('chat.bundleRange')}`);
+      return;
+    }
+    try {
+      const res = await fetch('/api/plans/tokens/purchase', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ amount_usd: amount }),
+      });
+      const data = await res.json();
+      if (data.success && data.invoice?.url) {
+        window.open(data.invoice.url, '_blank', 'noopener');
+      } else {
+        setBundleMsg(`❌ ${data.error || 'Error'}`);
+      }
+    } catch (err) {
+      setBundleMsg(`❌ ${t('chat.errorConnection')}`);
     }
   };
 
@@ -115,7 +147,7 @@ export default function Profile() {
             </div>
           </div>
           {usdBalance && (
-            <div className={`grid grid-cols-1 ${usdBalance.miner_credit?.eligible ? 'sm:grid-cols-5' : 'sm:grid-cols-4'} gap-3 mb-4`}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
               <div className="bg-sky-50 rounded-xl p-4 text-center border border-sky-100">
                 <div className="text-xl font-bold text-emerald-600">${parseFloat(usdBalance.available || 0).toFixed(2)}</div>
                 <div className="text-gray-500 text-xs">{t('profile.available')}</div>
@@ -135,6 +167,13 @@ export default function Profile() {
                   <div className="text-gray-400 text-[10px]">{t('profile.freeTokensHint')}</div>
                 </div>
               )}
+              {extras?.token_bundle && (
+                <div className="bg-sky-50 rounded-xl p-4 text-center border border-sky-200">
+                  <div className="text-xl font-bold text-sky-700">{formatTokens(extras.token_bundle.balance)}</div>
+                  <div className="text-gray-600 text-xs">{t('profile.potTokens')}</div>
+                  <div className="text-gray-400 text-[10px]">{t('profile.potTokensHint')}</div>
+                </div>
+              )}
               {usdBalance.miner_credit?.eligible && (
                 <div className="bg-amber-50 rounded-xl p-4 text-center border border-amber-100">
                   <div className="text-xl font-bold text-amber-600">
@@ -148,34 +187,82 @@ export default function Profile() {
           )}
         </div>
 
-        {/* v3.27.0 — Plus subscription */}
+        {/* v3.28.0 — plan catalog: Plus / Pro / Max */}
         <div className="bg-white rounded-xl border border-violet-100 shadow-sm p-5 md:p-6 mb-6">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
             <div className="min-w-0">
-              <h2 className="text-lg font-bold text-gray-800">⭐ {t('profile.plusTitle')}</h2>
+              <h2 className="text-lg font-bold text-gray-800">⭐ {t('profile.plansTitle')}</h2>
               {extras?.plan?.active ? (
                 <p className="text-sm text-emerald-600 font-medium">
-                  {t('profile.plusActive').replace('{date}', new Date(extras.plan.expires_at).toLocaleDateString())}
+                  {t('profile.planActive')
+                    .replace('{label}', (extras.plans.find(p => p.name === extras.plan.name)?.label) || 'Plus')
+                    .replace('{date}', new Date(extras.plan.expires_at).toLocaleDateString())}
                 </p>
               ) : (
-                <p className="text-sm text-gray-500">
-                  {t('profile.plusDesc')
-                    .replace('{price}', `$${extras?.plus?.price ?? 6.99}`)
-                    .replace('{tokens}', Number(extras?.plus?.daily_tokens || 10000000).toLocaleString('en-US'))}
-                </p>
+                <p className="text-sm text-gray-500">{t('profile.plansDesc')}</p>
               )}
               {!extras?.plan?.active && (
-                <p className="text-xs text-gray-400 mt-0.5">{t('profile.plusFreeNote')}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{t('profile.planFreeNote')}</p>
               )}
             </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            {(extras?.plans || []).map(p => {
+              const active = extras?.plan?.active && extras.plan.name === p.name;
+              return (
+                <div key={p.name} className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 ${active ? 'bg-emerald-50 border-emerald-200' : 'bg-sky-50 border-sky-100'}`}>
+                  <div className="min-w-0 text-sm">
+                    <span className="font-bold text-gray-800">{p.label}</span>
+                    {active && <span className="text-emerald-600 text-xs font-semibold"> ✓ {t('profile.planBadgeActive')}</span>}
+                    <div className="text-xs text-gray-600">
+                      {t('profile.planRow')
+                        .replace('{price}', `$${p.price}`)
+                        .replace('{tokens}', Number(p.daily_tokens).toLocaleString('en-US'))}
+                    </div>
+                    <div className="text-[10px] text-gray-400">
+                      {t('profile.planValue').replace('{value}', `$${p.value_usd_day}`)}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => purchasePlan(p.name)}
+                    className={`px-4 py-2 rounded-xl transition text-sm font-bold flex-shrink-0 text-white ${active ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-violet-600 hover:bg-violet-700'}`}
+                  >
+                    {active ? t('profile.planRenew') : t('profile.planUpgrade')}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          {planMsg && <p className="text-red-500 text-xs mt-2">{planMsg}</p>}
+        </div>
+
+        {/* v3.28.0 — token bundle ($1 = 1M, never expires) */}
+        <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-5 md:p-6 mb-6">
+          <h2 className="text-lg font-bold text-gray-800 mb-1">🎟️ {t('profile.bundleTitle')}</h2>
+          <p className="text-sm text-gray-500 mb-1">
+            {t('profile.bundleDesc')
+              .replace('{rate}', Number(extras?.token_bundle?.tokens_per_usd || 1000000).toLocaleString('en-US'))}
+          </p>
+          <p className="text-xs text-gray-400 mb-3">
+            {t('profile.bundleBalance').replace('{tokens}', formatTokens(extras?.token_bundle?.balance || 0))}
+          </p>
+          <div className="flex items-center gap-2">
+            <input
+              value={bundleAmount}
+              onChange={(e) => setBundleAmount(e.target.value.replace(/[^0-9]/g, ''))}
+              inputMode="numeric"
+              aria-label={t('profile.bundlePlaceholder')}
+              placeholder={t('profile.bundlePlaceholder')}
+              className="w-28 border border-sky-200 rounded-xl px-3 py-2.5 text-sm text-center"
+            />
             <button
-              onClick={purchasePlus}
-              className="bg-violet-600 hover:bg-violet-700 text-white px-5 py-2.5 rounded-xl transition text-sm font-bold flex-shrink-0"
+              onClick={purchaseTokens}
+              className="bg-sky-600 hover:bg-sky-700 text-white px-5 py-2.5 rounded-xl transition text-sm font-bold"
             >
-              {extras?.plan?.active ? t('profile.plusRenew') : t('profile.plusUpgrade')}
+              {t('profile.bundleBtn')}
             </button>
           </div>
-          {plusMsg && <p className="text-red-500 text-xs mt-2">{plusMsg}</p>}
+          {bundleMsg && <p className="text-red-500 text-xs mt-2">{bundleMsg}</p>}
         </div>
 
         {/* Leaderboard rank (miners only) */}
@@ -208,6 +295,33 @@ export default function Profile() {
                     <div className="text-gray-500 text-xs">{t('profile.rankMiners')}</div>
                   </div>
                 </div>
+                {myRank.breakdown && (
+                  <div className="mt-3 bg-gray-50 rounded-xl border border-gray-100 p-3">
+                    <div className="text-xs font-semibold text-gray-600 mb-1.5">🧾 {t('profile.breakdownTitle')}</div>
+                    <div className="flex flex-col gap-0.5 text-xs">
+                      <div className="flex justify-between text-sky-700">
+                        <span>🎟️ {t('profile.bdTokens')}</span>
+                        <span className="font-semibold">{Number(myRank.breakdown.tokens || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-gray-600">
+                        <span>👛 {t('profile.bdWallet')}</span>
+                        <span className="font-semibold">{Number(myRank.breakdown.wallet || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-amber-600">
+                        <span>⭐ {t('profile.bdPlus')}</span>
+                        <span className="font-semibold">{Number(myRank.breakdown.plus || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-emerald-600">
+                        <span>🚀 {t('profile.bdPro')}</span>
+                        <span className="font-semibold">{Number(myRank.breakdown.pro || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-violet-600">
+                        <span>👑 {t('profile.bdMax')}</span>
+                        <span className="font-semibold">{Number(myRank.breakdown.max || 0).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </>
             ) : (
               <div className="bg-sky-50 rounded-xl p-4 border border-sky-100 text-center">

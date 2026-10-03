@@ -102,17 +102,31 @@ Choose to remove miner only or everything (miner + Ollama + models).
 
 **Reference:** DeepSeek V4 Flash — $0.14 input / $0.28 output per 1M tokens
 
-## Payments, Free Allowance & Plus
+## Payments, Free Allowance & Plans
 
 Every message settles in one row-locked transaction, in order:
-1. **Daily free allowance (v3.27.0)** — **2,000,000 tokens per UTC day** for every subject (signed-in users by account, guests by IP); `payment_status: "free"`, platform-funded
+1. **Daily free allowance (v3.27.0)** — **2,000,000 tokens per UTC day** for every subject (signed-in users by account, guests by IP); plan tiers raise the cap (up to 80M/day on Max); `payment_status: "free"`, platform-funded
 2. **Miner credit (v3.25.0)** — with a miner `online`/`busy`, the first **$1.00 per UTC day** is free (`payment_status: "free_miner"`); the miner earns nothing from these chats
-3. **USD wallet** (deposits via NowPayments) — a miner serving a **paid** reply earns 90% of the cost
-4. Race fallback — an already-generated reply is still served as `"free"`
+3. **Token bundle pot (v3.28.0)** — prepaid tokens ($1 = 1M, never expires) drain all-or-nothing per message (`payment_status: "tokens"`); the miner earns 90% of the message's catalog value, paid from bundle revenue
+4. **USD wallet** (deposits via NowPayments) — a miner serving a **paid** reply earns a flat **90%** of the cost, whatever plan the payer is on
+5. Race fallback — an already-generated reply is still served as `"free"`
 
-**Wall:** a subject with *zero* coverage (allowance spent + no credit + empty wallet) gets `402 upgrade_required` with the Plus upgrade card — checked **before** dispatch; partial coverage never blocks.
+**Wall:** a subject with *zero* coverage (allowance spent + no credit + empty pot + empty wallet) gets `402 upgrade_required` with the plan catalog + bundle offer — checked **before** dispatch; partial coverage never blocks.
 
-**Krelz Plus (v3.27.0)** — **$6.99/month → 10,000,000 tokens/day** (5× Free): crypto invoice via NowPayments, renewal extends from `max(now, expiry)` by 30 days.
+**Plans (v3.28.0)** — bought with crypto via NowPayments, renewal extends from `max(now, expiry)` by 30 days:
+
+| Tier | Price | Tokens/day | Catalog value/day* |
+|------|-------|-----------:|-------------------:|
+| Free | $0 | 2,000,000 | ≈ $0.32 |
+| ⭐ Plus | $4.99/mo | 10,000,000 | ≈ $1.58 |
+| 🚀 Pro | $9.99/mo | 30,000,000 | ≈ $4.74 |
+| 👑 Max | $19.99/mo | 80,000,000 | ≈ $12.64 |
+
+\* at the default model's catalog output price ($0.158/1M).
+
+**Token bundles (v3.28.0)** — whole dollars **$1–$500 → 1M tokens per $1**, one-time payment, **never expires**, settled between the daily allowance and the wallet.
+
+**Miner earnings breakdown (v3.28.0)** — every earning row records its source and the payer's plan; the profile shows 5 buckets: 🎟️ Tokens / 👛 Wallet / ⭐ Plus / 🚀 Pro / 👑 Max (free legs pay miners nothing).
 
 ## Project Structure
 
@@ -129,8 +143,8 @@ krelz.xyz/
 │   │   │   ├── auth.js        # Authentication
 │   │   │   ├── miners.js      # Miner management
 │   │   │   ├── chat.js        # LLM chat + payment chain + coverage wall
-│   │   │   ├── payments.js    # USD wallet + NowPayments (deposit/Plus IPN)
-│   │   │   ├── plans.js       # Free/Plus plan snapshot + Plus purchase
+│   │   │   ├── payments.js    # USD wallet + NowPayments (deposit/plan/token IPN)
+│   │   │   ├── plans.js       # Plan catalog (Plus/Pro/Max) + tier/token-bundle purchase
 │   │   │   ├── token.js       # Balance snapshot
 │   │   │   ├── stats.js       # Network stats
 │   │   │   └── models.js      # Model list API
@@ -142,7 +156,7 @@ krelz.xyz/
 │   ├── pages/
 │   │   ├── index.js           # Chat homepage (chat-first; fullscreen frame; attachments/voice v3.20.0)
 │   │   ├── chat.js            # Redirects to / (chat is homepage now)
-│   │   ├── profile.js         # Dashboard (balance, free-today + Plus cards, miner credit, rank)
+│   │   ├── profile.js         # Dashboard (balance, plans + token bundle cards, earnings breakdown, miner credit, rank)
 │   │   ├── miners.js          # Miner management + Quick Install copy + history (v3.22.0)
 │   │   ├── settings.js        # Settings (USD wallet, 33-lang dropdown, password)
 │   │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)

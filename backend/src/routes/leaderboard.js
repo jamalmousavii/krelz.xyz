@@ -26,6 +26,28 @@ router.get('/mine', authenticate, async (req, res) => {
 
     const row = result.rows[0] || null;
 
+    // 5-way earnings breakdown (v3.28.0): which source paid and which plan
+    // the payer was on. Historical rows backfilled as wallet/free.
+    const breakdown = { tokens: 0, wallet: 0, plus: 0, pro: 0, max: 0 };
+    if (row) {
+      const bd = await pool.query(
+        `SELECT source, plan_type, COALESCE(SUM(amount), 0) AS amount
+           FROM miner_coin_earnings
+          WHERE miner_id = $1 AND coin = 'USD'
+          GROUP BY source, plan_type`,
+        [row.id]
+      );
+      for (const r of bd.rows) {
+        const amount = parseFloat(r.amount) || 0;
+        if (r.source === 'tokens') {
+          breakdown.tokens += amount;
+        } else {
+          const key = ['plus', 'pro', 'max'].includes(r.plan_type) ? r.plan_type : 'wallet';
+          breakdown[key] += amount;
+        }
+      }
+    }
+
     if (!row) {
       const any = await pool.query(
         `SELECT COUNT(*)::int AS n FROM miners
@@ -49,6 +71,7 @@ router.get('/mine', authenticate, async (req, res) => {
       isMiner: true,
       rank: Number(row.rank),
       total: Number(row.total),
+      breakdown,
       miner: {
         id: row.id,
         gpu_model: row.gpu_model,

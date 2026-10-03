@@ -40,7 +40,7 @@ const ur = {
     startChat: 'چیٹ شروع کریں',
     footer: 'جملہ حقوق محفوظ ہیں۔',
     installMetaMask: 'براہ کرم MetaMask انسٹال کریں',
-    version: 'v3.27.0',
+    version: 'v3.28.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — غیر مرکزی LLM انفرنس پلیٹ فارم، ورژن {version}۔ جملہ حقوق محفوظ ہیں۔',

@@ -10,7 +10,8 @@ const { logger } = require('../logger');
 const { prepareAttachment, AttachmentError } = require('../services/attachments');
 const { chargeMinerCredit, getMinerCreditStatus } = require('../services/minerCredit');
 const { getFreeStatus, chargeFreeTokens } = require('../services/freeAllowance');
-const { getDailyCap, FREE_DAILY_TOKENS, PLUS_DAILY_TOKENS, PLUS_PRICE_USD, PLUS_INTERVAL_DAYS } = require('../services/plans');
+const { getDailyCap, FREE_DAILY_TOKENS, TOKEN_BUNDLE, listPlans, getActivePlan } = require('../services/plans');
+const { chargeTokenPot, getTokenBalance } = require('../services/tokenBundles');
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 // Single source of truth for the default model (was split between
@@ -216,10 +217,10 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
 
     // Coverage pre-flight (v3.27.0). v3.26 removed payment blocking entirely;
     // v3.27 brings back a *narrow* gate: a subject with NO coverage at all —
-    // daily free allowance exhausted, no miner credit, empty wallet — gets
-    // the Plus upgrade wall (402 upgrade_required) instead of a wasted
-    // dispatch. Anyone with a single cent of coverage is served exactly as
-    // before. Failures here never block chat (availability first).
+    // daily free allowance exhausted, no miner credit, empty token pot and
+    // empty wallet — gets the upgrade wall (402 upgrade_required) instead of
+    // a wasted dispatch. Anyone with a single unit of coverage is served
+    // exactly as before. Failures here never block chat (availability first).
     const guestKey = userId ? null : (req.ip || null);
     let freeCap = FREE_DAILY_TOKENS;
     let preFlightFree = null;
@@ -237,6 +238,10 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
           const credit = await getMinerCreditStatus(userId);
           covered = credit.eligible && credit.remaining > 0;
           if (!covered) {
+            const pot = await getTokenBalance(userId);
+            covered = pot > 0;
+          }
+          if (!covered) {
             const bal = await pool.query(
               "SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = 'USD'",
               [userId]
@@ -251,10 +256,16 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
 
       if (!covered) {
         return res.status(402).json({
-          error: 'Daily free allowance exhausted and wallet is empty.',
+          error: 'Daily free allowance exhausted and no funds left.',
           code: 'upgrade_required',
           free: { limit: freeCap, used: preFlightFree.used, remaining: 0 },
-          plus: { price: PLUS_PRICE_USD, daily_tokens: PLUS_DAILY_TOKENS, interval_days: PLUS_INTERVAL_DAYS },
+          plans: listPlans(),
+          token_bundle: {
+            price_per_million: TOKEN_BUNDLE.price_per_million,
+            tokens_per_usd: TOKEN_BUNDLE.tokens_per_usd,
+            min_usd: TOKEN_BUNDLE.min_usd,
+            max_usd: TOKEN_BUNDLE.max_usd,
+          },
           signed_in: !!userId,
         });
       }
@@ -435,23 +446,47 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
         .catch((err) => logger.error({ err, minerId }, 'Failed to increment miner total_tasks'));
     }
 
-    // Payment (v3.27.0). Inside ONE transaction with row locks, in order:
-    //   1. the daily free allowance (2M/day Free, 10M/day Plus; guests are
-    //      tracked by IP) — platform-funded: no wallet debit, no miner
-    //      revenue share;
+    // Payment (v3.28.0). Inside ONE transaction with row locks, in order:
+    //   1. the daily free allowance (2M/day Free, up to 80M/day on a plan;
+    //      guests are tracked by IP) — platform-funded: no wallet debit, no
+    //      miner revenue share;
     //   2. the free miner credit (v3.25, signed-in only) — platform-funded;
-    //   3. the signed-in user's USD wallet (miner gets 90%; a balance below
-    //      the cost is drained in full so the wallet can actually reach zero
-    //      and the upgrade wall shows on the next message);
-    //   4. if a race exhausts everything between pre-flight and settlement,
+    //   3. the prepaid token pot (v3.28, $1 = 1M, never expires) — the miner
+    //      earns a flat 90% of the message's catalog value, paid by the
+    //      platform out of the bundle revenue;
+    //   4. the signed-in user's USD wallet (miner gets a flat 90% of the
+    //      debit regardless of the payer's plan; a balance below the cost is
+    //      drained in full so the wallet can actually reach zero and the
+    //      upgrade wall shows on the next message);
+    //   5. if a race exhausts everything between pre-flight and settlement,
     //      the reply — which already exists — is still served as 'free'
     //      (never block after generation: the v3.26 spirit for races).
+    // Every miner earning row records which source paid (wallet/tokens) and
+    // which plan the payer was on — that is the 5-way breakdown shown on the
+    // profile. Free legs earn the miner nothing (platform-funded).
     // A subject with no coverage never reaches here: the pre-flight wall
     // (402 upgrade_required) rejected it before dispatch.
     let paymentStatus = 'free';
     let minerCreditRemaining = null;
     let freeRemaining = preFlightFree ? preFlightFree.remaining : null;
+    let tokenBalanceRemaining = null;
     let upgradeNotice = false;
+
+    // Attribution for miner_coin_earnings on paid legs (lazy: only when a
+    // miner actually earns). source = payment source, plan_type = the plan
+    // the paying user was on at settlement time.
+    const creditMinerEarning = async (client, earning, source) => {
+      const payerPlan = await getActivePlan(userId, client);
+      await client.query(
+        'UPDATE miners SET earnings = earnings + $1 WHERE id = $2',
+        [earning, minerId]
+      );
+      await client.query(
+        `INSERT INTO miner_coin_earnings (miner_id, coin, amount, task_id, source, plan_type)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [minerId, paymentCoin, earning, taskId, source, payerPlan ? payerPlan.plan_type : 'free']
+      );
+    };
 
     if (cost > 0) {
       const client = await pool.connect();
@@ -472,44 +507,48 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
           if (creditCharge.charged) {
             paymentStatus = 'free_miner';
           } else {
-            const balanceResult = await client.query(
-              'SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = $2 FOR UPDATE',
-              [userId, paymentCoin]
-            );
-            const userBalance = parseFloat(balanceResult.rows[0]?.available || 0);
+            const potCharge = await chargeTokenPot({ userId, tokens: tokensUsed, client });
 
-            if (userBalance > 0) {
-              // Drain dust: a sub-cost balance is taken in full, so the wallet
-              // reaches exactly 0 instead of parking at $0.0000x forever.
-              const debit = Math.min(cost, userBalance);
-              await client.query(
-                `UPDATE user_coin_balances
-                    SET available = available - $1, total_spent = total_spent + $1
-                  WHERE user_id = $2 AND coin = $3`,
-                [debit, userId, paymentCoin]
-              );
-
-              // Only a miner that actually served the task earns — a local-Ollama
-              // fallback must never credit earnings to the miner of record.
+            if (potCharge.charged) {
+              tokenBalanceRemaining = potCharge.remaining;
+              paymentStatus = 'tokens';
+              // Flat 90% of the message's catalog value — same rate as the
+              // wallet leg, paid from the platform's bundle revenue.
               if (minerId && servedByMiner) {
-                const minerEarning = debit * MINER_REVENUE_SHARE;
-                await client.query(
-                  'UPDATE miners SET earnings = earnings + $1 WHERE id = $2',
-                  [minerEarning, minerId]
-                );
-                await client.query(
-                  `INSERT INTO miner_coin_earnings (miner_id, coin, amount, task_id)
-                   VALUES ($1, $2, $3, $4)`,
-                  [minerId, paymentCoin, minerEarning, taskId]
-                );
+                await creditMinerEarning(client, cost * MINER_REVENUE_SHARE, 'tokens');
               }
-              paymentStatus = 'paid';
-              upgradeNotice = true;
+            } else {
+              const balanceResult = await client.query(
+                'SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = $2 FOR UPDATE',
+                [userId, paymentCoin]
+              );
+              const userBalance = parseFloat(balanceResult.rows[0]?.available || 0);
+
+              if (userBalance > 0) {
+                // Drain dust: a sub-cost balance is taken in full, so the wallet
+                // reaches exactly 0 instead of parking at $0.0000x forever.
+                const debit = Math.min(cost, userBalance);
+                await client.query(
+                  `UPDATE user_coin_balances
+                      SET available = available - $1, total_spent = total_spent + $1
+                    WHERE user_id = $2 AND coin = $3`,
+                  [debit, userId, paymentCoin]
+                );
+
+                // Only a miner that actually served the task earns — a local-Ollama
+                // fallback must never credit earnings to the miner of record.
+                // Flat 90% for every payer (Free/Plus/Pro/Max alike).
+                if (minerId && servedByMiner) {
+                  await creditMinerEarning(client, debit * MINER_REVENUE_SHARE, 'wallet');
+                }
+                paymentStatus = 'paid';
+                upgradeNotice = true;
+              }
+              // else: race after pre-flight — serve free (step 5).
             }
-            // else: race after pre-flight — serve free (step 4).
           }
         }
-        // Guests out of allowance mid-race: step 4 (status stays 'free').
+        // Guests out of allowance mid-race: step 5 (status stays 'free').
 
         await client.query('COMMIT');
       } catch (err) {
@@ -519,7 +558,7 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
         client.release();
       }
 
-      // The balance payload now carries free_tokens too — any charge changes it.
+      // The balance payload now carries free_tokens/pot too — any charge changes it.
       invalidateCache('/api/payments/balance');
     }
 
@@ -536,9 +575,16 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
       source: servedByMiner ? 'miner' : 'local',
       miner_credit_remaining: minerCreditRemaining,
       free_tokens_remaining: freeRemaining,
+      ...(tokenBalanceRemaining !== null ? { token_balance_remaining: tokenBalanceRemaining } : {}),
       ...(upgradeNotice ? {
         notice: 'upgrade_recommended',
-        plus: { price: PLUS_PRICE_USD, daily_tokens: PLUS_DAILY_TOKENS },
+        plans: listPlans(),
+        token_bundle: {
+          price_per_million: TOKEN_BUNDLE.price_per_million,
+          tokens_per_usd: TOKEN_BUNDLE.tokens_per_usd,
+          min_usd: TOKEN_BUNDLE.min_usd,
+          max_usd: TOKEN_BUNDLE.max_usd,
+        },
       } : {}),
     });
 

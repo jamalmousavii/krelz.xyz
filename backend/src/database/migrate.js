@@ -438,6 +438,54 @@ const migrate = async () => {
     await client.query('CREATE INDEX IF NOT EXISTS idx_plan_purchases_user ON plan_purchases(user_id)');
     console.log('✅ جدول plan_purchases ایجاد شد');
 
+    // === Token bundles (v3.28.0): prepaid, non-expiring token pot ===
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_token_balances (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id),
+        tokens BIGINT NOT NULL DEFAULT 0,
+        total_purchased BIGINT NOT NULL DEFAULT 0,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ جدول user_token_balances ایجاد شد');
+
+    // Which tier an order buys (plus/pro/max) or that it is a token bundle
+    // ('tokens'); bundles also record the quoted token amount.
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE plan_purchases ADD COLUMN IF NOT EXISTS plan_type VARCHAR(16) NOT NULL DEFAULT 'plus';
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE plan_purchases ADD COLUMN IF NOT EXISTS tokens BIGINT NOT NULL DEFAULT 0;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    console.log('✅ ستون‌های plan_type/tokens به plan_purchases اضافه شد');
+
+    // Earnings attribution (v3.28.0): which payment source and which plan the
+    // paying user was on. The DEFAULT fills every pre-existing row — all of
+    // them came from wallet-paid chats (the only paying leg before v3.28.0).
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE miner_coin_earnings ADD COLUMN IF NOT EXISTS source VARCHAR(16) NOT NULL DEFAULT 'wallet';
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE miner_coin_earnings ADD COLUMN IF NOT EXISTS plan_type VARCHAR(16) NOT NULL DEFAULT 'free';
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    await client.query(
+      "UPDATE miner_coin_earnings SET source = 'wallet', plan_type = 'free' WHERE source IS NULL OR plan_type IS NULL"
+    );
+    console.log('✅ ستون‌های source/plan_type به miner_coin_earnings اضافه شد');
+
+
     // === Miner Token + Password Reset ===
     await client.query(`
       DO $$ BEGIN

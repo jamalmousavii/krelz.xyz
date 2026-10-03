@@ -69,10 +69,12 @@ export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [token, setToken] = useState(null);
 
-  // v3.27.0 — Plus upgrade surfaces: the 402 wall (upgrade_wall message) and
-  // the once-per-day upsell banner after a wallet-paid message.
-  const [upgradeNotice, setUpgradeNotice] = useState(null); // { price, daily_tokens } | null
+  // v3.28.0 — Upgrade surfaces: the 402 wall (upgrade_wall message) and the
+  // once-per-day upsell banner after a wallet-paid message. Both carry the
+  // plan catalog ({plans, token_bundle}) from the backend.
+  const [upgradeNotice, setUpgradeNotice] = useState(null); // { plans, token_bundle } | null
   const [purchaseError, setPurchaseError] = useState('');
+  const [bundleAmount, setBundleAmount] = useState('5'); // whole dollars for the token bundle
 
   // Attachments & voice (v3.20.0): one pending attachment per message.
   const [attachment, setAttachment] = useState(null); // { type, name, mime, data }
@@ -202,15 +204,41 @@ export default function Home() {
     ...(tkn ? { Authorization: `Bearer ${tkn}` } : {})
   });
 
-  // Plus purchase: one NowPayments invoice per month; activation happens in
-  // the IPN webhook. The hosted checkout opens in a new tab.
-  const purchasePlus = async () => {
+  // Plan/token purchase: one NowPayments invoice per purchase; activation or
+  // pot credit happens in the IPN webhook. Hosted checkout opens in a new tab.
+  const purchasePlan = async (tier) => {
     if (!token) return;
     setPurchaseError('');
     try {
-      const res = await fetch('/api/plans/plus/purchase', {
+      const res = await fetch(`/api/plans/${tier}/purchase`, {
         method: 'POST',
         headers: authHeaders(token),
+      });
+      const data = await res.json();
+      if (data.success && data.invoice?.url) {
+        window.open(data.invoice.url, '_blank', 'noopener');
+      } else {
+        setPurchaseError(data.error || t('chat.errorResponse'));
+      }
+    } catch (err) {
+      setPurchaseError(t('chat.errorConnection'));
+    }
+  };
+
+  // Token bundle ($1 = 1M tokens, whole dollars, never expires).
+  const purchaseTokens = async () => {
+    if (!token) return;
+    setPurchaseError('');
+    const amount = parseInt(bundleAmount, 10);
+    if (!(amount >= 1 && amount <= 500)) {
+      setPurchaseError(t('chat.bundleRange'));
+      return;
+    }
+    try {
+      const res = await fetch('/api/plans/tokens/purchase', {
+        method: 'POST',
+        headers: authHeaders(token),
+        body: JSON.stringify({ amount_usd: amount }),
       });
       const data = await res.json();
       if (data.success && data.invoice?.url) {
@@ -450,11 +478,13 @@ export default function Home() {
           miner_id: data.miner_id || null,
           payment_status: data.payment_status || null,
         }]);
-        // Wallet-funded reply → suggest Plus (once per UTC day, dismissible).
+        // Wallet-funded reply → suggest plans (once per UTC day, dismissible).
         if (data.notice === 'upgrade_recommended') {
           try {
             const today = new Date().toISOString().slice(0, 10);
-            if (localStorage.getItem('krelz_upg_notice') !== today) setUpgradeNotice(data.plus || null);
+            if (localStorage.getItem('krelz_upg_notice') !== today) {
+              setUpgradeNotice({ plans: data.plans || [], token_bundle: data.token_bundle || null });
+            }
           } catch (e) {}
         }
         if (data.session_id && !activeSessionId) {
@@ -464,11 +494,16 @@ export default function Home() {
           fetchSessions(token);
         }
       } else if (res.status === 402 && data.code === 'upgrade_required') {
-        // v3.27.0 wall: no free allowance, no credit, empty wallet.
+        // v3.28.0 wall: no free allowance, no credit, empty pot, empty wallet.
         setChat(prev => [...prev, {
           role: 'assistant',
           content: t('chat.upgradeDesc'),
-          upgrade_wall: { signed_in: !!data.signed_in, plus: data.plus, free: data.free },
+          upgrade_wall: {
+            signed_in: !!data.signed_in,
+            plans: data.plans || [],
+            token_bundle: data.token_bundle || null,
+            free: data.free,
+          },
         }]);
       } else {
         setChat(prev => [...prev, { role: 'assistant', content: data.error || t('chat.errorResponse') }]);
@@ -756,22 +791,64 @@ export default function Home() {
                     </div>
                   )}
                   {msg.upgrade_wall ? (
-                    <div className="min-w-[240px]">
+                    <div className="min-w-[240px] md:min-w-[340px]">
                       <div className="font-bold text-violet-800 mb-1">⭐ {t('chat.upgradeTitle')}</div>
                       <div className="text-gray-700 mb-2 whitespace-pre-wrap">{msg.content}</div>
-                      <div className="text-xs text-gray-500 mb-3">
-                        {t('chat.upgradePrice')
-                          .replace('{price}', `$${msg.upgrade_wall.plus?.price ?? 6.99}`)
-                          .replace('{tokens}', Number(msg.upgrade_wall.plus?.daily_tokens || 10000000).toLocaleString('en-US'))}
+                      {msg.upgrade_wall.free && (
+                        <div className="text-xs text-gray-500 mb-2">
+                          {t('chat.upgradeFree')
+                            .replace('{used}', Number(msg.upgrade_wall.free.used || 0).toLocaleString('en-US'))
+                            .replace('{limit}', Number(msg.upgrade_wall.free.limit || 0).toLocaleString('en-US'))}
+                        </div>
+                      )}
+                      <div className="flex flex-col gap-1.5 mb-3">
+                        {(msg.upgrade_wall.plans || []).map(p => (
+                          <div key={p.name} className="flex items-center justify-between gap-2 bg-white border border-violet-100 rounded-lg px-2.5 py-2">
+                            <div className="min-w-0 text-xs">
+                              <span className="font-bold text-gray-800">{p.label}</span>
+                              <span className="text-gray-600">
+                                {' — '}
+                                {t('chat.planRow')
+                                  .replace('{price}', `$${p.price}`)
+                                  .replace('{tokens}', Number(p.daily_tokens).toLocaleString('en-US'))}
+                              </span>
+                              <div className="text-[10px] text-gray-400">
+                                {t('chat.planValue').replace('{value}', `$${p.value_usd_day}`)}
+                              </div>
+                            </div>
+                            {msg.upgrade_wall.signed_in && (
+                              <button
+                                onClick={() => purchasePlan(p.name)}
+                                className="bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition flex-shrink-0"
+                              >
+                                ⬆ {p.label}
+                              </button>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                      {msg.upgrade_wall.signed_in ? (
-                        <button
-                          onClick={purchasePlus}
-                          className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition"
-                        >
-                          ⭐ {t('chat.upgradeBtn')}
-                        </button>
-                      ) : (
+                      {msg.upgrade_wall.signed_in && msg.upgrade_wall.token_bundle && (
+                        <div className="bg-white border border-sky-100 rounded-lg px-2.5 py-2 mb-2 flex items-center gap-2">
+                          <div className="min-w-0 flex-1 text-xs text-gray-600">
+                            🎟️ {t('chat.bundleDesc')
+                              .replace('{rate}', Number(msg.upgrade_wall.token_bundle.tokens_per_usd || 1000000).toLocaleString('en-US'))}
+                          </div>
+                          <input
+                            value={bundleAmount}
+                            onChange={(e) => setBundleAmount(e.target.value.replace(/[^0-9]/g, ''))}
+                            inputMode="numeric"
+                            aria-label={t('chat.bundlePlaceholder')}
+                            className="w-16 border border-sky-200 rounded-lg px-2 py-1.5 text-xs text-center"
+                          />
+                          <button
+                            onClick={purchaseTokens}
+                            className="bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition flex-shrink-0"
+                          >
+                            {t('chat.bundleBtn')}
+                          </button>
+                        </div>
+                      )}
+                      {!msg.upgrade_wall.signed_in && (
                         <div className="text-xs text-gray-600 bg-white border border-violet-100 rounded-lg px-3 py-2">
                           {t('chat.upgradeGuestHint')}
                         </div>
@@ -791,6 +868,9 @@ export default function Home() {
                     {msg.payment_status === 'free_miner' && (
                       <span className="text-amber-600"> 🎁 {t('chat.freeMinerCredit')}</span>
                     )}
+                    {msg.payment_status === 'tokens' && (
+                      <span className="text-sky-600"> 🎟️ {t('chat.paidTokens')}</span>
+                    )}
                   </div>
                 )}
               </div>
@@ -803,20 +883,25 @@ export default function Home() {
             <div />
           </div>
 
-          {/* v3.27.0 — Plus upsell after a wallet-paid message (once/day) */}
+          {/* v3.28.0 — plan upsell after a wallet-paid message (once/day) */}
           {upgradeNotice && (
             <div className="flex items-center gap-2 mb-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-3 py-2 text-xs md:text-sm">
               <span className="flex-1">
                 ⭐ {t('chat.upgradeNotice')}
                 {' '}
-                {t('chat.upgradePrice')
-                  .replace('{price}', `$${upgradeNotice.price ?? 6.99}`)
-                  .replace('{tokens}', Number(upgradeNotice.daily_tokens || 10000000).toLocaleString('en-US'))}
+                {upgradeNotice.plans?.[0] && (
+                  t('chat.planRow')
+                    .replace('{price}', `$${upgradeNotice.plans[0].price}`)
+                    .replace('{tokens}', Number(upgradeNotice.plans[0].daily_tokens).toLocaleString('en-US'))
+                )}
                 {purchaseError && <span className="block text-red-500">{purchaseError}</span>}
               </span>
-              {isLoggedIn && (
-                <button onClick={purchasePlus} className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition flex-shrink-0">
-                  {t('chat.upgradeBtn')}
+              {isLoggedIn && upgradeNotice.plans?.[0] && (
+                <button
+                  onClick={() => purchasePlan(upgradeNotice.plans[0].name)}
+                  className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition flex-shrink-0"
+                >
+                  ⬆ {upgradeNotice.plans[0].label}
                 </button>
               )}
               <button onClick={dismissUpgradeNotice} aria-label="dismiss" className="text-amber-500 hover:text-amber-700 px-1.5 font-bold flex-shrink-0">

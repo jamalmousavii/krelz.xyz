@@ -1,5 +1,5 @@
 const { getFreeStatus, chargeFreeTokens } = require('../src/services/freeAllowance');
-const { FREE_DAILY_TOKENS, PLUS_DAILY_TOKENS } = require('../src/services/plans');
+const { FREE_DAILY_TOKENS, PLANS } = require('../src/services/plans');
 
 // Sequential fake client: each query() pops the next scripted response —
 // no real database involved (same pattern as miner.credit.test.js).
@@ -26,12 +26,13 @@ describe('getFreeStatus', () => {
     expect(client.query).toHaveBeenCalledTimes(1);
   });
 
-  it('respects a Plus-sized cap', async () => {
+  it('respects a plan-sized cap (Pro is 15x Free)', async () => {
     const client = makeClient({ rows: [] });
-    const status = await getFreeStatus({ userId: 7, cap: PLUS_DAILY_TOKENS, client });
+    const status = await getFreeStatus({ userId: 7, cap: PLANS.pro.daily_tokens, client });
 
-    expect(status.limit).toBe(PLUS_DAILY_TOKENS);
-    expect(status.remaining).toBe(PLUS_DAILY_TOKENS);
+    expect(status.limit).toBe(PLANS.pro.daily_tokens);
+    expect(status.remaining).toBe(PLANS.pro.daily_tokens);
+    expect(status.limit).toBe(FREE_DAILY_TOKENS * 15);
   });
 
   it('subtracts today usage from the allowance', async () => {

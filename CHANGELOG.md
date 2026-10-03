@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.28.0] - 2026-10-03
+
+Three paid tiers (Plus/Pro/Max), prepaid token bundles, and a 5-way miner earnings breakdown — flat 90% share on every paid leg.
+
+### Added
+- **Three-tier plan catalog** (`src/services/plans.js`): **Plus $4.99 → 10M tok/day**, **Pro $9.99 → 30M tok/day**, **Max $19.99 → 80M tok/day** (all monthly, 30 days, renewal extends from `max(now, expiry)`). One `user_plans` row per tier; a user may hold several and always gets the biggest cap — no proration. `activatePlan(userId, tier)` replaces `activatePlus`.
+- **Token-value metrics**: every tier shows what its allowance is *worth* at the default model's catalog output price ($0.158/1M → Plus ≈ $1.58/day, $47.40/month) as `value_usd_day` / `value_usd_month` in `listPlans()` — on the 402 wall, the upsell banner and the profile plans card.
+- **Token bundles** (`src/services/tokenBundles.js`, `POST /api/plans/tokens/purchase`): whole dollars **$1–$500 → 1M tokens per $1**, never expires, signed-in only. New table `user_token_balances`; invoice order id prefix `tok-`; credited additively behind the same `plan_purchases` exactly-once claim as plans. `chargeTokenPot()` is an all-or-nothing race-safe deduct (`UPDATE … WHERE tokens >= $n RETURNING tokens`).
+- **5-way miner earnings breakdown**: `miner_coin_earnings` gained `source` (`wallet`/`tokens`) and `plan_type` (`free`/`plus`/`pro`/`max`) columns (historical rows backfilled as wallet/free). `GET /api/leaderboard/mine` returns `breakdown: {tokens, wallet, plus, pro, max}`; profile renders it as a colored 5-line list under the rank card. 🎟️ Tokens = pot spends (any payer), 👛 Wallet = wallet spends from Free users, ⭐/🚀/👑 = wallet spends from Plus/Pro/Max users.
+- **Balance/catalog endpoints**: `GET /api/payments/balance` and `GET /api/token/balance` now return `plans: […]`, `token_bundle: {price_per_million, tokens_per_usd, min_usd, max_usd, balance}` and `plan.name` from the real tier; `GET /api/plans` is the public catalog snapshot.
+
+### Changed
+- **Payment chain** (one row-locked transaction): daily free allowance → $1 miner credit → **token pot** (new; `payment_status: "tokens"` + `token_balance_remaining`) → USD wallet → race fallback `free`. Pre-flight now checks all four legs (free OR credit OR pot OR wallet) before dispatching.
+- **Flat 90% miner share on every paid leg** — wallet debits and pot spends alike; pot leg pays the miner `cost × 0.9` from bundle revenue. Free legs (daily allowance, $1 credit) still pay the miner nothing.
+- **402 wall / upsell now carry the whole catalog**: `plans: [...]` + `token_bundle` instead of the single `plus` object; the wall renders three buy buttons plus a bundle quick-buy input, the once/day banner sells the entry tier.
+- Re-priced Plus from $6.99 → **$4.99** to anchor the three-tier ladder; `plus:`-prefixed IPN order ids remain valid for old invoices (the webhook now dispatches on `plus|pro|max|tok` prefixes, wallet deposits keep `krelz-`).
+- Profile: single Plus card replaced by a **Plans card** (3 rows, active tier highlighted, Choose/Renew per row) and a **Token bundle card** (balance, $ input, Buy); dashboard gained a **Token Pot** stat tile.
+
+### Tests
+- `tests/plans.test.js` reworked for the catalog (tier constants, value metrics, best-cap selection, `activatePlan` SQL, token-pot SQL, `plus/pro/max/tok/krelz` order-id parsing) + `free.allowance.test.js` on the Pro cap. Suite: **119 tests, 12 suites green**.
+
 ## [3.27.0] - 2026-10-03
 
 Free daily allowance for everyone (2M tokens/day) + Krelz Plus (10M/day, $6.99/mo) — chat walls only subjects with zero coverage.

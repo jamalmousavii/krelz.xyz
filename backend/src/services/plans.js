@@ -1,19 +1,74 @@
-// Subscription plans (v3.27.0).
+// Subscription plans + token bundles (v3.28.0).
 //
 // Free: every subject (signed-in user or guest, tracked by IP) gets a daily
-// token allowance. Plus: a paid monthly plan that raises that allowance.
-// Marginal serving cost is ~0 (our own Ollama + miner network), so pricing
-// follows market value, not token cost — the Plus revenue covers the fixed
-// server cost that Free users consume.
+// token allowance. Paid plans raise that allowance for 30 days; token bundles
+// are a non-expiring prepaid token pot. Marginal serving cost is ~0 (our own
+// Ollama + miner network), so pricing follows market value, not token cost.
 const pool = require('../database/pool');
+const MODELS = require('../models');
 
 const FREE_DAILY_TOKENS = 2000000;
-const PLUS_DAILY_TOKENS = 10000000;
-const PLUS_PRICE_USD = 6.99;
-const PLUS_INTERVAL_DAYS = 30;
+const DEFAULT_MODEL_ID = 'llama3.1:8b';
+const DEFAULT_OUTPUT_PRICE = 0.158; // fallback if the catalog loses the default model
 
-// Active = status 'active' AND not expired. An expired row keeps existing
-// (renewal extends from max(now, expires_at)) but no longer matches.
+// Paid tiers. One row per tier in user_plans; a user may hold several active
+// rows and always gets the biggest cap among them.
+const PLANS = {
+  plus: { name: 'plus', label: 'Plus', price: 4.99, daily_tokens: 10000000, interval_days: 30 },
+  pro: { name: 'pro', label: 'Pro', price: 9.99, daily_tokens: 30000000, interval_days: 30 },
+  max: { name: 'max', label: 'Max', price: 19.99, daily_tokens: 80000000, interval_days: 30 },
+};
+
+// Token bundle: whole dollars in, 1M tokens per dollar, no expiry.
+const TOKEN_BUNDLE = {
+  tokens_per_usd: 1000000,
+  price_per_million: 1,
+  min_usd: 1,
+  max_usd: 500,
+};
+
+// Flat miner share on every paid leg (wallet debit and token-pot spend).
+// Free legs (daily allowance, $1 miner credit) are platform-funded and pay
+// miners nothing — unchanged since v3.25.0/v3.27.0.
+const MINER_REVENUE_SHARE = 0.9;
+
+// What a day's allowance is worth at the default model's catalog output
+// price — used to show "N tokens/day (≈ $X/day, $Y/month worth)".
+function outputPrice() {
+  const m = MODELS.find((x) => x.id === DEFAULT_MODEL_ID);
+  return m ? m.outputPrice : DEFAULT_OUTPUT_PRICE;
+}
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+function tokenValueUsd(tokens, price = outputPrice()) {
+  const day = (tokens * price) / 1e6;
+  return { value_usd_day: round2(day), value_usd_month: round2(day * 30) };
+}
+
+// Public catalog with value metrics attached (for GET /api/plans, the 402
+// wall and the upgrade notice).
+function listPlans() {
+  const price = outputPrice();
+  return Object.values(PLANS).map((p) => ({
+    name: p.name,
+    label: p.label,
+    price: p.price,
+    daily_tokens: p.daily_tokens,
+    interval_days: p.interval_days,
+    ...tokenValueUsd(p.daily_tokens, price),
+  }));
+}
+
+function quoteTokens(amountUsd) {
+  return Math.round(amountUsd * TOKEN_BUNDLE.tokens_per_usd);
+}
+
+// Active = status 'active' AND not expired. If several tiers are active at
+// once (bought Plus, later bought Pro) the biggest cap wins; the smaller row
+// simply runs out on its own — no proration, no downgrade.
 async function getActivePlan(userId, client = pool) {
   if (!userId) return null;
   const r = await client.query(
@@ -21,37 +76,44 @@ async function getActivePlan(userId, client = pool) {
       WHERE user_id = $1 AND status = 'active' AND expires_at > now()`,
     [userId]
   );
-  return r.rows[0] || null;
+  const rows = (r.rows || []).filter((row) => PLANS[row.plan_type]);
+  if (!rows.length) return null;
+  rows.sort((a, b) => PLANS[b.plan_type].daily_tokens - PLANS[a.plan_type].daily_tokens);
+  return rows[0];
 }
 
-// Daily cap for the subject: Plus members get the bigger allowance,
-// everyone else (including guests) the Free one.
+// Daily cap for the subject: the best active plan, else the Free allowance.
 async function getDailyCap(userId, client = pool) {
   const plan = await getActivePlan(userId, client);
-  return plan ? PLUS_DAILY_TOKENS : FREE_DAILY_TOKENS;
+  return plan ? PLANS[plan.plan_type].daily_tokens : FREE_DAILY_TOKENS;
 }
 
-// Called exactly once per confirmed Plus invoice (claimed via plan_purchases
+// Called exactly once per confirmed invoice (claimed via plan_purchases
 // before this runs), inside the caller's transaction.
-async function activatePlus(userId, client = pool) {
+async function activatePlan(userId, tier, client = pool) {
+  const p = PLANS[tier];
+  if (!p) throw new Error(`Unknown plan tier: ${tier}`);
   await client.query(
     `INSERT INTO user_plans (user_id, plan_type, status, started_at, expires_at)
-          VALUES ($1, 'plus', 'active', now(), now() + ($2::int * interval '1 day'))
+          VALUES ($1, $2, 'active', now(), now() + ($3::int * interval '1 day'))
      ON CONFLICT (user_id, plan_type) DO UPDATE
         SET status = 'active',
             started_at = COALESCE(user_plans.started_at, now()),
             expires_at = GREATEST(COALESCE(user_plans.expires_at, now()), now())
-                       + ($2::int * interval '1 day')`,
-    [userId, PLUS_INTERVAL_DAYS]
+                       + ($3::int * interval '1 day')`,
+    [userId, tier, p.interval_days]
   );
 }
 
 module.exports = {
   FREE_DAILY_TOKENS,
-  PLUS_DAILY_TOKENS,
-  PLUS_PRICE_USD,
-  PLUS_INTERVAL_DAYS,
+  PLANS,
+  TOKEN_BUNDLE,
+  MINER_REVENUE_SHARE,
+  listPlans,
+  quoteTokens,
+  tokenValueUsd,
   getActivePlan,
   getDailyCap,
-  activatePlus,
+  activatePlan,
 };

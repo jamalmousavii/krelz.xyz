@@ -3,8 +3,9 @@ const router = express.Router();
 const pool = require('../database/pool');
 const { logger } = require('../logger');
 const { getMinerCreditStatus } = require('../services/minerCredit');
-const { FREE_DAILY_TOKENS, PLUS_DAILY_TOKENS, getActivePlan } = require('../services/plans');
+const { FREE_DAILY_TOKENS, PLANS, TOKEN_BUNDLE, listPlans, getActivePlan } = require('../services/plans');
 const { getFreeStatus } = require('../services/freeAllowance');
+const { getTokenBalance } = require('../services/tokenBundles');
 
 // GET /api/token/balance — USD balance snapshot for the signed-in user.
 // Auth is enforced by `authenticate` mounted in server.js, so req.user is set.
@@ -21,8 +22,9 @@ router.get('/balance', async (req, res) => {
     const balance = balanceResult.rows[0] || { available: 0, total_earned: 0, total_spent: 0 };
     const minerCredit = await getMinerCreditStatus(userId);
     const plan = await getActivePlan(userId);
-    const cap = plan ? PLUS_DAILY_TOKENS : FREE_DAILY_TOKENS;
+    const cap = plan ? PLANS[plan.plan_type].daily_tokens : FREE_DAILY_TOKENS;
     const freeStatus = await getFreeStatus({ userId, cap });
+    const tokenBalance = await getTokenBalance(userId);
 
     res.json({
       success: true,
@@ -41,8 +43,16 @@ router.get('/balance', async (req, res) => {
         remaining: freeStatus.remaining,
       },
       plan: plan
-        ? { name: 'plus', active: true, expires_at: plan.expires_at }
+        ? { name: plan.plan_type, active: true, expires_at: plan.expires_at }
         : { name: 'free', active: false, expires_at: null },
+      plans: listPlans(),
+      token_bundle: {
+        price_per_million: TOKEN_BUNDLE.price_per_million,
+        tokens_per_usd: TOKEN_BUNDLE.tokens_per_usd,
+        min_usd: TOKEN_BUNDLE.min_usd,
+        max_usd: TOKEN_BUNDLE.max_usd,
+        balance: tokenBalance,
+      },
     });
 
   } catch (err) {

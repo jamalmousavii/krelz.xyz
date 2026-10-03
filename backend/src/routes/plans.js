@@ -5,12 +5,14 @@ const { authenticate } = require('../middleware/auth');
 const nowpayments = require('../services/nowpayments');
 const {
   FREE_DAILY_TOKENS,
-  PLUS_DAILY_TOKENS,
-  PLUS_PRICE_USD,
-  PLUS_INTERVAL_DAYS,
+  PLANS,
+  TOKEN_BUNDLE,
+  listPlans,
+  quoteTokens,
   getActivePlan,
 } = require('../services/plans');
 const { getFreeStatus } = require('../services/freeAllowance');
+const { getTokenBalance } = require('../services/tokenBundles');
 const { logger } = require('../logger');
 
 // Auth is optional on the snapshot: pricing/caps are public, the personal
@@ -20,22 +22,25 @@ const optionalAuth = (req, res, next) => {
   next();
 };
 
-// GET /api/plans — plan snapshot + public pricing.
+// GET /api/plans — plan catalog + token-bundle quote + public pricing.
 router.get('/', optionalAuth, async (req, res) => {
   try {
     const userId = req.user ? req.user.id : null;
     const plan = userId ? await getActivePlan(userId) : null;
-    const cap = plan ? PLUS_DAILY_TOKENS : FREE_DAILY_TOKENS;
+    const cap = plan ? PLANS[plan.plan_type].daily_tokens : FREE_DAILY_TOKENS;
+
     const body = {
       success: true,
+      plans: listPlans(),
       plan: plan
-        ? { name: 'plus', active: true, expires_at: plan.expires_at }
+        ? { name: plan.plan_type, active: true, expires_at: plan.expires_at }
         : { name: 'free', active: false, expires_at: null },
       daily_limit: cap,
-      plus: {
-        price: PLUS_PRICE_USD,
-        daily_tokens: PLUS_DAILY_TOKENS,
-        interval_days: PLUS_INTERVAL_DAYS,
+      token_bundle: {
+        price_per_million: TOKEN_BUNDLE.price_per_million,
+        tokens_per_usd: TOKEN_BUNDLE.tokens_per_usd,
+        min_usd: TOKEN_BUNDLE.min_usd,
+        max_usd: TOKEN_BUNDLE.max_usd,
       },
     };
     if (userId) {
@@ -45,6 +50,7 @@ router.get('/', optionalAuth, async (req, res) => {
         used: freeStatus.used,
         remaining: freeStatus.remaining,
       };
+      body.token_balance = await getTokenBalance(userId);
     }
     res.json(body);
   } catch (err) {
@@ -53,19 +59,30 @@ router.get('/', optionalAuth, async (req, res) => {
   }
 });
 
-// POST /api/plans/plus/purchase — create the monthly Plus invoice.
-// Activation happens in the IPN webhook (plan_purchases claim keeps it
-// exactly-once even if NowPayments replays the 'finished' notification).
-router.post('/plus/purchase', authenticate, async (req, res) => {
+// POST /api/plans/tokens/purchase — prepaid token pot, whole dollars.
+// Defined before /:tier/purchase so 'tokens' can never be read as a tier.
+router.post('/tokens/purchase', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
-    const orderId = `plus-${userId}-${Date.now()}`;
+    const amountUsd = Number(req.body?.amount_usd);
 
+    if (!Number.isInteger(amountUsd)) {
+      return res.status(400).json({ error: 'amount_usd must be a whole dollar amount' });
+    }
+    const minUsd = Math.max(TOKEN_BUNDLE.min_usd, nowpayments.getMinUsdDeposit());
+    if (amountUsd < minUsd || amountUsd > TOKEN_BUNDLE.max_usd) {
+      return res
+        .status(400)
+        .json({ error: `amount_usd must be between $${minUsd} and $${TOKEN_BUNDLE.max_usd}` });
+    }
+
+    const tokens = quoteTokens(amountUsd);
+    const orderId = `tok-${userId}-${Date.now()}`;
     const result = await nowpayments.createInvoice({
       userId,
-      amount: PLUS_PRICE_USD,
+      amount: amountUsd,
       orderId,
-      description: `Krelz Plus plan - ${PLUS_INTERVAL_DAYS} days (${PLUS_DAILY_TOKENS.toLocaleString('en-US')} tokens/day)`,
+      description: `Krelz token bundle - ${tokens.toLocaleString('en-US')} tokens (never expires)`,
     });
 
     if (!result.success) {
@@ -73,9 +90,9 @@ router.post('/plus/purchase', authenticate, async (req, res) => {
     }
 
     await pool.query(
-      `INSERT INTO plan_purchases (order_id, user_id, invoice_id, amount, status)
-       VALUES ($1, $2, $3, $4, 'pending')`,
-      [orderId, userId, result.invoiceId ? String(result.invoiceId) : null, PLUS_PRICE_USD]
+      `INSERT INTO plan_purchases (order_id, user_id, invoice_id, amount, plan_type, tokens, status)
+       VALUES ($1, $2, $3, $4, 'tokens', $5, 'pending')`,
+      [orderId, userId, result.invoiceId ? String(result.invoiceId) : null, amountUsd, tokens]
     );
 
     res.status(201).json({
@@ -84,11 +101,58 @@ router.post('/plus/purchase', authenticate, async (req, res) => {
         id: result.invoiceId,
         url: result.invoiceUrl,
         order_id: orderId,
-        amountUsd: PLUS_PRICE_USD,
+        amountUsd,
+        tokens,
       },
     });
   } catch (err) {
-    logger.error({ err }, 'POST /api/plans/plus/purchase failed');
+    logger.error({ err }, 'POST /api/plans/tokens/purchase failed');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/plans/:tier/purchase — create the monthly plan invoice.
+// Activation happens in the IPN webhook (plan_purchases claim keeps it
+// exactly-once even if NowPayments replays the 'finished' notification).
+router.post('/:tier/purchase', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const tier = String(req.params.tier).toLowerCase();
+    const plan = PLANS[tier];
+    if (!plan) {
+      return res.status(400).json({ error: 'Unknown plan tier', code: 'INVALID_PLAN' });
+    }
+
+    const orderId = `${tier}-${userId}-${Date.now()}`;
+    const result = await nowpayments.createInvoice({
+      userId,
+      amount: plan.price,
+      orderId,
+      description: `Krelz ${plan.label} plan - ${plan.interval_days} days (${plan.daily_tokens.toLocaleString('en-US')} tokens/day)`,
+    });
+
+    if (!result.success) {
+      return res.status(500).json({ error: result.error || 'Invoice creation failed' });
+    }
+
+    await pool.query(
+      `INSERT INTO plan_purchases (order_id, user_id, invoice_id, amount, plan_type, status)
+       VALUES ($1, $2, $3, $4, $5, 'pending')`,
+      [orderId, userId, result.invoiceId ? String(result.invoiceId) : null, plan.price, tier]
+    );
+
+    res.status(201).json({
+      success: true,
+      invoice: {
+        id: result.invoiceId,
+        url: result.invoiceUrl,
+        order_id: orderId,
+        amountUsd: plan.price,
+        plan: tier,
+      },
+    });
+  } catch (err) {
+    logger.error({ err }, 'POST /api/plans/:tier/purchase failed');
     res.status(500).json({ error: 'Server error' });
   }
 });
