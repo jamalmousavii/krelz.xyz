@@ -1,6 +1,6 @@
 {
   "name": "krelz-miner",
-  "version": "3.33.0",
+  "version": "3.34.0",
   "description": "Krelz Network Miner Application",
   "author": "Krelz Network",
   "main": "src/main.js",
@@ -13,8 +13,8 @@
     "dev": "electron ."
   },
   "dependencies": {
-    "ethers": "^6.9.0",
     "axios": "^1.6.2",
+    "ethers": "^6.9.0",
     "systeminformation": "^5.21.0",
     "ws": "^8.16.0"
   },
@@ -33,15 +33,21 @@
       "assets/**/*"
     ],
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "assets"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "icon": "assets"
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "icon": "assets"
     }
   }

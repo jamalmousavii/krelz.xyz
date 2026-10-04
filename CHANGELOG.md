@@ -1,5 +1,28 @@
 # Changelog
 
+## [3.34.0] - 2026-10-04
+
+Phase 4 of the full-project audit: miner-app security & reliability.
+
+### Security
+- **H4 token exposure** — the miner token no longer enters any argv: `install-*.sh` accepts `--token-file` (or a silent `read -rsp` prompt), builds both the registration body and `config.json` with `jq -n` piped through `--data-binary @-`, and `chmod 600`s the config; `uninstall-*.sh` sends `/miners/unregister` the same stdin way (`ps`/shell-history can no longer leak a live miner token). `miner-app/config.json` added to `.gitignore`.
+- **H5 pinned downloads** — the NodeSource repo scripts and `https://ollama.com/install.sh` are fetched with a `fetch_verified` helper (temp file → sha256 check → run) instead of `curl | sh`, with pinned digests for the deb/rpm setup scripts and the Ollama installer (`KRELZ_ALLOW_UNVERIFIED=1` escape hatch). The dead, unpinned `OllamaService.install()` was removed.
+
+### Reliability
+- **M1 visible installs** — `run_with_spinner` prints the last 20 log lines and exits with the failing step's code instead of dying silently; `sudo -v` is requested up front so the password is asked once, before any long-running step.
+- **M2 registration abort** — a failed `/api/register` now prints the server's response and `exit 1`s (the script used to continue and configure a token that never existed).
+- **M3 fatal auth_error** — the miner stops its heartbeat on an auth rejection (no more DB rows every 30s), retries capped at 5 consecutive failures, then `process.exit(1)` so `systemctl status` shows the failure instead of an eternal silent retry loop.
+- **M4 no stranded `processing` rows** — client: `sendResult` buffers `task_result` while the socket is down (cap 20), flushed on the next `auth_ok`, which also sends `task_request` to re-claim the polling branch. Server: a dispatch timeout and a miner disconnect both reset that miner's `processing` rows back to `pending`, so they can be re-dispatched instead of staying half-done forever.
+- **M5 Ollama timeouts** — `generate`/`chat` bound at 170 s (below the server's 180 s dispatch window), the status probe at 5 s.
+- **M6 installer JSON** — registration/config bodies are `jq -n`-built (quotes/newlines in names or passwords can no longer corrupt them).
+- **M7 lockfile installs** — `miner-app/package-lock.json` committed; installs use `npm ci --omit=dev` (reproducible, electron omitted from installs).
+- **M8 guarded self-delete** — the installer only deletes itself when its first 6 lines still match the Krelz install header.
+- **M9 Ollama store paths** — uninstallers now remove `/usr/share/ollama/.ollama` and `/var/lib/ollama/models` (where the packaged service's GBs actually live) alongside `~/.ollama`.
+- **M10 single hardened unit** — one templated `miner-app/krelz-miner.service` (`@USER@`/`@WORKDIR@`/`@NODE@`/`@ENV_LINES@`) with `NoNewPrivileges`, `ProtectHome=read-only`, `PrivateTmp`, restricted address families and friends; both installers generate the live unit from it and `deploy/krelz-miner.service` is kept as a pre-filled reference. All four scripts got `jq` as a prerequisite.
+
+### Tests
+- New suite `phase4.minerapp.test.js` (15): auth-error bounds, client buffer/flush/cap, server dispatch-timeout and disconnect resets, Ollama timeouts, plus source-level contracts for all 4 shell scripts and the unit template. **183/183 green** (was 168); `bash -n` clean on all four scripts.
+
 ## [3.33.0] - 2026-10-04
 
 Phase 3 of the full-project audit: backend robustness.

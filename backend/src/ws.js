@@ -103,6 +103,12 @@ class WSServer {
               cb.reject(new Error('Miner disconnected'));
             }
           }
+          // M4: every row this miner had claimed ('processing' via chat
+          // dispatch or a task_request poll) goes back to pending — with no
+          // result coming, those rows otherwise stayed 'processing' forever
+          // and could never be re-dispatched.
+          pool.query("UPDATE tasks SET status = 'pending' WHERE miner_id = $1 AND status = 'processing'", [minerId])
+            .catch((err) => logger.error({ err, minerId }, 'Failed to reset stranded processing tasks'));
           pool.query("UPDATE miners SET status = 'offline' WHERE id = $1", [minerId])
             .catch((err) => logger.error({ err, minerId }, 'Failed to mark miner offline'));
           invalidateCache('/api/miners');
@@ -513,6 +519,12 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
 
       const timeout = setTimeout(() => {
         this.taskCallbacks.delete(taskId);
+        // M4: nobody will answer this dispatch — hand the row back to
+        // 'pending' instead of leaving it stranded in 'processing' (the chat
+        // request falls back locally; the miner can re-claim via its
+        // task_request poll if it comes back).
+        pool.query("UPDATE tasks SET status = 'pending' WHERE id = $1 AND status = 'processing'", [taskId])
+          .catch((err) => logger.error({ err, taskId }, 'Failed to reset timed-out task'));
         reject(new Error('Task timeout'));
       }, timeoutMs);
 

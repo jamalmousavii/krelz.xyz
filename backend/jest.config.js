@@ -4,4 +4,11 @@ module.exports = {
   testMatch: ['<rootDir>/tests/**/*.test.js'],
   clearMocks: true,
   verbose: true,
+  moduleNameMapper: {
+    // The Phase-4 suites load miner-app sources; resolve their bare requires
+    // (ws, axios) against backend's node_modules, where miner-app/node_modules
+    // may not be installed.
+    '^ws$': '<rootDir>/node_modules/ws',
+    '^axios$': '<rootDir>/node_modules/axios',
+  },
 };

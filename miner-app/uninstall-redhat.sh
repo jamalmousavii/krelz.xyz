@@ -8,7 +8,7 @@
 
 set -e
 
-KRELZ_VERSION="3.33.0"
+KRELZ_VERSION="3.34.0"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -34,9 +34,10 @@ notify_uninstall() {
     echo -e "  ${YELLOW}! No saved miner token - remove this miner from the dashboard (My Miners)${NC}"
     return 0
   fi
-  if curl -fsS --max-time 15 -X POST https://krelz.xyz/api/miners/unregister \
+  # H4: the token never enters curl's argv (`ps`-readable) — stream it.
+  if printf '{"miner_token":"%s"}' "$token" | curl -fsS --max-time 15 -X POST https://krelz.xyz/api/miners/unregister \
       -H 'Content-Type: application/json' \
-      -d "{\"miner_token\":\"${token}\"}" > /dev/null 2>&1; then
+      --data-binary @- > /dev/null 2>&1; then
     echo -e "  ${GREEN}✓ Removed from your Krelz dashboard (earnings kept in History)${NC}"
   else
     echo -e "  ${YELLOW}! Could not reach krelz.xyz - remove it from the dashboard (My Miners)${NC}"
@@ -160,10 +161,26 @@ case $choice in
       sudo systemctl daemon-reload
     fi
 
-    # Remove Ollama models and data
+    # Remove Ollama models and data (M9: BOTH stores — the packaged service
+    # runs as the `ollama` user whose models live in /usr/share/ollama/.ollama,
+    # which is where the GBs actually are; ~/.ollama only covers manual runs).
+    REMOVED_STORES=0
     if [ -d "$HOME/.ollama" ]; then
       echo -e "  Removing Ollama models (~/.ollama)..."
       rm -rf "$HOME/.ollama"
+      REMOVED_STORES=1
+    fi
+    if [ -d /usr/share/ollama/.ollama ]; then
+      echo -e "  Removing system Ollama models (/usr/share/ollama/.ollama)..."
+      sudo rm -rf /usr/share/ollama/.ollama
+      REMOVED_STORES=1
+    fi
+    if [ -d /var/lib/ollama/models ]; then
+      echo -e "  Removing system Ollama models (/var/lib/ollama/models)..."
+      sudo rm -rf /var/lib/ollama/models
+      REMOVED_STORES=1
+    fi
+    if [ "$REMOVED_STORES" = "1" ]; then
       echo -e "  ${GREEN}✓ Ollama models removed${NC}"
     fi
 

@@ -18,6 +18,13 @@ class MinerWebSocket {
     this.heartbeatMinerService = null;
     this.heartbeatDefaultModel = null;
     this.e2eEnabled = false;
+    // M3: consecutive auth rejections — the server may reject a rotated or
+    // revoked token forever; retrying silently writes DB rows every few
+    // seconds for the lifetime of the box. Cap it and die loudly instead.
+    this.authFailCount = 0;
+    // M4: task results produced while the socket was down are held here and
+    // flushed on the next successful auth instead of being dropped.
+    this.pendingResults = [];
   }
 
   connect() {
@@ -106,15 +113,33 @@ class MinerWebSocket {
       case 'auth_ok':
         this.minerId = msg.miner_id;
         this.authed = true;
+        this.authFailCount = 0;
         this.e2eEnabled = !!msg.e2e && this.walletAddress.startsWith('kz_');
         console.log(`✅ Authenticated as miner #${this.minerId}${this.e2eEnabled ? ' (e2e)' : ''}`);
         this.ensureHeartbeat();
         // Push model immediately so DB current_model updates without waiting 30s
         this.sendHeartbeat('online', { current_model: this.heartbeatDefaultModel });
+        // M4: deliver results the previous socket dropped, then ask the
+        // server for anything already assigned/pending (polling branch).
+        this.flushResults();
+        this.requestTask();
         break;
 
       case 'auth_error':
-        console.error('Auth failed:', msg.message);
+        // M3: an auth rejection is not a transient network blip — stop the
+        // heartbeat (no more DB writes), retry a bounded number of times,
+        // then exit non-zero so `systemctl status` shows the failure.
+        this.stopHeartbeat();
+        this.authFailCount += 1;
+        console.error(`Auth failed (${this.authFailCount}/5): ${msg.message}`);
+        if (this.authFailCount >= 5) {
+          console.error('❌ Fatal: authentication keeps being rejected — check the miner token in the dashboard (krelz.xyz/profile). Giving up.');
+          this.intentionalClose = true;
+          process.exit(1);
+        }
+        try {
+          if (this.ws) this.ws.close();
+        } catch (e) {}
         break;
 
       case 'heartbeat_ok':
@@ -174,7 +199,7 @@ class MinerWebSocket {
         throw new Error('Empty response from model');
       }
 
-      this.send({
+      this.sendResult({
         type: 'task_result',
         task_id,
         response: this.e2eEnabled
@@ -187,7 +212,7 @@ class MinerWebSocket {
 
     } catch (err) {
       console.error(`❌ Task #${task_id} failed:`, err.message);
-      this.send({
+      this.sendResult({
         type: 'task_result',
         task_id,
         error: err.message
@@ -217,6 +242,33 @@ class MinerWebSocket {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(data));
     }
+  }
+
+  // M4: task results must never be dropped because the socket died while
+  // Ollama was generating — buffer them while offline and flush after the
+  // next auth_ok. The buffer is capped so a long outage can't grow it
+  // without bound; the server ignores results for already-resolved tasks.
+  sendResult(data) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(data));
+      return;
+    }
+    this.pendingResults.push(data);
+    if (this.pendingResults.length > 20) {
+      this.pendingResults.shift();
+      console.warn('⚠️  Result buffer full — dropped the oldest pending result');
+    }
+    console.log(`📦 Socket offline — buffered task result (${this.pendingResults.length} pending)`);
+  }
+
+  flushResults() {
+    if (this.pendingResults.length === 0) return;
+    const pending = this.pendingResults;
+    this.pendingResults = [];
+    for (const data of pending) {
+      this.sendResult(data); // re-buffers itself if the socket closed again
+    }
+    console.log(`📤 Flushed buffered results (${pending.length} attempted)`);
   }
 
   startHeartbeat(minerService, defaultModel) {

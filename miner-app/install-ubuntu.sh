@@ -4,12 +4,14 @@
 # ============================================
 # Usage:
 #   wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-ubuntu.sh && bash install-ubuntu.sh
-#   bash install-ubuntu.sh --email user@email.com --token kz_xxx
+#   bash install-ubuntu.sh --email user@email.com --token-file /path/to/token
+#   (--token still works, but a token on the command line is readable from
+#    `ps` by every user on the box — prefer --token-file or the prompt.)
 # ============================================
 
 set -e
 
-KRELZ_VERSION="3.33.0"
+KRELZ_VERSION="3.34.0"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -36,14 +38,25 @@ spinner() {
 run_with_spinner() {
   local msg=$1
   shift
-  local logfile=$(mktemp)
+  local logfile
+  logfile=$(mktemp)
   "$@" > "$logfile" 2>&1 &
   local pid=$!
   spinner "$pid" "$msg"
   wait "$pid" 2>/dev/null
   local exit_code=$?
+  if [ "$exit_code" -ne 0 ]; then
+    # M1: under `set -e` a failing step used to kill the script BEFORE the
+    # captured log was ever shown — a silent half-install with no clue why.
+    # Show the tail of the failing step's output, then exit with its code.
+    printf "\r  \r"
+    echo -e "${RED}  ✗ ${msg} failed (exit ${exit_code})${NC}"
+    tail -n 20 "$logfile" 2>/dev/null | sed 's/^/      /'
+    rm -f "$logfile"
+    exit "$exit_code"
+  fi
   rm -f "$logfile"
-  return $exit_code
+  return 0
 }
 
 step_start() {
@@ -56,6 +69,55 @@ step_done() {
 
 step_fail() {
   echo -e "${RED}  ⚠ $1${NC}"
+}
+
+# H5: never pipe a remote script into a shell unpinned — download, verify the
+# SHA-256 below, then execute. Pins were captured 2026-10-04; if upstream
+# rotates its installer the check fails loudly (update the pin after
+# re-verifying, or bypass deliberately with KRELZ_ALLOW_UNVERIFIED=1).
+PIN_NODESOURCE_SHA256="2c4c6683a17b6f4128898a7b521e3c8bb725a99ffaf1b5e32ac97c6fa7d381be"
+PIN_OLLAMA_SHA256="25f64b810b947145095956533e1bdf56eacea2673c55a7e586be4515fc882c9f"
+
+fetch_verified() {
+  local url=$1 expect=$2 dest=$3
+  if ! curl -fsSL "$url" -o "$dest"; then
+    echo -e "${RED}  ✗ Download failed: ${url}${NC}"
+    return 1
+  fi
+  local got
+  got=$(sha256sum "$dest" | awk '{print $1}')
+  if [ "$got" != "$expect" ]; then
+    if [ "${KRELZ_ALLOW_UNVERIFIED:-0}" = "1" ]; then
+      echo -e "${YELLOW}  ⚠ Checksum mismatch — running UNVERIFIED ${url} (KRELZ_ALLOW_UNVERIFIED=1)${NC}"
+      return 0
+    fi
+    echo -e "${RED}  ✗ Checksum mismatch for ${url}${NC}"
+    echo -e "    expected: ${expect}"
+    echo -e "    got:      ${got}"
+    echo -e "    Upstream likely rotated its installer: re-verify the file and update the pin in this script, or re-run with KRELZ_ALLOW_UNVERIFIED=1."
+    rm -f "$dest"
+    return 1
+  fi
+}
+
+install_nodesource_repo() {
+  local tmp rc
+  tmp=$(mktemp)
+  fetch_verified "https://deb.nodesource.com/setup_20.x" "$PIN_NODESOURCE_SHA256" "$tmp" || { rm -f "$tmp"; return 1; }
+  $SUDO bash "$tmp"
+  rc=$?
+  rm -f "$tmp"
+  return $rc
+}
+
+install_ollama_binary() {
+  local tmp rc
+  tmp=$(mktemp)
+  fetch_verified "https://ollama.com/install.sh" "$PIN_OLLAMA_SHA256" "$tmp" || { rm -f "$tmp"; return 1; }
+  sh "$tmp"
+  rc=$?
+  rm -f "$tmp"
+  return $rc
 }
 
 # Model size map
@@ -80,7 +142,7 @@ echo -e "${GREEN}  Krelz Network Miner Installer (Ubuntu/Debian) v${KRELZ_VERSIO
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
-# Parse --email, --token and --name flags
+# Parse --email, --token / --token-file and --name flags
 USER_EMAIL=""
 MINER_TOKEN=""
 MINER_NAME=""
@@ -88,6 +150,7 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --email) USER_EMAIL="$2"; shift 2 ;;
     --token) MINER_TOKEN="$2"; shift 2 ;;
+    --token-file) MINER_TOKEN=$(tr -d '\r\n' < "$2" 2>/dev/null); shift 2 ;;
     --name) MINER_NAME="$2"; shift 2 ;;
     *) shift ;;
   esac
@@ -95,11 +158,22 @@ done
 
 if [ "$EUID" -eq 0 ]; then SUDO=""; else SUDO="sudo"; fi
 
+# M1: ask for the sudo password NOW, visibly, before the first spinner —
+# otherwise the first privileged step prompts invisibly inside the spinner
+# and the install looks hung with no feedback.
+if [ -n "$SUDO" ]; then
+  echo -e "${YELLOW}  Admin privileges required for system packages — sudo password now.${NC}"
+  if ! sudo -v; then
+    echo -e "${RED}  ✗ sudo authentication failed${NC}"
+    exit 1
+  fi
+fi
+
 # --- Step 1: Prerequisites ---
 step_start 1 "Installing prerequisites..."
 STEP_START=$(date +%s)
 run_with_spinner "Downloading packages..." $SUDO apt-get update -qq
-run_with_spinner "Installing build tools..." $SUDO apt-get install -y -qq curl git build-essential
+run_with_spinner "Installing build tools..." $SUDO apt-get install -y -qq curl git build-essential jq
 STEP_END=$(date +%s)
 step_done "Prerequisites installed ($(($STEP_END - $STEP_START))s)"
 
@@ -107,7 +181,7 @@ step_done "Prerequisites installed ($(($STEP_END - $STEP_START))s)"
 step_start 2 "Installing Node.js..."
 STEP_START=$(date +%s)
 if ! command -v node &> /dev/null || [ "$(node -v | cut -d'.' -f1 | tr -d 'v')" -lt 18 ]; then
-  run_with_spinner "Setting up NodeSource repository..." bash -c "curl -fsSL https://deb.nodesource.com/setup_20.x | $SUDO bash -"
+  run_with_spinner "Setting up NodeSource repository (sha256-verified)..." install_nodesource_repo
   run_with_spinner "Installing Node.js..." $SUDO apt-get install -y -qq nodejs
   NODE_VER=$(node -v)
   STEP_END=$(date +%s)
@@ -122,7 +196,7 @@ fi
 step_start 3 "Installing Ollama..."
 STEP_START=$(date +%s)
 if ! command -v ollama &> /dev/null; then
-  run_with_spinner "Downloading Ollama binary..." bash -c "curl -fsSL https://ollama.com/install.sh | sh"
+  run_with_spinner "Installing Ollama (sha256-verified)..." install_ollama_binary
   STEP_END=$(date +%s)
   step_done "Ollama installed ($(($STEP_END - $STEP_START))s)"
 else
@@ -285,7 +359,10 @@ if [ -d "$INSTALL_DIR" ]; then
 else
   run_with_spinner "Cloning repository..." git clone https://github.com/jamalmousavii/krelz.xyz.git "$INSTALL_DIR"
 fi
-run_with_spinner "Installing npm dependencies..." bash -c "cd '$INSTALL_DIR/miner-app' && npm install"
+# M7: reproducible install from the committed lockfile, prod deps only —
+# `npm install` re-resolved the tree and pulled Electron's devDependencies
+# onto headless miners for nothing.
+run_with_spinner "Installing npm dependencies..." bash -c "cd '$INSTALL_DIR/miner-app' && npm ci --omit=dev"
 STEP_END=$(date +%s)
 step_done "Miner installed at $INSTALL_DIR ($(($STEP_END - $STEP_START))s)"
 
@@ -304,7 +381,9 @@ if [ -z "$USER_EMAIL" ]; then
 fi
 
 if [ -z "$MINER_TOKEN" ]; then
-  read -p "  Miner Token: " MINER_TOKEN
+  # H4: silent input — the token must not echo to the terminal or scrollback.
+  read -rsp "  Miner Token: " MINER_TOKEN
+  echo ""
 fi
 
 # --- Miner name (shown in dashboard) ---
@@ -343,17 +422,22 @@ step_done "System info detected ($(($STEP_END - $STEP_START))s)"
 step_start 7 "Registering miner..."
 STEP_START=$(date +%s)
 
-SETUP_RESPONSE=$(curl -s -X POST https://krelz.xyz/api/miners/setup \
+# M6/H4: build the body with jq (quotes in name/email can't break it) and
+# stream it on stdin — curl's argv is world-readable via `ps`, and this body
+# carries the miner token.
+SETUP_PAYLOAD=$(jq -n \
+  --arg email "$USER_EMAIL" \
+  --arg token "$MINER_TOKEN" \
+  --arg name "$MINER_NAME" \
+  --arg gpu "$GPU_MODEL" \
+  --arg ram "$RAM_SIZE" \
+  --arg cpu "$CPU_MODEL" \
+  --arg models "$SELECTED_MODELS" \
+  '{email: $email, miner_token: $token, name: $name, gpu_model: $gpu, ram: $ram, cpu: $cpu, models: ($models | split(" ") | map(select(length > 0)))}')
+
+SETUP_RESPONSE=$(printf '%s' "$SETUP_PAYLOAD" | curl -s -X POST https://krelz.xyz/api/miners/setup \
   -H "Content-Type: application/json" \
-  -d "{
-    \"email\": \"${USER_EMAIL}\",
-    \"miner_token\": \"${MINER_TOKEN}\",
-    \"name\": \"${MINER_NAME}\",
-    \"gpu_model\": \"${GPU_MODEL}\",
-    \"ram\": \"${RAM_SIZE}\",
-    \"cpu\": \"${CPU_MODEL}\",
-    \"models\": [\"$(echo $SELECTED_MODELS | sed 's/ /", "/g')\"]
-  }")
+  --data-binary @-)
 
 STEP_END=$(date +%s)
 if echo "$SETUP_RESPONSE" | grep -q '"success":true'; then
@@ -361,41 +445,41 @@ if echo "$SETUP_RESPONSE" | grep -q '"success":true'; then
 else
   step_fail "Registration failed. Check email and token."
   echo -e "  ${YELLOW}Response: $SETUP_RESPONSE${NC}"
+  # M2: do not start a service with a token the server rejected — the old
+  # script only warned and continued into step 8.
+  exit 1
 fi
 
 # --- Step 8: Systemd Service ---
 step_start 8 "Saving config + starting service..."
 STEP_START=$(date +%s)
 
-cat > "$INSTALL_DIR/miner-app/config.json" << EOF
-{
-  "models": "$(echo $SELECTED_MODELS | tr ' ' ',')",
-  "default_model": "$(echo $SELECTED_MODELS | awk '{print $1}')",
-  "miner_token": "${MINER_TOKEN}",
-  "name": "${MINER_NAME}"
-}
-EOF
-echo -e "  ${GREEN}✓ Configuration saved${NC}"
+# M6/H4: jq-encode (a quote in the miner name used to produce invalid JSON)
+# and keep the file owner-only — it holds the miner token.
+jq -n \
+  --arg models "$(echo $SELECTED_MODELS | tr ' ' ',')" \
+  --arg default_model "$(echo $SELECTED_MODELS | awk '{print $1}')" \
+  --arg miner_token "$MINER_TOKEN" \
+  --arg name "$MINER_NAME" \
+  '{models: $models, default_model: $default_model, miner_token: $miner_token, name: $name}' \
+  > "$INSTALL_DIR/miner-app/config.json"
+chmod 600 "$INSTALL_DIR/miner-app/config.json"
+echo -e "  ${GREEN}✓ Configuration saved (chmod 600)${NC}"
 
 SERVICE_FILE="/etc/systemd/system/krelz-miner.service"
 NODE_PATH=$(which node)
-$SUDO tee "$SERVICE_FILE" > /dev/null << EOF
-[Unit]
-Description=Krelz Network Miner
-After=network.target
-
-[Service]
-Type=simple
-User=$(whoami)
-WorkingDirectory=$INSTALL_DIR/miner-app
-ExecStart=${NODE_PATH} src/cli.js
-Restart=always
-RestartSec=10
-Environment=NODE_ENV=production
-
-[Install]
-WantedBy=multi-user.target
-EOF
+# M10: one templated unit for every install — the hardening block lives in
+# the repo's miner-app/krelz-miner.service; this only fills the placeholders.
+UNIT_TEMPLATE="$INSTALL_DIR/miner-app/krelz-miner.service"
+if [ ! -f "$UNIT_TEMPLATE" ]; then
+  echo -e "${RED}  ✗ Missing $UNIT_TEMPLATE — run git pull in $INSTALL_DIR and retry${NC}"
+  exit 1
+fi
+sed -e "s|@USER@|$(whoami)|g" \
+    -e "s|@WORKDIR@|$INSTALL_DIR/miner-app|g" \
+    -e "s|@NODE@|$NODE_PATH|g" \
+    -e "s|^@ENV_LINES@$|" \
+    "$UNIT_TEMPLATE" | $SUDO tee "$SERVICE_FILE" > /dev/null
 
 run_with_spinner "Enabling service..." $SUDO systemctl daemon-reload
 run_with_spinner "Starting service..." bash -c "$SUDO systemctl enable krelz-miner && $SUDO systemctl start krelz-miner"
@@ -433,4 +517,10 @@ echo -e "  Restart: ${YELLOW}sudo systemctl restart krelz-miner${NC}"
 echo ""
 echo -e "  ${BOLD}Total time: ${TOTAL_MINUTES}m ${TOTAL_SECONDS}s${NC}"
 echo ""
-rm -f "$0"
+# M8: self-delete only when $0 really IS this installer — the same content
+# guard the uninstaller uses, so a piped run ($0 = bash) or any unrelated
+# file is never removed.
+SELF="$0"
+if [ -f "$SELF" ] && head -n 6 "$SELF" | grep -q "Krelz Network Miner - .* Install"; then
+  rm -f -- "$SELF"
+fi

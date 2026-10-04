@@ -14,21 +14,9 @@ class OllamaService {
     this.model = model;
   }
 
-  async install() {
-    return new Promise((resolve, reject) => {
-      const installScript = `
-        curl -fsSL https://ollama.com/install.sh | sh
-      `;
-
-      exec(installScript, (error, stdout, stderr) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve(stdout);
-      });
-    });
-  }
+  // H5: the old install() piped https://ollama.com/install.sh into a shell
+  // (unpinned, root-equivalent) and had no callers at all — removed. The
+  // install scripts fetch that installer sha256-verified instead.
 
   async pullModel(modelName) {
     const model = modelName || this.model;
@@ -85,11 +73,13 @@ class OllamaService {
 
   async generate(prompt, model) {
     try {
+      // M5: a bound below the server's 180s dispatch timeout — a late result
+      // would arrive after the server's fallback and rewrite history.
       const response = await axios.post(`${this.url}/api/generate`, {
         model: model || this.model,
         prompt: prompt,
         stream: false,
-      });
+      }, { timeout: 170000 });
       return response.data;
     } catch (error) {
       throw new Error('Ollama not available');
@@ -112,7 +102,7 @@ class OllamaService {
           images: [media.data],
         }],
         stream: false,
-      });
+      }, { timeout: 170000 });
       return {
         response: (response.data.message && response.data.message.content) || '',
         eval_count: response.data.eval_count || 0,
@@ -124,7 +114,7 @@ class OllamaService {
 
   async getStatus() {
     try {
-      const response = await axios.get(`${this.url}/api/tags`);
+      const response = await axios.get(`${this.url}/api/tags`, { timeout: 5000 });
       return {
         running: true,
         models: response.data.models,

@@ -40,3 +40,6 @@ secrets/
 # Next.js
 frontend/.next/
 
+
+# Miner installer writes the token-bearing config at runtime (H4)
+miner-app/config.json

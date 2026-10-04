@@ -40,7 +40,7 @@ const uk = {
     startChat: 'Почати чат',
     footer: 'Усі права захищено.',
     installMetaMask: 'Будь ласка, встановіть MetaMask',
-    version: 'v3.33.0',
+    version: 'v3.34.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — децентралізована платформа LLM-інференсу, версія {version}. Усі права захищено.',
