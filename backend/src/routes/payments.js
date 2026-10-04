@@ -227,6 +227,12 @@ router.get('/balance', authenticate, async (req, res) => {
     );
 
     const row = result.rows[0];
+    // F2: settings needs to know whether to show the set- or change-password
+    // form (boolean only — never the hash).
+    const userRow = await pool.query(
+      'SELECT password IS NOT NULL AS has_password FROM users WHERE id = $1',
+      [userId]
+    );
     const minerCredit = await getMinerCreditStatus(userId);
     const plan = await getActivePlan(userId);
     const cap = plan ? PLANS[plan.plan_type].daily_tokens : FREE_DAILY_TOKENS;
@@ -244,6 +250,7 @@ router.get('/balance', authenticate, async (req, res) => {
       success: true,
       balances,
       currency: 'USD',
+      has_password: userRow.rows[0]?.has_password || false,
       miner_credit: {
         eligible: minerCredit.eligible,
         limit: minerCredit.limit,

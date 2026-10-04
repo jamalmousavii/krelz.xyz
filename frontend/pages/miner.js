@@ -23,7 +23,8 @@ export default function Miner() {
   const [models, setModels] = useState([]);
   const [myRank, setMyRank] = useState(null); // v3.29.0 — real numbers when logged in
 
-  const { user } = useAuth();
+  // F1: /miner is a PUBLIC docs page (guest CTA + Navbar link) — never bounce.
+  const { user } = useAuth(false);
 
   useEffect(() => { fetchModels(); }, []);
   useEffect(() => { if (user) fetchRank(); }, [user]);

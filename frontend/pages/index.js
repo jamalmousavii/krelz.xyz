@@ -178,7 +178,9 @@ export default function Home() {
     const instant = instantScrollRef.current;
     instantScrollRef.current = false;
     scrollToBottom(instant);
-  }, [chat.length, loading]);
+    // activeSessionId: switching to a session with the SAME message count
+    // must still snap the view to that session's latest message (F14).
+  }, [chat.length, loading, activeSessionId]);
 
   // Window resize / orientation change re-fits the viewport frame — snap the
   // chat back to the newest message so the latest reply stays visible.
@@ -245,11 +247,6 @@ export default function Home() {
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth >= 768) inputRef.current?.focus();
   }, []);
-
-  const authHeaders = (tkn) => ({
-    'Content-Type': 'application/json',
-    ...(tkn ? { Authorization: `Bearer ${tkn}` } : {})
-  });
 
   // Plan/token purchase: one NowPayments invoice per purchase; activation or
   // pot credit happens in the IPN webhook. Hosted checkout opens in a new tab.
@@ -354,8 +351,7 @@ export default function Home() {
     const useToken = tkn || token;
     if (!useToken) return;
     try {
-      const res = await fetch(`/api/chat/sessions/${sessionId}`, { headers: authHeaders(useToken) });
-      const data = await res.json();
+      const data = await apiFetch(`/api/chat/sessions/${sessionId}`);
       if (data.success) {
         setActiveSessionId(sessionId);
         setSubject(data.session.subject || 'New Chat');
@@ -370,7 +366,9 @@ export default function Home() {
         instantScrollRef.current = true;
         setChat(msgs);
       }
-    } catch (err) { console.error('Failed to load session'); }
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 401)) console.error('Failed to load session');
+    }
   };
 
   const createNewSession = async () => {
@@ -381,28 +379,27 @@ export default function Home() {
       return;
     }
     try {
-      const res = await fetch('/api/chat/sessions', {
+      const data = await apiFetch('/api/chat/sessions', {
         method: 'POST',
-        headers: authHeaders(token),
         body: JSON.stringify({ subject: 'New Chat', model: selectedModel })
       });
-      const data = await res.json();
       if (data.success) {
         setSessions(prev => [data.session, ...prev]);
         setActiveSessionId(data.session.id);
         setSubject(data.session.subject);
         setChat([]);
       }
-    } catch (err) { console.error('Failed to create session'); }
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 401)) console.error('Failed to create session');
+    }
   };
 
   const deleteSession = async (sessionId) => {
     if (!token) return;
     try {
-      await fetch(`/api/chat/sessions/${sessionId}`, {
-        method: 'DELETE',
-        headers: authHeaders(token)
-      });
+      // Only drop the row if the server actually deleted it — a failed DELETE
+      // used to vanish optimistically and come back after the next refresh.
+      await apiFetch(`/api/chat/sessions/${sessionId}`, { method: 'DELETE' });
       setSessions(prev => prev.filter(s => s.id !== sessionId));
       if (activeSessionId === sessionId) {
         const remaining = sessions.filter(s => s.id !== sessionId);
@@ -414,15 +411,16 @@ export default function Home() {
           setChat([]);
         }
       }
-    } catch (err) { console.error('Failed to delete session'); }
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 401)) console.error('Failed to delete session');
+    }
   };
 
   const updateSubject = async () => {
     if (!token || !activeSessionId || !subjectInput.trim()) return;
     try {
-      await fetch(`/api/chat/sessions/${activeSessionId}`, {
+      await apiFetch(`/api/chat/sessions/${activeSessionId}`, {
         method: 'PUT',
-        headers: authHeaders(token),
         body: JSON.stringify({ subject: subjectInput.trim() })
       });
       setSubject(subjectInput.trim());
@@ -430,7 +428,9 @@ export default function Home() {
       setSessions(prev => prev.map(s =>
         s.id === activeSessionId ? { ...s, subject: subjectInput.trim() } : s
       ));
-    } catch (err) { console.error('Failed to update subject'); }
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 401)) console.error('Failed to update subject');
+    }
   };
 
   const removeAttachment = () => {
@@ -532,9 +532,8 @@ export default function Home() {
     inputRef.current?.focus();
 
     try {
-      const res = await fetch('/api/chat', {
+      const data = await apiFetch('/api/chat', {
         method: 'POST',
-        headers: authHeaders(token),
         body: JSON.stringify({
           message: userMessage,
           model: selectedModel,
@@ -542,7 +541,6 @@ export default function Home() {
           ...(sentAttachment ? { attachment: sentAttachment } : {}),
         }),
       });
-      const data = await res.json();
       if (data.success) {
         setChat(prev => [...prev, {
           role: 'assistant',
@@ -566,28 +564,42 @@ export default function Home() {
         } else if (data.session_id && activeSessionId) {
           fetchSessions(token);
         }
-      } else if (res.status === 402 && data.code === 'upgrade_required') {
-        // v3.28.0 wall: no free allowance, no credit, empty pot, empty wallet.
-        setChat(prev => [...prev, {
-          role: 'assistant',
-          content: t('chat.upgradeDesc'),
-          upgrade_wall: {
-            signed_in: !!data.signed_in,
-            plans: data.plans || [],
-            token_bundle: data.token_bundle || null,
-            free: data.free,
-          },
-        }]);
       } else {
         setChat(prev => [...prev, { role: 'assistant', content: data.error || t('chat.errorResponse') }]);
       }
     } catch (err) {
-      setChat(prev => [...prev, { role: 'assistant', content: t('chat.errorConnection') }]);
+      if (err instanceof ApiError && err.status === 401) {
+        // apiFetch already cleared the session + fired krelz:auth-expired;
+        // the backend now 401s bad bearers instead of answering as a guest,
+        // so tell the user why the reply never came.
+        setChat(prev => [...prev, { role: 'assistant', content: t('chat.errorSessionExpired') }]);
+      } else if (err instanceof ApiError && err.status === 402 && err.data && err.data.code === 'upgrade_required') {
+        // v3.28.0 wall: no free allowance, no credit, empty pot, empty wallet.
+        const wall = err.data;
+        setChat(prev => [...prev, {
+          role: 'assistant',
+          content: t('chat.upgradeDesc'),
+          upgrade_wall: {
+            signed_in: !!wall.signed_in,
+            plans: wall.plans || [],
+            token_bundle: wall.token_bundle || null,
+            free: wall.free,
+          },
+        }]);
+      } else if (err instanceof ApiError && err.data && err.data.error) {
+        setChat(prev => [...prev, { role: 'assistant', content: err.data.error }]);
+      } else {
+        setChat(prev => [...prev, { role: 'assistant', content: t('chat.errorConnection') }]);
+      }
     }
     setLoading(false);
   };
 
-  const ModelDropdown = ({ upward }) => (
+  // F7: NOT components — calling these as plain functions keeps their output
+  // part of Home's element tree. As `<ModelDropdown/>` inside Home they were a
+  // brand-new component type every render, remounting the subtree (incl. the
+  // hidden file input, losing focus/selection) on every keystroke.
+  const renderModelDropdown = ({ upward }) => (
     <div className="relative flex-1 md:flex-none md:w-auto min-w-0" ref={dropdownRef}>
       <button
         onClick={() => setDropdownOpen(!dropdownOpen)}
@@ -634,7 +646,7 @@ export default function Home() {
   );
 
   // 📎 / 🎤 controls shared by both input bars (hero + active chat).
-  const MediaButtons = () => (
+  const renderMediaButtons = () => (
     <div className="flex items-center gap-1.5 flex-shrink-0">
       <input
         ref={fileInputRef}
@@ -714,8 +726,8 @@ export default function Home() {
                 single row (model, media, input, send). */}
             <div className="flex flex-col md:flex-row gap-2 md:gap-3">
               <div className="flex items-center gap-2 md:contents">
-                <ModelDropdown upward={false} />
-                <MediaButtons />
+                {renderModelDropdown({ upward: false })}
+                {renderMediaButtons()}
               </div>
               <div className="flex gap-2 md:contents">
                 <input
@@ -723,7 +735,7 @@ export default function Home() {
                   type="text"
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) sendMessage(); }}
                   placeholder={t('chat.placeholder')}
                   className="flex-1 min-w-0 bg-sky-50 text-gray-800 placeholder-gray-500 border border-sky-100 px-4 md:px-6 py-3 md:py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 text-sm md:text-base"
                 />
@@ -846,7 +858,7 @@ export default function Home() {
                   type="text"
                   value={subjectInput}
                   onChange={(e) => setSubjectInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') updateSubject(); if (e.key === 'Escape') setEditingSubject(false); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) updateSubject(); if (e.key === 'Escape') setEditingSubject(false); }}
                   onBlur={updateSubject}
                   autoFocus
                   className="flex-1 bg-sky-50 text-gray-800 border border-sky-200 px-3 py-1 rounded text-sm focus:outline-none focus:ring-1 focus:ring-sky-400"
@@ -959,7 +971,7 @@ export default function Home() {
                   ) : msg.content ? <div className="break-words whitespace-pre-wrap">{msg.content}</div> : null}
                 </div>
                 {msg.role === 'assistant' && (
-                  <div className={`text-xs text-gray-400 mt-1 ${isRtl(lang) ? 'text-right' : 'text-left'}`}>
+                  <div className={`text-xs text-gray-400 mt-1 ${isRtl(lang) ? 'text-left' : 'text-right'}`}>
                     {msg.source === 'miner' && (
                       <span className="text-emerald-600">⛏️ {t('chat.viaMiner')}{msg.miner_id ? ` #${msg.miner_id}` : ''}</span>
                     )}
@@ -1020,8 +1032,8 @@ export default function Home() {
           {/* Mobile: two compact rows; md:contents restores the single desktop row. */}
           <div className="flex flex-col md:flex-row gap-2 md:gap-3">
             <div className="flex items-center gap-2 md:contents">
-              <ModelDropdown upward={true} />
-              <MediaButtons />
+              {renderModelDropdown({ upward: true })}
+              {renderMediaButtons()}
             </div>
             <div className="flex gap-2 md:contents">
               <input
@@ -1029,7 +1041,7 @@ export default function Home() {
                 type="text"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) sendMessage(); }}
                 placeholder={t('chat.placeholder')}
                 className="flex-1 min-w-0 bg-white text-gray-800 placeholder-gray-500 border border-sky-200 px-4 md:px-6 py-3 md:py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 text-sm md:text-base shadow-sm"
               />

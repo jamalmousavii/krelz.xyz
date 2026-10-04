@@ -4,6 +4,7 @@ import { useRouter } from 'next/router';
 import { useLanguage } from '../i18n/LanguageContext';
 import LanguageSwitcher from './LanguageSwitcher';
 import GoogleLogin from './GoogleLogin';
+import { clearSession, setSession, AUTH_EXPIRED_EVENT } from '../utils/api';
 
 export default function Navbar() {
   const { t } = useLanguage();
@@ -21,11 +22,22 @@ export default function Navbar() {
   const [resetToken, setResetToken] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
 
+  // F4: follow the session store — apiFetch's 401 handler and page logouts
+  // dispatch these events; without listeners the avatar stayed stale.
   useEffect(() => {
-    const saved = localStorage.getItem('user');
-    if (saved) {
-      try { setUser(JSON.parse(saved)); } catch (e) {}
-    }
+    const syncUser = () => {
+      try {
+        const saved = localStorage.getItem('user');
+        setUser(saved ? JSON.parse(saved) : null);
+      } catch (e) { setUser(null); }
+    };
+    syncUser();
+    window.addEventListener('krelz:auth-changed', syncUser);
+    window.addEventListener(AUTH_EXPIRED_EVENT, syncUser);
+    return () => {
+      window.removeEventListener('krelz:auth-changed', syncUser);
+      window.removeEventListener(AUTH_EXPIRED_EVENT, syncUser);
+    };
   }, []);
 
   useEffect(() => {
@@ -42,8 +54,10 @@ export default function Navbar() {
   const closeMenu = () => setMenuOpen(false);
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    // F4: clearSession() removes the credentials AND fires krelz:auth-changed
+    // (the old inline removeItem left other listeners to notice nothing);
+    // reload wipes any in-memory chat/history state.
+    clearSession();
     window.location.reload();
   };
 
@@ -59,8 +73,7 @@ export default function Navbar() {
       });
       const data = await res.json();
       if (data.success) {
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
+        setSession(data.token, data.user);
         window.location.reload();
       } else {
         setAuthError(data.error || 'Login failed');
@@ -83,8 +96,7 @@ export default function Navbar() {
       });
       const data = await res.json();
       if (data.success) {
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
+        setSession(data.token, data.user);
         window.location.reload();
       } else {
         setAuthError(data.error || 'Signup failed');

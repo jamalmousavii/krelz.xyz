@@ -2,7 +2,7 @@ const express = require('express');
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 
-const { authenticate, optionalAuth, requireAdmin } = require('../src/middleware/auth');
+const { authenticate, optionalAuth, strictIfHeader, requireAdmin } = require('../src/middleware/auth');
 
 const SECRET = process.env.JWT_SECRET;
 
@@ -17,6 +17,8 @@ function buildApp() {
   // Optional auth (GET /api/plans): the snapshot must stay public — a bad
   // token degrades to anonymous instead of 401ing the catalog (v3.29.1).
   app.get('/public', optionalAuth, (req, res) => res.json({ user: req.user || null }));
+  // F4 (v3.32.0): POST /api/chat — guests pass, a PRESENT bad bearer 401s.
+  app.get('/chat-strict', strictIfHeader, (req, res) => res.json({ user: req.user || null }));
   return app;
 }
 
@@ -108,6 +110,37 @@ describe('optionalAuth', () => {
   it('populates req.user for a valid token', async () => {
     const token = jwt.sign({ id: 7, role: 'miner' }, SECRET, { algorithm: 'HS256', expiresIn: '1h' });
     const res = await request(app).get('/public').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.user.id).toBe(7);
+  });
+});
+
+describe('strictIfHeader (F4: chat stays public, bad bearer never silently guests)', () => {
+  const app = buildApp();
+
+  it('serves a guest with NO Authorization header', async () => {
+    const res = await request(app).get('/chat-strict');
+    expect(res.status).toBe(200);
+    expect(res.body.user).toBeNull();
+  });
+
+  it('401s a garbage bearer instead of downgrading to anonymous', async () => {
+    const res = await request(app).get('/chat-strict').set('Authorization', 'Bearer not-a-jwt');
+    expect(res.status).toBe(401);
+  });
+
+  it('401s a wrong-secret token (expired-session clean logout path)', async () => {
+    const token = jwt.sign({ id: 1, role: 'user' }, 'attacker-secret-attacker-secret-attacker', {
+      algorithm: 'HS256',
+      expiresIn: '1h',
+    });
+    const res = await request(app).get('/chat-strict').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(401);
+  });
+
+  it('populates req.user for a valid token', async () => {
+    const token = jwt.sign({ id: 7, role: 'user' }, SECRET, { algorithm: 'HS256', expiresIn: '1h' });
+    const res = await request(app).get('/chat-strict').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.user.id).toBe(7);
   });

@@ -30,9 +30,12 @@ export function clearSession() {
 }
 
 export class ApiError extends Error {
-  constructor(status, message) {
+  constructor(status, message, data) {
     super(message);
     this.status = status;
+    // Full response body: handlers like the 402 upgrade-wall need
+    // code/plans/free, which a message string cannot carry.
+    this.data = data;
   }
 }
 
@@ -61,7 +64,7 @@ export async function apiFetch(path, options = {}) {
   }
 
   if (!res.ok) {
-    throw new ApiError(res.status, (data && data.error) || `Request failed (${res.status})`);
+    throw new ApiError(res.status, (data && data.error) || `Request failed (${res.status})`, data);
   }
 
   return data;

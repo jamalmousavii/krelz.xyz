@@ -213,7 +213,7 @@ router.post('/set-password', async (req, res) => {
     }
 
     // Check if user already has a password
-    const userResult = await pool.query('SELECT password FROM users WHERE id = $1', [userId]);
+    const userResult = await pool.query('SELECT password, email, role, token_version FROM users WHERE id = $1', [userId]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -234,7 +234,15 @@ router.post('/set-password', async (req, res) => {
     );
     invalidateTokenVersion(userId);
 
-    res.json({ success: true, message: 'Password set successfully' });
+    // Fresh token for THIS caller: it carries the new version, so the acting
+    // session survives while every other one 401s.
+    const freshToken = jwt.sign(
+      { id: userId, email: userResult.rows[0].email, role: userResult.rows[0].role, token_version: (Number(userResult.rows[0].token_version) || 0) + 1 },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({ success: true, message: 'Password set successfully', token: freshToken });
 
   } catch (err) {
     logger.error({ err }, 'Auth request failed');
@@ -275,7 +283,7 @@ router.post('/change-password', async (req, res) => {
     }
 
     // Get current password hash
-    const userResult = await pool.query('SELECT password FROM users WHERE id = $1', [userId]);
+    const userResult = await pool.query('SELECT password, email, role, token_version FROM users WHERE id = $1', [userId]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -291,8 +299,8 @@ router.post('/change-password', async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(new_password, 12);
-    // H3: password change = invalidate every outstanding session (and any
-    // pending reset link).
+    // H3: password change = invalidate every other session (and any pending
+    // reset link); the caller gets a fresh token below.
     await pool.query(
       `UPDATE users
           SET password = $1, reset_token = NULL, reset_token_expiry = NULL,
@@ -302,7 +310,13 @@ router.post('/change-password', async (req, res) => {
     );
     invalidateTokenVersion(userId);
 
-    res.json({ success: true, message: 'Password changed successfully' });
+    const freshToken = jwt.sign(
+      { id: userId, email: userResult.rows[0].email, role: userResult.rows[0].role, token_version: (Number(userResult.rows[0].token_version) || 0) + 1 },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({ success: true, message: 'Password changed successfully', token: freshToken });
 
   } catch (err) {
     logger.error({ err }, 'Auth request failed');

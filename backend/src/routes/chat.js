@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require('../database/pool');
 const axios = require('axios');
 const { invalidateCache } = require('../cache');
-const { authenticate, optionalAuth } = require('../middleware/auth');
+const { authenticate, strictIfHeader } = require('../middleware/auth');
 const { validate, chatRules } = require('../middleware/validate');
 const MODELS = require('../models');
 const { logger } = require('../logger');
@@ -170,7 +170,8 @@ router.delete('/sessions/:id', authenticate, async (req, res) => {
 // ======== CHAT (with session support) ========
 
 // POST /api/chat — send message (supports session_id)
-router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
+// F4: guests still work (no header), but a bad bearer → 401, never silent-guest.
+router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
   try {
     const { message: rawMessage, model, session_id, attachment } = req.body;
     // Image-only / voice-only sends arrive with an empty message (the

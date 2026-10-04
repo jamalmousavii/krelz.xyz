@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import { LANGUAGES, isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
-import { useAuth, clearSession, apiFetch, ApiError } from '../utils/api';
+import { useAuth, clearSession, apiFetch, ApiError, setSession, getUser } from '../utils/api';
 
 export default function Settings() {
   const { t, lang, changeLang } = useLanguage();
@@ -41,6 +41,8 @@ export default function Settings() {
   const fetchBalance = async () => {
     try {
       const data = await apiFetch('/api/payments/balance');
+      // F2: seed the password form branch from the server, not a guess.
+      if (typeof data.has_password === 'boolean') setHasPassword(data.has_password);
       if (data.success && data.balances?.USD) setUsdBalance(data.balances.USD);
     } catch (err) {}
   };
@@ -64,7 +66,8 @@ export default function Settings() {
         body: JSON.stringify({ amount_usd: parseFloat(depositAmount) })
       });
       if (data.success) {
-        window.open(data.invoice.url, '_blank');
+        // F11: noopener — the invoice tab must not get window.opener.
+        window.open(data.invoice.url, '_blank', 'noopener,noreferrer');
         setWalletMessage('✅ Invoice created. Complete payment in new tab.');
         setDepositAmount('');
       } else {
@@ -112,10 +115,22 @@ export default function Settings() {
         setHasPassword(true);
         setNewPassword('');
         setConfirmPassword('');
+        // H3: password mutation bumped token_version — adopt the fresh token
+        // so THIS session survives (all other sessions die).
+        if (data.token) setSession(data.token, getUser());
       } else {
         setPasswordMessage(`❌ ${data.error}`);
       }
-    } catch (err) { setPasswordMessage(`❌ ${err instanceof ApiError ? err.message : 'Failed to set password'}`); }
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400 && /already set/i.test(err.message)) {
+        // F2: someone else set it first (or our seed was stale) — flip to the
+        // change-form instead of leaving the user at a dead end.
+        setHasPassword(true);
+        setPasswordMessage('❌ Password already set — use the change form below.');
+      } else {
+        setPasswordMessage(`❌ ${err instanceof ApiError ? err.message : 'Failed to set password'}`);
+      }
+    }
     setPasswordLoading('');
   };
 
@@ -137,6 +152,8 @@ export default function Settings() {
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
+        // H3: adopt the fresh token so this session survives the version bump.
+        if (data.token) setSession(data.token, getUser());
       } else {
         setPasswordMessage(`❌ ${data.error}`);
       }

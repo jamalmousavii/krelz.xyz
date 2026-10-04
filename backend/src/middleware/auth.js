@@ -85,6 +85,14 @@ async function optionalAuth(req, res, next) {
   next();
 }
 
+// F4: public-by-default, but a PRESENT Authorization header must be valid —
+// a garbage/expired bearer gets 401 (→ client clean-logout) instead of
+// silently downgrading a signed-in chat to an anonymous guest answer.
+async function strictIfHeader(req, res, next) {
+  if (!req.headers.authorization) return next(); // genuinely anonymous
+  return authenticate(req, res, next);
+}
+
 // Require admin role.
 // The role claim inside the JWT can be stale (or, historically, self-assigned),
 // so admin privileges are re-checked against the database with a short cache.
@@ -121,4 +129,4 @@ function requireAdmin(req, res, next) {
     .catch(() => res.status(500).json({ error: 'Server error' }));
 }
 
-module.exports = { authenticate, optionalAuth, requireAdmin, invalidateTokenVersion };
+module.exports = { authenticate, optionalAuth, strictIfHeader, requireAdmin, invalidateTokenVersion };

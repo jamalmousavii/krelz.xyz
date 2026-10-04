@@ -50,7 +50,7 @@ const en = {
     freeNote: 'Free plan: 2,000,000 tokens/day for everyone — no card needed.',
     pricingSub: 'Paid with crypto. Plans last 30 days; token bundles never expire.',
     loginToBuy: 'Sign in first to buy (Login at the top).',
-    version: 'v3.31.0',
+    version: 'v3.32.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — Decentralized LLM inference platform, version {version}. All rights reserved.',
@@ -63,6 +63,7 @@ const en = {
     greeting: 'How can I help you today?',
     errorResponse: 'Error receiving response',
     errorConnection: 'Error connecting to server',
+    errorSessionExpired: 'Your session has expired. Please log in again to continue.',
     selectModel: 'Select AI Model',
     selectModelFirst: 'Please select a model above to start chatting',
     minersOnline: 'miners online',

@@ -1,5 +1,24 @@
 # Changelog
 
+## [3.32.0] - 2026-10-04
+
+Phase 2 of the full-project audit: frontend correctness.
+
+### Fixed
+- **F1 `/miner` is public** — `useAuth(false)`: logged-out visitors now get the docs page (guest CTA + install guide) instead of a bounce to `/`.
+- **F2 settings password dead-end** — `GET /api/payments/balance` now returns `has_password` (boolean only); the settings page seeds the set/change form from it, auto-flips to the change form when `set-password` answers `400 Password already set`, and `set-password`/`change-password` return a **fresh token** that the page adopts — so the acting session survives the H3 version bump while every other session dies.
+- **F3 literal i18n keys** — profile Plans card used `profile.planRow`/`profile.planValue` (exist only as `chat.*`) and printed key text in all 33 languages; now `chat.planRow`/`chat.planValue`.
+- **F4 expired-token chat** — backend: new `strictIfHeader` on `POST /api/chat` (guest with no header still works; a *present* bad bearer → 401 → clean logout instead of a silent anonymous answer). Frontend: session CRUD (`loadSession`, create, delete, rename) and `sendMessage` migrated from raw `fetch` to `apiFetch`; `deleteSession` only removes the row after a successful DELETE; `ApiError` now carries the response `data` so the 402 upgrade-wall keeps its plans/free payload; 401 in chat shows `chat.errorSessionExpired` (new en+fa key) instead of a silent failure. Navbar subscribes to `krelz:auth-changed` + `krelz:auth-expired` (avatar no longer stale), `handleLogout` goes through `clearSession()`, and login/signup/Google use `setSession()`.
+- **F7 input remount** — `ModelDropdown`/`MediaButtons` were components declared inside `Home` (new type every render → subtree, incl. the hidden file input, remounted per keystroke); now invoked as render functions.
+- **F9 IME Enter** — both send handlers (and the session-rename Enter) check `isComposing`/`keyCode 229`; deprecated `onKeyPress` replaced with `onKeyDown` — ja/zh/ko composition no longer sends mid-word.
+- **F10 caption alignment** — the assistant's source/payment caption forced `text-left` in LTR, mirroring it away from its own right-aligned bubble; now matches the bubble side in both directions.
+- **F11 reverse-tabnabbing** — invoice `window.open` gains `noopener,noreferrer`.
+- **F12 GSI script** — Google login reuses an existing `gsi/client` script tag (modal remounts used to append duplicates), surfaces load/parse/API failures as a visible inline error instead of an empty box, and stores the session via `setSession`.
+- **F14 scroll on session switch** — auto-scroll effect depends on `activeSessionId`, so switching to a session with the same message count still snaps to its latest message.
+
+### Tests
+- `strictIfHeader` suite (4 cases: guest pass, garbage/wrong-secret bearer → 401, valid token → 200). **145/145 green** (was 141).
+
 ## [3.31.0] - 2026-10-04
 
 Phase 1 of the full-project audit: security & money (backend).

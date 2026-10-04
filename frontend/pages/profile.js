@@ -211,12 +211,12 @@ export default function Profile() {
                     <span className="font-bold text-gray-800">{p.label}</span>
                     {active && <span className="text-emerald-600 text-xs font-semibold"> ✓ {t('profile.planBadgeActive')}</span>}
                     <div className="text-xs text-gray-600">
-                      {t('profile.planRow')
+                      {t('chat.planRow')
                         .replace('{price}', `$${p.price}`)
                         .replace('{tokens}', Number(p.daily_tokens).toLocaleString('en-US'))}
                     </div>
                     <div className="text-[10px] text-gray-400">
-                      {t('profile.planValue').replace('{value}', `$${p.value_usd_day}`)}
+                      {t('chat.planValue').replace('{value}', `$${p.value_usd_day}`)}
                     </div>
                   </div>
                   <button
