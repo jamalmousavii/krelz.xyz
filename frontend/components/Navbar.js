@@ -165,7 +165,7 @@ export default function Navbar() {
         <div className="hidden md:flex items-center gap-4">
           <LanguageSwitcher />
           <Link href="/miner" className="text-gray-600 hover:text-sky-700 transition">{t('nav.miner')}</Link>
-          <Link href="/#plans" className="text-gray-600 hover:text-sky-700 transition">⭐ {t('nav.plans')}</Link>
+          <Link href="/#plans" onClick={() => window.dispatchEvent(new CustomEvent('krelz:show-plans'))} className="text-gray-600 hover:text-sky-700 transition">⭐ {t('nav.plans')}</Link>
           <Link href="/leaderboard" className="text-gray-600 hover:text-sky-700 transition">🏆</Link>
 
           <div className="relative" ref={dropdownRef}>
@@ -345,7 +345,7 @@ export default function Navbar() {
             <div className="flex flex-col gap-3 pt-4">
               <LanguageSwitcher />
               <Link href="/miner" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">{t('nav.miner')}</Link>
-              <Link href="/#plans" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">⭐ {t('nav.plans')}</Link>
+              <Link href="/#plans" onClick={() => { closeMenu(); window.dispatchEvent(new CustomEvent('krelz:show-plans')); }} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">⭐ {t('nav.plans')}</Link>
               <Link href="/leaderboard" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">🏆 Leaderboard</Link>
 
             {user ? (

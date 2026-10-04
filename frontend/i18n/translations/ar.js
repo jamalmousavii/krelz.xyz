@@ -40,7 +40,7 @@ const ar = {
     startChat: 'ابدأ المحادثة',
     footer: 'جميع الحقوق محفوظة.',
     installMetaMask: 'يرجى تثبيت MetaMask',
-    version: 'v3.29.1',
+    version: 'v3.30.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — منصة استدلال LLM لامركزية، الإصدار {version}. جميع الحقوق محفوظة.',

@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.30.0] - 2026-10-04
+
+Plans are now reachable from every homepage state via a pricing modal — `https://krelz.xyz/#plans` and the Navbar ⭐ Plans link no longer go dead in an active chat.
+
+### Added
+- **`PlansModal`**: backdrop overlay (ESC / ✕ / backdrop click close, body scroll lock, RTL-aware close button) showing the pricing cards anywhere on the homepage — deep link `/#plans`, `hashchange`, or the Navbar's `krelz:show-plans` event. Opens while catalog loads with a `Loading...` placeholder.
+- **`PlansContent`**: the homepage pricing cards (3 tiers + token-bundle card + hints) extracted verbatim from `pages/index.js` — the inline empty-state section and the modal render identical markup from one source.
+
+### Fixed
+- **`/#plans` showed nothing**: the section existed only in the empty-state branch and only after a client-side catalog fetch, while logged-in users auto-restore their last session into an active chat (no `#plans` anchor at all) and guests hit an anchor scroll race against the async render. The Navbar `⭐ Plans` link (desktop + mobile) now dispatches the modal open event; closing clears the hash so repeat clicks work.
+
 ## [3.29.1] - 2026-10-04
 
 Bugfix: an expired JWT silently emptied the dashboard (the "plans card is empty" report) and hid the homepage pricing section.

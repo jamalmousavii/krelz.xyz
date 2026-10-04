@@ -1,4 +1,4 @@
-// Subscription plans + token bundles (v3.29.1).
+// Subscription plans + token bundles (v3.30.0).
 //
 // Free: every subject (signed-in user or guest, tracked by IP) gets a daily
 // token allowance. Paid plans raise that allowance for 30 days; token bundles
