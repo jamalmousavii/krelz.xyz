@@ -34,6 +34,8 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Install Self-Cleanup (v3.10.0)** — Install scripts auto-delete after successful installation
 - **Uninstall Self-Cleanup (v3.19.0)** — Uninstall scripts delete themselves after a successful removal (cancel or a failed step keeps the file so it can be rerun)
 - **Miner Earnings** — 90% of paid usage goes to miners
+- **Earnings Surfaces (v3.29.0)** — flat **90%** share shown everywhere: "Your Earnings" card on `/miner` (5 sources: 🎟️ token pot / 👛 wallet / ⭐ Plus / 🚀 Pro / 👑 Max), account-level breakdown on `/miners` and the profile (shared `EarningsBreakdown` component)
+- **Pricing Everywhere (v3.29.0 + v3.30.0)** — public pricing section on the empty homepage (`/#plans`) plus a **pricing modal** that opens from the Navbar `⭐ Plans` link or a `/#plans` deep link in any homepage state, including mid-chat
 - **Multi-Miner Accounts** — unlimited miners per user, each with its own unique token; add/remove/rename from `/miners`, no cap
 - **Internationalization (v3.16.0)** — 33 languages with country flags; browser auto-detect; session-persisted user choice; RTL for FA/AR/HE/UR
 - **Global Version Footer (v3.16.0)** — every page shows a one-line footer sentence including the current version
@@ -60,7 +62,7 @@ wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/in
 The install script automatically sets up:
 - Node.js 20
 - Ollama
-- Selected AI models (11 available)
+- Selected AI models (10 available)
 - Krelz Miner (CLI mode, systemd service)
 
 ### Add another miner (same account, unlimited)
@@ -166,6 +168,8 @@ krelz.xyz/
 │   ├── components/
 │   │   ├── Navbar.js          # Nav (Miner, ⭐ Plans, Leaderboard) + auth + lang dropdown
 │   │   ├── EarningsBreakdown.js # 5-way miner earnings breakdown (profile, /miners, /miner)
+│   │   ├── PlansContent.js    # Pricing cards shared by inline section + modal (v3.30.0)
+│   │   ├── PlansModal.js      # Pricing overlay for /#plans deep links + Navbar (v3.30.0)
 │   │   ├── Footer.js          # Global version footer (v3.16.0)
 │   │   ├── GoogleLogin.js     # Google OAuth
 │   │   ├── ErrorBoundary.js   # Error boundary
@@ -174,15 +178,12 @@ krelz.xyz/
 │   │   ├── translations.js    # Aggregator + LANGUAGES + detectLanguage
 │   │   ├── translations/      # One file per language (33 files)
 │   │   └── LanguageContext.js  # Provider (browser detect + sessionStorage)
-│   ├── i18n/
-│   │   ├── translations.js    # EN/FA translations
-│   │   └── LanguageContext.js
 │   └── package.json
 ├── miner-app/                  # Miner install scripts
 └── docs/                       # Documentation
 ```
 
-## Database Schema (14 Tables)
+## Database Schema (20 Tables)
 
 | Table | Purpose |
 |-------|---------|
@@ -199,6 +200,13 @@ krelz.xyz/
 | coin_withdrawals | Crypto withdrawal history |
 | miner_coin_earnings | Miner earnings |
 | chat_sessions | Chat session groups |
+| daily_tokens | Daily free allowance — signed-in users (2M tokens/UTC-day) |
+| miner_daily_credit | Free daily chat credit for miner hosts ($1/UTC-day) |
+| daily_tokens_guest | Daily free allowance — guests, keyed by client IP |
+| user_plans | Active subscription tiers (plus/pro/max) |
+| plan_purchases | Plan/token invoice claims — IPN exactly-once idempotency |
+| user_token_balances | Prepaid token pot — $1 = 1M tokens, never expires |
+| schema_migrations | Migration bookkeeping |
 
 ## Tech Stack
 
@@ -231,6 +239,10 @@ npm install
 npm run dev
 # Runs at http://localhost:3001
 ```
+
+Google Sign-in needs `NEXT_PUBLIC_GOOGLE_CLIENT_ID` at **build** time — copy
+`frontend/.env.example` to `frontend/.env.local` (see the file's comment; the same
+client id as `GOOGLE_CLIENT_ID` in `backend/.env`).
 
 ## Documentation
 

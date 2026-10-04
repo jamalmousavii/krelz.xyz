@@ -68,6 +68,8 @@ frontend/
 ├── components/
 │   ├── Navbar.js          # Nav + auth dropdown + LanguageSwitcher
 │   ├── EarningsBreakdown.js # 5-way earnings breakdown (profile, /miners, /miner; v3.29.0)
+│   ├── PlansContent.js    # Pricing cards: shared by homepage section + modal (v3.30.0)
+│   ├── PlansModal.js      # Pricing overlay for /#plans + Navbar event (v3.30.0)
 │   ├── Footer.js          # Global version footer (every page, v3.16.0)
 │   ├── GoogleLogin.js     # Google OAuth
 │   ├── ErrorBoundary.js   # Error boundary
@@ -126,7 +128,7 @@ miner-app/
         └── api.js         # REST API (register, heartbeat)
 ```
 
-## Database Schema (18 Tables)
+## Database Schema (20 Tables)
 
 | Table | Purpose |
 |-------|---------|
@@ -149,6 +151,7 @@ miner-app/
 | **user_plans** | Active subscription tiers (`plus`/`pro`/`max`: 10M/30M/80M tokens/day, v3.28.0; plus since v3.27.0) |
 | **plan_purchases** | Plan/token invoice claims — IPN exactly-once idempotency (`plan_type`: plus/pro/max/tokens) |
 | **user_token_balances** | Prepaid token pot — $1 = 1M tokens, never expires (v3.28.0) |
+| **schema_migrations** | Migration bookkeeping (applied version rows) |
 
 ### Miners Table — Resource Monitoring Columns (v3.8.0)
 
@@ -274,6 +277,17 @@ expires) tops up a prepaid pot (`user_token_balances`).
   allowance.
 - Tests: `backend/tests/free.allowance.test.js`, `backend/tests/plans.test.js`.
 
+### Pricing surfaces (v3.29.0, modal v3.30.0)
+
+- Inline section: the empty homepage renders `PlansContent` below `#plans`
+  (hidden once a chat starts); `GET /api/plans` is `optionalAuth` (v3.29.1) so
+  signed-in users see tier notes without a token being required.
+- Modal (v3.30.0): `PlansModal` hosts the same `PlansContent` in an overlay and
+  opens from (a) the `/#plans` URL hash on mount or `hashchange`, (b) the Navbar
+  `⭐ Plans` links, which dispatch a `krelz:show-plans` CustomEvent. `closePlans()`
+  clears `location.hash`. Both surfaces sit **above** the chat frame, so `/#plans`
+  works in any state (logged-out, sidebar, mid-conversation).
+
 ## Miner Free Chat Credit (v3.25.0)
 
 Signed-in users with at least one miner in `online`/`busy` state get a
@@ -383,19 +397,17 @@ t('profile.spent')       → "Spent" / "مصرف شده"
 
 ## Miner CLI Mode (v3.8.0)
 
-For headless servers (no desktop/Electron), use `cli.js`:
+For headless servers (no desktop/Electron), the service runs `cli.js` directly
+(there are **no CLI flags** — `cli.js` reads `miner-app/config.json` only):
 
 ```bash
-node src/cli.js --email user@example.com --token kz_xxxxx
+# token/email live in config.json, written by the install script
+cat "$HOME/krelz-miner/miner-app/config.json"
+systemctl start krelz-miner
 ```
 
-### CLI Flags
-
-| Flag | Description |
-|------|-------------|
-| `--email` | User email for auto-registration |
-| `--token` | Miner token from profile page |
-| `--help` | Show usage info |
+To change the token or account, re-run the install script (it rewrites
+`config.json` and re-registers the miner).
 
 ### Systemd Service
 
@@ -432,6 +444,15 @@ Service auto-starts on boot via `systemctl enable`.
 | POST | /api/miners/setup | Register miner (with token) |
 
 Miner token format: `kz_` + 32 hex bytes (67 chars)
+
+### Session expiry (v3.29.0 + v3.29.1)
+
+Frontend calls go through `lib/apiFetch.js`: on a 401 it clears the stored token
+and fires `krelz:auth-changed` **before** rejecting (the Navbar, profile, miners
+and settings pages listen and bounce to login instead of rendering stale auth
+state). `GET /api/plans` is public — `optionalAuth` since v3.29.1 — so the pricing
+catalog never 401s; every other protected route returns 401 as documented in
+`docs/api.md`.
 
 ## Multi-Miner Accounts (v3.12.0, token model v3.13.0, single-use display v3.14.0)
 
@@ -583,7 +604,11 @@ docker ps  # krelz-postgres, krelz-redis
 ### Quick Deploy from Local
 
 ```bash
-python3 /tmp/deploy_v350.py
+rsync -az --exclude .git --exclude .next --exclude node_modules --exclude '.env*' \
+  krelz-public/ <deploy-host>:/opt/krelz/
+ssh <deploy-host> 'cd /opt/krelz/frontend && npm run build && \
+  systemctl restart krelz-frontend krelz-backend'
+curl -s https://krelz.xyz/health   # must report the new version
 ```
 
 ## Troubleshooting

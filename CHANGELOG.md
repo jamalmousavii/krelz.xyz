@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.30.1] - 2026-10-04
+
+Docs release: README and DEVELOP synced through v3.30.0; no code changes.
+
+### Changed
+- **README**: Features gained v3.29.0 (miner earnings surfaces on `/miner` + `/miners`, Navbar `⭐ Plans`) and v3.30.0 (pricing modal — `/#plans` opens the cards in any homepage state); model count fixed to **10** ("11 available" was wrong); Database Schema heading fixed to **20 tables** with the 7 missing rows added (`daily_tokens`, `miner_daily_credit`, `daily_tokens_guest`, `user_plans`, `plan_purchases`, `user_token_balances`, `schema_migrations`); duplicate `i18n/` block removed from the project tree; `PlansContent`/`PlansModal` added; frontend `.env.local` note in Development (`NEXT_PUBLIC_GOOGLE_CLIENT_ID`, see `frontend/.env.example`).
+- **DEVELOP**: project tree gained `PlansContent.js`/`PlansModal.js` (v3.30.0); schema heading fixed to **20 tables** (+ `schema_migrations` row); removed the non-existent `python3 /tmp/deploy_v350.py` shortcut (replaced with the real rsync → build → restart flow); CLI section corrected — `cli.js` parses **no flags**, it reads `miner-app/config.json` (re-run the installer to change it); short notes on the v3.29.1 `apiFetch` 401 contract and the v3.30.0 pricing-modal architecture.
+
 ## [3.30.0] - 2026-10-04
 
 Plans are now reachable from every homepage state via a pricing modal — `https://krelz.xyz/#plans` and the Navbar ⭐ Plans link no longer go dead in an active chat.
