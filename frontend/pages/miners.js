@@ -49,6 +49,7 @@ export default function Miners() {
   const [regenTokenId, setRegenTokenId] = useState(null);
   const [regenTokenVal, setRegenTokenVal] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [copiedInstall, setCopiedInstall] = useState(null);
   const [history, setHistory] = useState(null);
   const [myRank, setMyRank] = useState(null); // v3.29.0 — account earnings breakdown
@@ -72,7 +73,10 @@ export default function Miners() {
     try {
       const data = await apiFetch('/api/miners/mine');
       if (data.success) setMiners(data.miners || (data.miner ? [data.miner] : []));
-    } catch (err) {}
+    } catch (err) {
+      // F15: a failed dashboard fetch used to fail silently.
+      setLoadError(true);
+    }
   };
 
   // v3.29.0 — account-level earnings breakdown (all miners, 5 sources)
@@ -80,14 +84,20 @@ export default function Miners() {
     try {
       const data = await apiFetch('/api/leaderboard/mine');
       if (data.success && data.breakdown) setMyRank(data);
-    } catch (err) {}
+    } catch (err) {
+      // F15: a failed dashboard fetch used to fail silently.
+      setLoadError(true);
+    }
   };
 
   const fetchHistory = async () => {
     try {
       const data = await apiFetch('/api/miners/history');
       if (data.success) setHistory(data);
-    } catch (err) {}
+    } catch (err) {
+      // F15: a failed dashboard fetch used to fail silently.
+      setLoadError(true);
+    }
   };
 
   const fmtDate = (d) => (d ? new Date(d).toLocaleDateString() : '—');
@@ -207,6 +217,18 @@ export default function Miners() {
     );
   }
 
+  const retryLoad = () => {
+    setLoadError(false);
+    fetchMiners(); fetchHistory(); fetchRank();
+  };
+
+  const errorBanner = loadError && (
+    <div className="mb-4 bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+      <span>{t('common.loadFailed')}</span>
+      <button onClick={retryLoad} className="font-bold underline min-h-[36px]">{t('common.retry')}</button>
+    </div>
+  );
+
   return (
     <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
       <Head><title>{t('profile.myMiners')} - Krelz Network</title></Head>
@@ -236,6 +258,7 @@ export default function Miners() {
       )}
 
       <Navbar />
+        {errorBanner}
 
       <main className="container mx-auto px-4 md:px-6 py-6 md:py-12 max-w-3xl">
         {/* Quick nav */}

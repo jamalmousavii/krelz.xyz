@@ -1,12 +1,13 @@
 {
   "name": "krelz-frontend",
-  "version": "3.34.0",
+  "version": "3.35.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "i18n:check": "node scripts/check-i18n.js"
   },
   "dependencies": {
     "axios": "^1.6.2",

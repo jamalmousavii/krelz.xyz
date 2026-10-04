@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { setSession } from '../utils/api';
+import { useLanguage } from '../i18n/LanguageContext';
 
 export default function GoogleLogin({ onSuccess }) {
+  const { t } = useLanguage();
   const buttonDiv = useRef(null);
   // F12: surface GSI/script failures instead of rendering an empty box.
   const [gsiError, setGsiError] = useState('');
@@ -9,7 +11,7 @@ export default function GoogleLogin({ onSuccess }) {
   useEffect(() => {
     const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
     if (!CLIENT_ID) {
-      setGsiError('Google sign-in is not configured.');
+      setGsiError(t('nav.googleNotConfigured'));
       return;
     }
 
@@ -41,7 +43,7 @@ export default function GoogleLogin({ onSuccess }) {
       script.dataset.gsiLoaded = '1';
       init();
     };
-    script.onerror = () => setGsiError('Could not load Google sign-in. Check your connection.');
+    script.onerror = () => setGsiError(t('nav.googleLoadFailed'));
     document.body.appendChild(script);
   }, []);
 
@@ -56,13 +58,16 @@ export default function GoogleLogin({ onSuccess }) {
       if (data.success) {
         setSession(data.token, data.user);
         if (onSuccess) onSuccess(data.user);
-        window.location.reload();
+        // Same ?next= contract as the email form in Navbar.
+        const next = new URLSearchParams(window.location.search).get('next');
+        if (next && next.startsWith('/') && !next.startsWith('//')) window.location.replace(next);
+        else window.location.reload();
       } else {
-        setGsiError(data.error || 'Google sign-in failed.');
+        setGsiError(data.error || t('nav.googleFailed'));
       }
     } catch (err) {
       console.error('Google login failed:', err);
-      setGsiError('Google sign-in failed. Try again.');
+      setGsiError(t('nav.googleFailedTry'));
     }
   };
 

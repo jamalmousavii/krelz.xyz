@@ -9,22 +9,49 @@ export default function Explorer() {
   const [activeTab, setActiveTab] = useState('transactions');
   const [transactions, setTransactions] = useState([]);
   const [miners, setMiners] = useState([]);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const [query, setQuery] = useState('');
 
-  useEffect(() => { fetchData(); }, [activeTab]);
+  useEffect(() => { fetchData(); }, []);
 
   const fetchData = async () => {
     setLoading(true);
+    setError(false);
     try {
       const res = await fetch('/api/stats/network');
       const data = await res.json();
       if (data.success) {
-        if (activeTab === 'transactions') setTransactions(data.recent_tasks || []);
-        else if (activeTab === 'miners') setMiners(data.top_miners || []);
+        setTransactions(data.recent_tasks || []);
+        setMiners(data.top_miners || []);
+        setStats(data.stats || null);
+      } else {
+        setError(true);
       }
-    } catch (err) { console.error('Error:', err); }
+    } catch (err) {
+      console.error('Error:', err);
+      setError(true);
+    }
     setLoading(false);
   };
+
+  // F13: the search box used to be decorative — it now filters whichever
+  // list is on screen (task id/user/miner/status, gpu/wallet/id).
+  const q = query.trim().toLowerCase();
+  const filteredTx = q
+    ? transactions.filter((tx) =>
+        String(tx.id).includes(q) ||
+        String(tx.user_id || '').toLowerCase().includes(q) ||
+        String(tx.miner_id || '').toLowerCase().includes(q) ||
+        (tx.status || '').toLowerCase().includes(q))
+    : transactions;
+  const filteredMiners = q
+    ? miners.filter((m) =>
+        (m.gpu_model || '').toLowerCase().includes(q) ||
+        (m.wallet_address || '').toLowerCase().includes(q) ||
+        String(m.id).includes(q))
+    : miners;
 
   const tabs = [
     { id: 'transactions', label: t('explorer.transactions'), icon: '📋' },
@@ -44,6 +71,8 @@ export default function Explorer() {
         <div className="mb-4 md:mb-6">
           <input
             type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
             placeholder={t('explorer.search')}
             className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-4 md:px-6 py-3 md:py-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 text-sm md:text-base shadow-sm"
           />
@@ -67,7 +96,14 @@ export default function Explorer() {
 
         {loading && <div className="text-center text-gray-500 py-10 md:py-20">{t('explorer.loading')}</div>}
 
-        {!loading && activeTab === 'transactions' && (
+        {!loading && error && (
+          <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+            <span>{t('common.loadFailed')}</span>
+            <button onClick={fetchData} className="font-bold underline min-h-[36px]">{t('common.retry')}</button>
+          </div>
+        )}
+
+        {!loading && !error && activeTab === 'transactions' && (
           <div className="bg-white border border-sky-100 shadow-sm rounded-xl overflow-hidden overflow-x-auto">
             <table className="w-full text-gray-700 text-sm md:text-base">
               <thead>
@@ -81,10 +117,10 @@ export default function Explorer() {
                 </tr>
               </thead>
               <tbody>
-                {transactions.length === 0 && (
-                  <tr><td colSpan="6" className="text-center py-8 md:py-10 text-gray-400">{t('explorer.noTransactions')}</td></tr>
+                {filteredTx.length === 0 && (
+                  <tr><td colSpan="6" className="text-center py-8 md:py-10 text-gray-400">{q ? t('explorer.noResults') : t('explorer.noTransactions')}</td></tr>
                 )}
-                {transactions.map((tx, i) => (
+                {filteredTx.map((tx, i) => (
                   <tr key={i} className="border-b border-sky-50 hover:bg-sky-50/50">
                     <td className="px-3 md:px-6 py-3 md:py-4 font-mono text-xs md:text-sm">#{tx.id || i + 1}</td>
                     <td className="px-3 md:px-6 py-3 md:py-4 font-mono text-xs md:text-sm hidden sm:table-cell">{tx.user_id || '--'}</td>
@@ -111,12 +147,12 @@ export default function Explorer() {
           </div>
         )}
 
-        {!loading && activeTab === 'miners' && (
+        {!loading && !error && activeTab === 'miners' && (
           <div className="grid md:grid-cols-2 gap-4 md:gap-6">
-            {miners.length === 0 && (
-              <div className="col-span-2 text-center text-gray-400 py-10 md:py-20">{t('explorer.noMiners')}</div>
+            {filteredMiners.length === 0 && (
+              <div className="col-span-2 text-center text-gray-400 py-10 md:py-20">{q ? t('explorer.noResults') : t('explorer.noMiners')}</div>
             )}
-            {miners.map((miner, i) => (
+            {filteredMiners.map((miner, i) => (
               <div key={i} className="bg-white border border-sky-100 shadow-sm rounded-xl p-4 md:p-6">
                 <div className="flex items-center justify-between mb-3 md:mb-4">
                   <span className="text-base md:text-lg font-bold text-gray-800">{t('explorer.minerNum')}{i + 1}</span>
@@ -139,19 +175,19 @@ export default function Explorer() {
           </div>
         )}
 
-        {!loading && activeTab === 'stats' && (
+        {!loading && !error && activeTab === 'stats' && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
             <div className="bg-white border border-sky-100 shadow-sm rounded-xl p-6 md:p-8 text-center">
-              <div className="text-3xl md:text-4xl font-bold text-gray-800 mb-2">--</div>
+              <div className="text-3xl md:text-4xl font-bold text-gray-800 mb-2">{stats ? stats.active_miners : '--'}</div>
               <div className="text-gray-500 text-sm md:text-base">{t('explorer.activeMiners')}</div>
             </div>
             <div className="bg-white border border-sky-100 shadow-sm rounded-xl p-6 md:p-8 text-center">
-              <div className="text-3xl md:text-4xl font-bold text-gray-800 mb-2">--</div>
+              <div className="text-3xl md:text-4xl font-bold text-gray-800 mb-2">{stats ? stats.completed_tasks : '--'}</div>
               <div className="text-gray-500 text-sm md:text-base">{t('explorer.completedTasks')}</div>
             </div>
             <div className="bg-white border border-sky-100 shadow-sm rounded-xl p-6 md:p-8 text-center">
-              <div className="text-3xl md:text-4xl font-bold text-gray-800 mb-2">--</div>
-              <div className="text-gray-500 text-sm md:text-base">{t('explorer.tokensBurned')}</div>
+              <div className="text-3xl md:text-4xl font-bold text-gray-800 mb-2">{stats ? Number(stats.platform_revenue || 0).toFixed(2) : '--'}</div>
+              <div className="text-gray-500 text-sm md:text-base">{t('explorer.platformRevenue')}</div>
             </div>
           </div>
         )}

@@ -65,6 +65,21 @@ export default function Home() {
 
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState(null);
+  // F8: a ref mirrors activeSessionId synchronously — async responses read it
+  // when they complete instead of the stale render-time closure they were
+  // created in (the old chat-clobbering race).
+  const activeSessionRef = useRef(null);
+  // Bumped on every session switch; in-flight loads check it and bail.
+  const loadSeqRef = useRef(0);
+  const sendAbortRef = useRef(null);
+  const setActiveSession = (sid) => {
+    activeSessionRef.current = sid;
+    setActiveSessionId(sid);
+    loadSeqRef.current += 1;
+    // Switching threads kills the answer bound for the old one: it is already
+    // stored server-side and reappears when the user comes back.
+    if (sendAbortRef.current) { sendAbortRef.current.abort(); sendAbortRef.current = null; }
+  };
   const [subject, setSubject] = useState('');
   const [editingSubject, setEditingSubject] = useState(false);
   const [subjectInput, setSubjectInput] = useState('');
@@ -350,11 +365,13 @@ export default function Home() {
   const loadSession = async (sessionId, tkn) => {
     const useToken = tkn || token;
     if (!useToken) return;
+    const seq = ++loadSeqRef.current;
     try {
       const data = await apiFetch(`/api/chat/sessions/${sessionId}`);
+      if (seq !== loadSeqRef.current) return; // F8: superseded by a newer switch
       if (data.success) {
-        setActiveSessionId(sessionId);
-        setSubject(data.session.subject || 'New Chat');
+        setActiveSession(sessionId);
+        setSubject(data.session.subject || t('chat.newChat'));
         // Mobile drawer: picking a session closes the overlay so the chat is visible.
         setSidebarOpen(false);
         const msgs = [];
@@ -373,7 +390,7 @@ export default function Home() {
 
   const createNewSession = async () => {
     if (!token) {
-      setActiveSessionId(null);
+      setActiveSession(null);
       setSubject('');
       setChat([]);
       return;
@@ -381,11 +398,11 @@ export default function Home() {
     try {
       const data = await apiFetch('/api/chat/sessions', {
         method: 'POST',
-        body: JSON.stringify({ subject: 'New Chat', model: selectedModel })
+        body: JSON.stringify({ subject: t('chat.newChat'), model: selectedModel })
       });
       if (data.success) {
         setSessions(prev => [data.session, ...prev]);
-        setActiveSessionId(data.session.id);
+        setActiveSession(data.session.id);
         setSubject(data.session.subject);
         setChat([]);
       }
@@ -406,7 +423,7 @@ export default function Home() {
         if (remaining.length > 0) {
           loadSession(remaining[0].id);
         } else {
-          setActiveSessionId(null);
+          setActiveSession(null);
           setSubject('');
           setChat([]);
         }
@@ -531,16 +548,28 @@ export default function Home() {
     setLoading(true);
     inputRef.current?.focus();
 
+    // F8: capture the thread this reply belongs to, and a controller so a
+    // session switch can cancel the request instead of letting it land in
+    // whatever thread the user is reading by then.
+    const sessionAtSend = activeSessionRef.current;
+    if (sendAbortRef.current) sendAbortRef.current.abort();
+    const controller = new AbortController();
+    sendAbortRef.current = controller;
+
     try {
       const data = await apiFetch('/api/chat', {
         method: 'POST',
+        signal: controller.signal,
         body: JSON.stringify({
           message: userMessage,
           model: selectedModel,
-          session_id: activeSessionId,
+          session_id: sessionAtSend,
           ...(sentAttachment ? { attachment: sentAttachment } : {}),
         }),
       });
+      // The user changed threads while this was in flight: the reply is
+      // already stored server-side — never append it to the wrong chat.
+      if (sessionAtSend !== activeSessionRef.current) return;
       if (data.success) {
         setChat(prev => [...prev, {
           role: 'assistant',
@@ -558,17 +587,20 @@ export default function Home() {
             }
           } catch (e) {}
         }
-        if (data.session_id && !activeSessionId) {
-          setActiveSessionId(data.session_id);
+        if (data.session_id && !sessionAtSend) {
+          setActiveSession(data.session_id);
           fetchSessions(token);
-        } else if (data.session_id && activeSessionId) {
+        } else if (data.session_id && sessionAtSend) {
           fetchSessions(token);
         }
       } else {
         setChat(prev => [...prev, { role: 'assistant', content: data.error || t('chat.errorResponse') }]);
       }
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
+      if (sessionAtSend !== activeSessionRef.current || (err && err.name === 'AbortError')) {
+        // F8: aborted by a session switch (or the stale thread already moved
+        // on) — there is no chat to append the failure to.
+      } else if (err instanceof ApiError && err.status === 401) {
         // apiFetch already cleared the session + fired krelz:auth-expired;
         // the backend now 401s bad bearers instead of answering as a guest,
         // so tell the user why the reply never came.
@@ -591,8 +623,10 @@ export default function Home() {
       } else {
         setChat(prev => [...prev, { role: 'assistant', content: t('chat.errorConnection') }]);
       }
+    } finally {
+      setLoading(false);
+      if (sendAbortRef.current === controller) sendAbortRef.current = null;
     }
-    setLoading(false);
   };
 
   // F7: NOT components — calling these as plain functions keeps their output

@@ -1,5 +1,23 @@
 # Changelog
 
+## [3.35.0] - 2026-10-04
+
+Phase 5 of the full-project audit: i18n & UX completeness.
+
+### Added
+- **i18n parity gate** — new `frontend/scripts/check-i18n.js` (`npm run i18n:check`): fails if any `t('…')`/`i18nKey` used in the app is missing from `en.js`, or if any of the 33 locale files differs from `en.js` (missing keys **or** orphans). First run found exactly what F5 described: 31 locales missing 87 keys each (en/fa 288 vs 202) plus the 44 keys added this phase.
+- **Locale backfill** — all 33 locales now carry the full 333-key set. `fa`, `fr` and `de` got real translations for every new string (reviewed samples: `nav.reset*`, `chat.upgrade*`, `profile.plan*/bundle*`, `settings.*`, `common.*`, `errors.*`, `leaderboard.*`); the other 28 locales are filled with the English text they already rendered via the runtime fallback, so their visible output is unchanged while parity (and the gate) is green.
+- **Explorer is actually explorable (F13)** — `/api/stats/network` now returns `recent_tasks` (newest 50), `top_miners` (top 10, `removed` excluded) and `completed_tasks`; the explorer page reads them (both list tabs used to be permanently empty), the search box filters transactions (id/user/miner/status) and miners (gpu/wallet/id), the stats tab shows real `active_miners`/`completed_tasks`/`platform_revenue` instead of `--`, failures render an error + retry instead of a silent empty page, and the page is reachable again from the Navbar (desktop + mobile). `explorer.tokensBurned` (no burn mechanism exists) replaced by `explorer.platformRevenue`.
+
+### Fixed
+- **F6 hardcoded English** — Navbar auth fallbacks (`Login failed`/`Signup failed`/`Network error`/`Failed`) and the 6 `Email` placeholders now localize (`nav.email`, `nav.loginFailed`, …); Google sign-in messages localize too (`nav.google*`); settings wallet UI fully localized (`settings.*`: tabs, hints, placeholders, buttons, empty state, deposit/withdraw messages incl. `{amount}`/`{fee}` interpolation, password-failure fallbacks) reusing `profile.available/earned/spent`; leaderboard headings/tabs/empty-cells/labels (`leaderboard.*`); 404/500 pages (`errors.*`); mobile menu's literal `🏆 Leaderboard`.
+- **F8 chat races** — `activeSessionId` is mirrored into a ref read at completion time (the stale render-time closure could append an answer to the wrong thread), every session switch invalidates in-flight session loads (seq guard) and **aborts** the in-flight `/api/chat` request (`AbortController`, swallowed in the catch); a reply that resolves after a thread switch is never appended (it is already stored server-side). `New Chat` is now created/localized per language (`chat.newChat`).
+- **F15 loading/error states** — leaderboard, admin, explorer, profile, miners and settings fetches no longer swallow errors: loading indicators, an error banner with a retry button (`common.loading`/`common.loadFailed`/`common.retry`), and admin tabs only render when data is actually there.
+- **`?next=` preserved** — `useAuth(required)` redirects to `/?next=<path>` instead of `/`; email login/signup and Google sign-in return the user to the original page (same-origin path guard against open redirects) instead of always reloading `/`.
+
+### Tests
+- New `phase5.stats.test.js` (3): explorer payload shape, bounded/ordered queries with `removed` miners excluded, 500 on DB failure. **186/186 green** (was 183). i18n gate green (333 keys × 33 locales, 0 violations); `next build` and `next lint` (warnings-only) green.
+
 ## [3.34.0] - 2026-10-04
 
 Phase 4 of the full-project audit: miner-app security & reliability.

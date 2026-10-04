@@ -16,6 +16,7 @@ export default function Profile() {
   const [bundleAmount, setBundleAmount] = useState('5'); // whole dollars for the token bundle
   const [myRank, setMyRank] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   const { ready, user } = useAuth();
 
@@ -41,7 +42,10 @@ export default function Profile() {
           token_bundle: data.token_bundle || null,
         });
       }
-    } catch (err) {}
+    } catch (err) {
+      // F15: a failed dashboard fetch used to fail silently.
+      setLoadError(true);
+    }
   };
 
   // v3.28.0 — invoice purchases (plan tier or token bundle): hosted
@@ -95,7 +99,10 @@ export default function Profile() {
       if (!mineData.success || !mineData.miners?.length) return;
       const data = await apiFetch('/api/leaderboard/mine');
       if (data.success) setMyRank(data);
-    } catch (err) {}
+    } catch (err) {
+      // F15: a failed dashboard fetch used to fail silently.
+      setLoadError(true);
+    }
   };
 
   const handleLogout = () => {
@@ -111,11 +118,24 @@ export default function Profile() {
     );
   }
 
+  const retryLoad = () => {
+    setLoadError(false);
+    fetchUsdBalance(); fetchRank();
+  };
+
+  const errorBanner = loadError && (
+    <div className="mb-4 bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+      <span>{t('common.loadFailed')}</span>
+      <button onClick={retryLoad} className="font-bold underline min-h-[36px]">{t('common.retry')}</button>
+    </div>
+  );
+
   return (
     <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
       <Head><title>{t('profile.dashboard')} - Krelz Network</title></Head>
 
       <Navbar />
+        {errorBanner}
 
       <main className="container mx-auto px-4 md:px-6 py-6 md:py-12 max-w-2xl">
         {/* Quick nav */}

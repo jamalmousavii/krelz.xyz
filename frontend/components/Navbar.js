@@ -74,12 +74,16 @@ export default function Navbar() {
       const data = await res.json();
       if (data.success) {
         setSession(data.token, data.user);
-        window.location.reload();
+        // Preserve ?next= (set by useAuth's redirect) instead of dumping the
+        // user back on the home page they never asked for.
+        const next = new URLSearchParams(window.location.search).get('next');
+        if (next && next.startsWith('/') && !next.startsWith('//')) window.location.replace(next);
+        else window.location.reload();
       } else {
-        setAuthError(data.error || 'Login failed');
+        setAuthError(data.error || t('nav.loginFailed'));
       }
     } catch (err) {
-      setAuthError('Network error');
+      setAuthError(t('nav.networkError'));
     }
     setAuthLoading(false);
   };
@@ -97,12 +101,16 @@ export default function Navbar() {
       const data = await res.json();
       if (data.success) {
         setSession(data.token, data.user);
-        window.location.reload();
+        // Preserve ?next= (set by useAuth's redirect) instead of dumping the
+        // user back on the home page they never asked for.
+        const next = new URLSearchParams(window.location.search).get('next');
+        if (next && next.startsWith('/') && !next.startsWith('//')) window.location.replace(next);
+        else window.location.reload();
       } else {
-        setAuthError(data.error || 'Signup failed');
+        setAuthError(data.error || t('nav.signupFailed'));
       }
     } catch (err) {
-      setAuthError('Network error');
+      setAuthError(t('nav.networkError'));
     }
     setAuthLoading(false);
   };
@@ -127,10 +135,10 @@ export default function Navbar() {
           setAuthMode('reset');
         }
       } else {
-        setAuthError(data.error || 'Failed');
+        setAuthError(data.error || t('nav.actionFailed'));
       }
     } catch (err) {
-      setAuthError('Network error');
+      setAuthError(t('nav.networkError'));
     }
     setAuthLoading(false);
   };
@@ -152,10 +160,10 @@ export default function Navbar() {
         setResetToken('');
         setAuthError('');
       } else {
-        setAuthError(data.error || 'Failed');
+        setAuthError(data.error || t('nav.actionFailed'));
       }
     } catch (err) {
-      setAuthError('Network error');
+      setAuthError(t('nav.networkError'));
     }
     setAuthLoading(false);
   };
@@ -177,6 +185,7 @@ export default function Navbar() {
         <div className="hidden md:flex items-center gap-4">
           <LanguageSwitcher />
           <Link href="/miner" className="text-gray-600 hover:text-sky-700 transition">{t('nav.miner')}</Link>
+          <Link href="/explorer" className="text-gray-600 hover:text-sky-700 transition">🔍 {t('nav.explorer')}</Link>
           <Link href="/#plans" onClick={() => window.dispatchEvent(new CustomEvent('krelz:show-plans'))} className="text-gray-600 hover:text-sky-700 transition">⭐ {t('nav.plans')}</Link>
           <Link href="/leaderboard" className="text-gray-600 hover:text-sky-700 transition">🏆</Link>
 
@@ -232,7 +241,7 @@ export default function Navbar() {
                       <div className="space-y-3">
                         <h3 className="text-gray-800 font-bold text-center">{t('nav.login')}</h3>
                         <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)}
-                          placeholder="Email" className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" />
+                          placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" />
                         <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)}
                           placeholder={t('nav.password')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
                           onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
@@ -264,7 +273,7 @@ export default function Navbar() {
                       <div className="space-y-3">
                         <h3 className="text-gray-800 font-bold text-center">{t('nav.signup')}</h3>
                         <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)}
-                          placeholder="Email" className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" />
+                          placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" />
                         <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)}
                           placeholder={t('nav.password')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
                           onKeyDown={(e) => e.key === 'Enter' && handleSignup()} />
@@ -293,7 +302,7 @@ export default function Navbar() {
                       <div className="space-y-3">
                         <h3 className="text-gray-800 font-bold text-center">{t('nav.forgotPassword')}</h3>
                         <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)}
-                          placeholder="Email" className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                          placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
                           onKeyDown={(e) => e.key === 'Enter' && handleForgotPassword()} />
                         {authError && <p className="text-red-500 text-xs">{authError}</p>}
                         {!authError && forgotSent && (
@@ -357,8 +366,9 @@ export default function Navbar() {
             <div className="flex flex-col gap-3 pt-4">
               <LanguageSwitcher />
               <Link href="/miner" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">{t('nav.miner')}</Link>
+              <Link href="/explorer" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">🔍 {t('nav.explorer')}</Link>
               <Link href="/#plans" onClick={() => { closeMenu(); window.dispatchEvent(new CustomEvent('krelz:show-plans')); }} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">⭐ {t('nav.plans')}</Link>
-              <Link href="/leaderboard" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">🏆 Leaderboard</Link>
+              <Link href="/leaderboard" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">🏆 {t('nav.leaderboard')}</Link>
 
             {user ? (
               <>
@@ -374,7 +384,7 @@ export default function Navbar() {
                 {authMode === 'login' && (
                   <>
                     <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)}
-                      placeholder="Email" className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm" />
+                      placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm" />
                     <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)}
                       placeholder={t('nav.password')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm" />
                     {authError && <p className="text-red-500 text-xs">{authError}</p>}
@@ -400,7 +410,7 @@ export default function Navbar() {
                 {authMode === 'signup' && (
                   <>
                     <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)}
-                      placeholder="Email" className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm" />
+                      placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm" />
                     <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)}
                       placeholder={t('nav.password')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm" />
                     <p className="text-gray-500 text-xs">{t('nav.passwordHint')}</p>
@@ -425,7 +435,7 @@ export default function Navbar() {
                 {authMode === 'forgot' && (
                   <>
                     <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)}
-                      placeholder="Email" className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm" />
+                      placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm" />
                     {authError && <p className="text-red-500 text-xs">{authError}</p>}
                     {!authError && forgotSent && (
                       <p className="text-emerald-600 text-xs">{t('nav.resetEmailSent')}</p>

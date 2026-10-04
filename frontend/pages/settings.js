@@ -27,6 +27,7 @@ export default function Settings() {
   const [passwordLoading, setPasswordLoading] = useState('');
   const [passwordMessage, setPasswordMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   const { ready, user } = useAuth();
 
@@ -44,7 +45,10 @@ export default function Settings() {
       // F2: seed the password form branch from the server, not a guess.
       if (typeof data.has_password === 'boolean') setHasPassword(data.has_password);
       if (data.success && data.balances?.USD) setUsdBalance(data.balances.USD);
-    } catch (err) {}
+    } catch (err) {
+      // F15: a failed dashboard fetch used to fail silently.
+      setLoadError(true);
+    }
   };
 
   const fetchHistory = async () => {
@@ -54,7 +58,10 @@ export default function Settings() {
         setDeposits(data.deposits || []);
         setWithdrawals(data.withdrawals || []);
       }
-    } catch (err) {}
+    } catch (err) {
+      // F15: a failed dashboard fetch used to fail silently.
+      setLoadError(true);
+    }
   };
 
   const handleDeposit = async () => {
@@ -68,12 +75,12 @@ export default function Settings() {
       if (data.success) {
         // F11: noopener — the invoice tab must not get window.opener.
         window.open(data.invoice.url, '_blank', 'noopener,noreferrer');
-        setWalletMessage('✅ Invoice created. Complete payment in new tab.');
+        setWalletMessage(t('settings.depositOk'));
         setDepositAmount('');
       } else {
         setWalletMessage(`❌ ${data.error}`);
       }
-    } catch (err) { setWalletMessage(`❌ ${err instanceof ApiError ? err.message : 'Deposit failed'}`); }
+    } catch (err) { setWalletMessage(`❌ ${err instanceof ApiError ? err.message : t('settings.depositFailed')}`); }
     setWalletLoading(false);
   };
 
@@ -86,14 +93,16 @@ export default function Settings() {
         body: JSON.stringify({ amount: parseFloat(withdrawAmount), toAddress: withdrawAddress })
       });
       if (data.success) {
-        setWalletMessage(`✅ Sent $${data.withdrawal.amount} via USDT TRC-20 (fee: $${data.withdrawal.fee})`);
+        setWalletMessage(t('settings.withdrawOk')
+        .replace('{amount}', data.withdrawal.amount)
+        .replace('{fee}', data.withdrawal.fee));
         setWithdrawAmount('');
         setWithdrawAddress('');
         fetchBalance();
       } else {
         setWalletMessage(`❌ ${data.error}`);
       }
-    } catch (err) { setWalletMessage(`❌ ${err instanceof ApiError ? err.message : 'Withdrawal failed'}`); }
+    } catch (err) { setWalletMessage(`❌ ${err instanceof ApiError ? err.message : t('settings.withdrawFailed')}`); }
     setWalletLoading(false);
   };
 
@@ -128,7 +137,7 @@ export default function Settings() {
         setHasPassword(true);
         setPasswordMessage('❌ Password already set — use the change form below.');
       } else {
-        setPasswordMessage(`❌ ${err instanceof ApiError ? err.message : 'Failed to set password'}`);
+        setPasswordMessage(`❌ ${err instanceof ApiError ? err.message : t('settings.pwdSetFailed')}`);
       }
     }
     setPasswordLoading('');
@@ -157,7 +166,7 @@ export default function Settings() {
       } else {
         setPasswordMessage(`❌ ${data.error}`);
       }
-    } catch (err) { setPasswordMessage(`❌ ${err instanceof ApiError ? err.message : 'Failed to change password'}`); }
+    } catch (err) { setPasswordMessage(`❌ ${err instanceof ApiError ? err.message : t('settings.pwdChangeFailed')}`); }
     setPasswordLoading('');
   };
 
@@ -171,11 +180,24 @@ export default function Settings() {
     );
   }
 
+  const retryLoad = () => {
+    setLoadError(false);
+    fetchBalance(); fetchHistory();
+  };
+
+  const errorBanner = loadError && (
+    <div className="mb-4 bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+      <span>{t('common.loadFailed')}</span>
+      <button onClick={retryLoad} className="font-bold underline min-h-[36px]">{t('common.retry')}</button>
+    </div>
+  );
+
   return (
     <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
       <Head><title>{t('profile.settings')} - Krelz Network</title></Head>
 
       <Navbar />
+        {errorBanner}
 
       <main className="container mx-auto px-4 md:px-6 py-6 md:py-12 max-w-2xl">
         {/* Quick nav */}
@@ -222,20 +244,20 @@ export default function Settings() {
 
           {/* USD Wallet */}
           <div className="mb-5">
-            <h3 className="text-sm font-medium text-gray-600 mb-2">💰 Wallet (USD)</h3>
+            <h3 className="text-sm font-medium text-gray-600 mb-2">💰 {t('settings.walletUsd')}</h3>
             <div className="bg-sky-50 rounded-lg p-4 border border-sky-100">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
                 <div className="text-center">
                   <div className="text-lg font-bold text-emerald-600">${parseFloat(usdBalance.available || 0).toFixed(2)}</div>
-                  <div className="text-gray-500 text-xs">Available</div>
+                  <div className="text-gray-500 text-xs">{t('profile.available')}</div>
                 </div>
                 <div className="text-center">
                   <div className="text-lg font-bold text-sky-600">${parseFloat(usdBalance.total_earned || 0).toFixed(2)}</div>
-                  <div className="text-gray-500 text-xs">Earned</div>
+                  <div className="text-gray-500 text-xs">{t('profile.earned')}</div>
                 </div>
                 <div className="text-center">
                   <div className="text-lg font-bold text-gray-500">${parseFloat(usdBalance.total_spent || 0).toFixed(2)}</div>
-                  <div className="text-gray-500 text-xs">Spent</div>
+                  <div className="text-gray-500 text-xs">{t('profile.spent')}</div>
                 </div>
               </div>
 
@@ -243,20 +265,20 @@ export default function Settings() {
                 {['topup', 'withdraw', 'history'].map(tab => (
                   <button key={tab} onClick={() => setWalletTab(tab)}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold min-h-[36px] ${walletTab === tab ? 'bg-sky-500 text-white' : 'bg-white text-gray-500 hover:bg-sky-100 border border-sky-200'}`}>
-                    {tab === 'topup' ? '📥 Top Up' : tab === 'withdraw' ? '📤 Withdraw' : '📋 History'}
+                    {tab === 'topup' ? `📥 ${t('settings.topUp')}` : tab === 'withdraw' ? `📤 ${t('settings.withdraw')}` : `📋 ${t('settings.history')}`}
                   </button>
                 ))}
               </div>
 
               {walletTab === 'topup' && (
                 <div>
-                  <p className="text-gray-500 text-xs mb-2">Amount in USD — pay with any supported crypto on NowPayments</p>
+                  <p className="text-gray-500 text-xs mb-2">{t('settings.depositHint')}</p>
                   <div className="flex gap-2">
                     <input type="number" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)}
-                      placeholder="Amount in USD" className="flex-1 bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400" min="1" step="0.01" />
+                      placeholder={t('settings.amountUsd')} className="flex-1 bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400" min="1" step="0.01" />
                     <button onClick={handleDeposit} disabled={walletLoading || !depositAmount}
                       className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50 min-h-[40px]">
-                      Top Up
+                      {t('settings.topUpBtn')}
                     </button>
                   </div>
                 </div>
@@ -264,15 +286,15 @@ export default function Settings() {
 
               {walletTab === 'withdraw' && (
                 <div className="space-y-2">
-                  <p className="text-gray-500 text-xs">Withdraw via <strong>USDT TRC-20</strong> · Min $5 · Fee paid by you</p>
+                  <p className="text-gray-500 text-xs">{t('settings.withdrawHint')}</p>
                   <input type="text" value={withdrawAddress} onChange={(e) => setWithdrawAddress(e.target.value)}
-                    placeholder="USDT TRC-20 wallet address" className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400 min-h-[40px]" />
+                    placeholder={t('settings.withdrawAddress')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400 min-h-[40px]" />
                   <div className="flex gap-2">
                     <input type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)}
-                      placeholder="Amount in USD" className="flex-1 bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400" min="5" step="0.01" />
+                      placeholder={t('settings.amountUsd')} className="flex-1 bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400" min="5" step="0.01" />
                     <button onClick={handleWithdraw} disabled={walletLoading || !withdrawAmount || !withdrawAddress}
                       className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition text-sm disabled:opacity-50 min-h-[40px]">
-                      Withdraw
+                      {t('settings.withdrawBtn')}
                     </button>
                   </div>
                 </div>
@@ -281,7 +303,7 @@ export default function Settings() {
               {walletTab === 'history' && (
                 <div className="space-y-2 max-h-40 overflow-y-auto">
                   {deposits.length === 0 && withdrawals.length === 0 ? (
-                    <p className="text-gray-500 text-xs text-center py-2">No transactions</p>
+                    <p className="text-gray-500 text-xs text-center py-2">{t('settings.noTransactions')}</p>
                   ) : (
                     <>
                       {deposits.slice(0, 5).map((d, i) => (

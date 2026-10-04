@@ -95,7 +95,10 @@ export function useAuth(required = true) {
 
   useEffect(() => {
     if (required && state.ready && !state.user) {
-      window.location.replace('/');
+      // Remember where the user was headed so the login form can send them
+      // there after setSession, instead of dumping them on '/'.
+      const here = window.location.pathname + window.location.search;
+      window.location.replace(here === '/' ? '/' : `/?next=${encodeURIComponent(here)}`);
     }
   }, [required, state.ready, state.user]);
 

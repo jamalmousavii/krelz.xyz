@@ -6,7 +6,7 @@ import Navbar from '../components/Navbar';
 import { useAuth, apiFetch } from '../utils/api';
 
 export default function Admin() {
-  const { lang } = useLanguage();
+  const { t, lang } = useLanguage();
   const [dashboard, setDashboard] = useState(null);
   const [users, setUsers] = useState([]);
   const [miners, setMiners] = useState([]);
@@ -16,38 +16,54 @@ export default function Admin() {
   const { ready, user } = useAuth();
   const isAdmin = !!user && user.role === 'admin';
   const [denied, setDenied] = useState(false);
+  // F15: these fetches used to fail into a permanent blank panel.
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const handle = (err) => {
     if (err && err.status === 403) setDenied(true);
+    else setLoadError(true);
   };
 
   const fetchDashboard = async () => {
     if (!isAdmin) return;
+    setLoading(true);
+    setLoadError(false);
     try {
       const data = await apiFetch('/api/admin/dashboard');
       if (data.success) setDashboard(data.dashboard);
     } catch (err) { handle(err); }
+    setLoading(false);
   };
 
   const fetchUsers = async () => {
+    setLoading(true);
+    setLoadError(false);
     try {
       const data = await apiFetch('/api/admin/users');
       if (data.success) setUsers(data.users);
     } catch (err) { handle(err); }
+    setLoading(false);
   };
 
   const fetchMiners = async () => {
+    setLoading(true);
+    setLoadError(false);
     try {
       const data = await apiFetch('/api/admin/miners');
       if (data.success) setMiners(data.miners);
     } catch (err) { handle(err); }
+    setLoading(false);
   };
 
   const fetchTasks = async () => {
+    setLoading(true);
+    setLoadError(false);
     try {
       const data = await apiFetch('/api/admin/tasks');
       if (data.success) setTasks(data.tasks);
     } catch (err) { handle(err); }
+    setLoading(false);
   };
 
   useEffect(() => { if (isAdmin) fetchDashboard(); }, [isAdmin]);
@@ -89,7 +105,18 @@ export default function Admin() {
           </div>
         )}
 
-        {isAdmin && tab === 'dashboard' && dashboard && (
+        {isAdmin && loading && (
+          <p className="text-gray-500 text-center py-10">{t('common.loading')}</p>
+        )}
+
+        {isAdmin && !loading && loadError && (
+          <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+            <span>{t('common.loadFailed')}</span>
+            <button onClick={switchTab.bind(null, tab)} className="font-bold underline min-h-[36px]">{t('common.retry')}</button>
+          </div>
+        )}
+
+        {isAdmin && !loading && !loadError && tab === 'dashboard' && dashboard && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white border border-sky-100 shadow-sm rounded-xl p-4 text-center">
               <div className="text-2xl font-bold text-emerald-600">{dashboard.miners.online}</div>
@@ -110,7 +137,7 @@ export default function Admin() {
           </div>
         )}
 
-        {isAdmin && tab === 'users' && (
+        {isAdmin && !loading && !loadError && tab === 'users' && (
           <div className="bg-white border border-sky-100 shadow-sm rounded-xl overflow-x-auto">
             <table className="w-full text-gray-700 text-sm">
               <thead><tr className="border-b border-sky-100 bg-sky-50">
@@ -135,7 +162,7 @@ export default function Admin() {
           </div>
         )}
 
-        {isAdmin && tab === 'miners' && (
+        {isAdmin && !loading && !loadError && tab === 'miners' && (
           <div className="grid md:grid-cols-2 gap-4">
             {miners.length === 0 && <p className="text-gray-400 text-center col-span-2 py-10">No miners</p>}
             {miners.map(m => (
@@ -154,7 +181,7 @@ export default function Admin() {
           </div>
         )}
 
-        {isAdmin && tab === 'tasks' && (
+        {isAdmin && !loading && !loadError && tab === 'tasks' && (
           <div className="bg-white border border-sky-100 shadow-sm rounded-xl overflow-x-auto">
             <table className="w-full text-gray-700 text-sm">
               <thead><tr className="border-b border-sky-100 bg-sky-50">
