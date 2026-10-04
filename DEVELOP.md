@@ -67,6 +67,7 @@ frontend/
 │   └── admin.js           # Admin panel
 ├── components/
 │   ├── Navbar.js          # Nav + auth dropdown + LanguageSwitcher
+│   ├── EarningsBreakdown.js # 5-way earnings breakdown (profile, /miners, /miner; v3.29.0)
 │   ├── Footer.js          # Global version footer (every page, v3.16.0)
 │   ├── GoogleLogin.js     # Google OAuth
 │   ├── ErrorBoundary.js   # Error boundary

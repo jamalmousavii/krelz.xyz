@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
+import EarningsBreakdown from '../components/EarningsBreakdown';
 import authHeaders from '../utils/auth';
 import { useAuth, clearSession } from '../utils/api';
 
@@ -296,31 +297,7 @@ export default function Profile() {
                   </div>
                 </div>
                 {myRank.breakdown && (
-                  <div className="mt-3 bg-gray-50 rounded-xl border border-gray-100 p-3">
-                    <div className="text-xs font-semibold text-gray-600 mb-1.5">🧾 {t('profile.breakdownTitle')}</div>
-                    <div className="flex flex-col gap-0.5 text-xs">
-                      <div className="flex justify-between text-sky-700">
-                        <span>🎟️ {t('profile.bdTokens')}</span>
-                        <span className="font-semibold">{Number(myRank.breakdown.tokens || 0).toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-gray-600">
-                        <span>👛 {t('profile.bdWallet')}</span>
-                        <span className="font-semibold">{Number(myRank.breakdown.wallet || 0).toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-amber-600">
-                        <span>⭐ {t('profile.bdPlus')}</span>
-                        <span className="font-semibold">{Number(myRank.breakdown.plus || 0).toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-emerald-600">
-                        <span>🚀 {t('profile.bdPro')}</span>
-                        <span className="font-semibold">{Number(myRank.breakdown.pro || 0).toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-violet-600">
-                        <span>👑 {t('profile.bdMax')}</span>
-                        <span className="font-semibold">{Number(myRank.breakdown.max || 0).toFixed(2)}</span>
-                      </div>
-                    </div>
-                  </div>
+                  <EarningsBreakdown breakdown={myRank.breakdown} className="mt-3" />
                 )}
               </>
             ) : (

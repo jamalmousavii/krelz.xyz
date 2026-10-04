@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.29.0] - 2026-10-03
+
+Plans and miner earnings made visible everywhere: a public pricing section on the homepage, an earnings card on `/miner`, and the 5-way breakdown on `/miners`.
+
+### Added
+- **Homepage pricing section** (`pages/index.js`, empty state only, `#plans` anchor): public `GET /api/plans` renders three tier cards (price, tokens/day, ≈$ value, active badge + Renew when logged in) plus the token-bundle quick-buy card — buy buttons reuse the existing invoice flow; guests get a sign-in hint. Hidden once a chat starts (the 402 wall and upsell banner already cover in-chat purchases).
+- **`/miner` earnings section**: "Your Earnings" card — flat **90%** of every paid message (wallet or token pot), free messages pay nothing, income depends on the payer's plan; a 5-source legend (🎟️ Token pot / 👛 Wallet / ⭐ Plus / 🚀 Pro / 👑 Max). Logged-in miners see their real numbers via `GET /api/leaderboard/mine`.
+- **`/miners` breakdown card**: the account-level 5-way earnings breakdown renders above the miner list (fetches `/api/leaderboard/mine`), linking to the Dashboard.
+- **Shared `components/EarningsBreakdown.js`**: the 5-row colored breakdown extracted from the profile rank card; now used by profile, `/miners` and `/miner`.
+- **Navbar `⭐ Plans` link** (desktop + mobile) → `/#plans`.
+
+### Changed
+- Profile rank card now renders the shared component (identical markup, no visual change).
+- New i18n keys (`home.pricing*`, `home.loginToBuy`, `nav.plans`, `miner.earnings*`) in en + fa; other languages fall back to en.
+
 ## [3.28.0] - 2026-10-03
 
 Three paid tiers (Plus/Pro/Max), prepaid token bundles, and a 5-way miner earnings breakdown — flat 90% share on every paid leg.

@@ -1,16 +1,33 @@
 import Head from 'next/head';
+import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
+import EarningsBreakdown from '../components/EarningsBreakdown';
+import authHeaders from '../utils/auth';
+import { useAuth } from '../utils/api';
 
-const CATEGORY_ICONS = { chat: '💬', code: '💻', vision: '👁️', embedding: '🔗' };
+const CATEGORY_ICONS = { chat: '💻', code: '💻', vision: '👁️', embedding: '🔗' };
+
+// v3.29.0 — the 5 earnings sources shown to prospective miners
+const EARNING_SOURCES = [
+  { emoji: '🎟️', label: 'profile.bdTokens', bg: 'bg-sky-50', border: 'border-sky-100', color: 'text-sky-700' },
+  { emoji: '👛', label: 'profile.bdWallet', bg: 'bg-gray-50', border: 'border-gray-100', color: 'text-gray-600' },
+  { emoji: '⭐', label: 'profile.bdPlus',   bg: 'bg-amber-50', border: 'border-amber-100', color: 'text-amber-600' },
+  { emoji: '🚀', label: 'profile.bdPro',    bg: 'bg-emerald-50', border: 'border-emerald-100', color: 'text-emerald-600' },
+  { emoji: '👑', label: 'profile.bdMax',    bg: 'bg-violet-50', border: 'border-violet-100', color: 'text-violet-600' },
+];
 
 export default function Miner() {
   const { t, lang } = useLanguage();
   const [models, setModels] = useState([]);
+  const [myRank, setMyRank] = useState(null); // v3.29.0 — real numbers when logged in
+
+  const { user } = useAuth();
 
   useEffect(() => { fetchModels(); }, []);
+  useEffect(() => { if (user) fetchRank(); }, [user]);
 
   const fetchModels = async () => {
     try {
@@ -18,6 +35,14 @@ export default function Miner() {
       const data = await res.json();
       if (data.success) setModels(data.models);
     } catch (err) { console.error('Failed to load models'); }
+  };
+
+  const fetchRank = async () => {
+    try {
+      const res = await fetch('/api/leaderboard/mine', { headers: authHeaders() });
+      const data = await res.json();
+      if (data.success && data.breakdown) setMyRank(data);
+    } catch (err) {}
   };
 
   const ubuntuCmd = 'wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-ubuntu.sh && bash install-ubuntu.sh';
@@ -149,7 +174,7 @@ export default function Miner() {
           </div>
 
           {/* How it works */}
-          <div className="bg-white border border-sky-100 shadow-sm rounded-xl p-5 md:p-8">
+          <div className="bg-white border border-sky-100 shadow-sm rounded-xl p-5 md:p-8 mb-6">
             <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-4">{t('miner.howItWorks')}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
@@ -175,6 +200,30 @@ export default function Miner() {
                 </ol>
               </div>
             </div>
+          </div>
+
+          {/* v3.29.0 — earnings: flat 90% of every paid message, by source */}
+          <div className="bg-white border border-emerald-100 shadow-sm rounded-xl p-5 md:p-8">
+            <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-2">💰 {t('miner.earningsTitle')}</h2>
+            <p className="text-emerald-700 font-semibold text-sm md:text-base mb-1">{t('miner.earningsShare')}</p>
+            <p className="text-gray-500 text-xs md:text-sm mb-4">{t('miner.earningsDesc')}</p>
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3 mb-4">
+              {EARNING_SOURCES.map(src => (
+                <div key={src.label} className={`${src.bg} border ${src.border} rounded-lg p-3`}>
+                  <div className={`${src.color} font-bold text-sm`}>{src.emoji} {t(src.label)}</div>
+                  <div className="text-gray-500 text-xs mt-0.5">{t('miner.earningsSourceHint')}</div>
+                </div>
+              ))}
+            </div>
+            {myRank?.breakdown ? (
+              <EarningsBreakdown breakdown={myRank.breakdown} />
+            ) : (
+              <p className="text-xs text-gray-400">
+                {user
+                  ? t('miner.earningsNoMiner')
+                  : <><Link href="/profile" className="text-sky-600 hover:text-sky-700">{t('miner.earningsLoginHint')}</Link></>}
+              </p>
+            )}
           </div>
         </div>
       </main>

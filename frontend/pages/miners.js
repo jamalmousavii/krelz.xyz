@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
+import EarningsBreakdown from '../components/EarningsBreakdown';
 import authHeaders from '../utils/auth';
 import { useAuth } from '../utils/api';
 
@@ -51,6 +52,7 @@ export default function Miners() {
   const [loading, setLoading] = useState(true);
   const [copiedInstall, setCopiedInstall] = useState(null);
   const [history, setHistory] = useState(null);
+  const [myRank, setMyRank] = useState(null); // v3.29.0 — account earnings breakdown
 
   const { ready, user } = useAuth();
 
@@ -58,6 +60,7 @@ export default function Miners() {
     if (user) {
       fetchMiners();
       fetchHistory();
+      fetchRank();
       if (!localStorage.getItem('krelz-guide-seen')) {
         setGuideForAdd(false);
         setShowGuideModal(true);
@@ -71,6 +74,15 @@ export default function Miners() {
       const res = await fetch('/api/miners/mine', { headers: authHeaders() });
       const data = await res.json();
       if (data.success) setMiners(data.miners || (data.miner ? [data.miner] : []));
+    } catch (err) {}
+  };
+
+  // v3.29.0 — account-level earnings breakdown (all miners, 5 sources)
+  const fetchRank = async () => {
+    try {
+      const res = await fetch('/api/leaderboard/mine', { headers: authHeaders() });
+      const data = await res.json();
+      if (data.success && data.breakdown) setMyRank(data);
     } catch (err) {}
   };
 
@@ -301,6 +313,20 @@ export default function Miners() {
             <a href="https://github.com/jamalmousavii/krelz.xyz" target="_blank" rel="noopener noreferrer" className="text-sky-600 hover:text-sky-700">⭐ {t('miner.github')}</a>
           </p>
         </div>
+
+        {/* v3.29.0 — account earnings breakdown (token pot / wallet / Plus / Pro / Max) */}
+        {myRank?.breakdown && (
+          <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-5 md:p-6 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-bold text-gray-800">💰 {t('miner.earningsTitle')}</h2>
+              <Link href="/profile" className="text-sm font-semibold text-sky-600 hover:text-sky-700 transition">
+                {t('profile.dashboard')} →
+              </Link>
+            </div>
+            <p className="text-xs text-gray-500 mb-3">{t('miner.earningsDesc')}</p>
+            <EarningsBreakdown breakdown={myRank.breakdown} />
+          </div>
+        )}
 
         <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-5 md:p-6">
           <div className="flex items-center justify-between mb-4">

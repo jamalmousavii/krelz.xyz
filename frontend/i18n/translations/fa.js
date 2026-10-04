@@ -2,6 +2,7 @@ const fa = {
   nav: {
     explorer: 'اکسپلورر',
     miner: 'ماینر',
+    plans: 'پلن‌ها',
     chat: 'چت',
     connectWallet: 'اتصال کیف پول',
     back: 'بازگشت',
@@ -45,7 +46,11 @@ const fa = {
     startChat: 'شروع چت',
     footer: 'تمامی حقوق محفوظ است.',
     installMetaMask: 'لطفاً MetaMask را نصب کنید',
-    version: 'v3.28.0',
+    pricingTitle: 'پلن‌ها و قیمت‌ها',
+    freeNote: 'پلن رایگان: ۲,۰۰۰,۰۰۰ توکن در روز برای همه — بدون نیاز به کارت.',
+    pricingSub: 'پرداخت با ارز دیجیتال. پلن‌ها ۳۰ روزه‌اند؛ بستهٔ توکن هرگز منقضی نمی‌شود.',
+    loginToBuy: 'برای خرید ابتدا وارد شوید (ورود در بالای صفحه).',
+    version: 'v3.29.0',
   },
   footer: {
     sentence: '© ۲۰۲۶ شبکه کرلز — پلتفرم استنتاج LLM غیرمتمرکز، نسخه {version}. تمامی حقوق محفوظ است.',
@@ -146,6 +151,12 @@ const fa = {
     uninstallRedhat: 'آنینستال RedHat / Fedora',
     github: 'مشاهده در GitHub',
     viewGuide: 'راهنمای کامل در GitHub',
+    earningsTitle: 'درآمد شما',
+    earningsShare: '۹۰٪ هر پیام پولی که ماینر شما سرویس می‌دهد، متعلق به شماست.',
+    earningsDesc: 'پیام‌های پولی از کیف‌پول یا بستهٔ توکن کاربر می‌آیند؛ پیام‌های رایگان درآمدی ندارند. مبلغ درآمد هر منبع به پلن خریدار بستگی دارد.',
+    earningsSourceHint: 'سهم شما: ۹۰٪',
+    earningsNoMiner: 'برای شروع درآمد و دیدن اعداد واقعی، یک ماینر اضافه کنید.',
+    earningsLoginHint: 'برای دیدن جزئیات درآمد وارد شوید ←',
   },
   explorer: {
     title: 'اکسپلورر - Krelz Network',

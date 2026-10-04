@@ -2,6 +2,7 @@ const en = {
   nav: {
     explorer: 'Explorer',
     miner: 'Miner',
+    plans: 'Plans',
     chat: 'Chat',
     connectWallet: 'Connect Wallet',
     back: 'Back',
@@ -45,7 +46,11 @@ const en = {
     startChat: 'Start Chat',
     footer: 'All rights reserved.',
     installMetaMask: 'Please install MetaMask',
-    version: 'v3.28.0',
+    pricingTitle: 'Plans & Pricing',
+    freeNote: 'Free plan: 2,000,000 tokens/day for everyone — no card needed.',
+    pricingSub: 'Paid with crypto. Plans last 30 days; token bundles never expire.',
+    loginToBuy: 'Sign in first to buy (Login at the top).',
+    version: 'v3.29.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — Decentralized LLM inference platform, version {version}. All rights reserved.',
@@ -146,6 +151,12 @@ const en = {
     uninstallRedhat: 'RedHat / Fedora uninstall',
     github: 'View on GitHub',
     viewGuide: 'Full guide on GitHub',
+    earningsTitle: 'Your Earnings',
+    earningsShare: 'You keep 90% of every paid message your miner serves.',
+    earningsDesc: 'Paid messages come from the user\'s wallet or token bundle; free messages pay nothing. What you earn per source depends on the payer\'s plan.',
+    earningsSourceHint: 'Your share: 90%',
+    earningsNoMiner: 'Add a miner to start earning and see your real numbers here.',
+    earningsLoginHint: 'Sign in to see your earnings breakdown →',
   },
   explorer: {
     title: 'Explorer - Krelz Network',

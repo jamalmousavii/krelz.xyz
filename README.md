@@ -164,7 +164,8 @@ krelz.xyz/
 │   │   ├── leaderboard.js     # Top miners/users
 │   │   └── admin.js           # Admin panel
 │   ├── components/
-│   │   ├── Navbar.js          # Nav (Miner, Leaderboard) + auth + lang dropdown
+│   │   ├── Navbar.js          # Nav (Miner, ⭐ Plans, Leaderboard) + auth + lang dropdown
+│   │   ├── EarningsBreakdown.js # 5-way miner earnings breakdown (profile, /miners, /miner)
 │   │   ├── Footer.js          # Global version footer (v3.16.0)
 │   │   ├── GoogleLogin.js     # Google OAuth
 │   │   ├── ErrorBoundary.js   # Error boundary
