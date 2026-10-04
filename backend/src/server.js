@@ -7,6 +7,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
+const jwt = require('jsonwebtoken');
 const pinoHttp = require('pino-http');
 const WSServer = require('./ws');
 const { cacheMiddleware, getCacheStats, closeCache } = require('./cache');
@@ -67,11 +68,15 @@ const wsServerHttp = http.createServer();
 const wsServer = new WSServer(wsServerHttp);
 app.set('wsServer', wsServer);
 
+// B13: localhost origins are a DEV convenience only — shipping them in prod
+// lets any local page on the box (or a crafted Host) ride the CORS allow-list.
 const allowedOrigins = [
   'https://krelz.xyz',
-  'http://localhost:3000',
-  'http://localhost:3002',
+  'https://www.krelz.xyz',
 ];
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.push('http://localhost:3000', 'http://localhost:3002');
+}
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin || allowedOrigins.includes(origin)) cb(null, true);
@@ -98,13 +103,21 @@ app.use(helmet({
 app.use(compression());
 app.use(httpLogger);
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '8mb' }));
+// B2: capture the exact bytes NowPayments signed (verify → called before
+// JSON.parse) so IPN signature checks don't depend on re-serialisation.
+app.use(express.json({
+  limit: '8mb',
+  verify: (req, res, buf) => { req.rawBody = buf; },
+}));
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
+  // B13: IPN retries are payment-critical bursts — never let the shared
+  // per-IP budget 429 a webhook (a dropped finished-IPN = unpaid invoice).
+  skip: (req) => (req.originalUrl || req.url) === '/api/payments/deposit/webhook',
   message: { error: 'Too many requests, please try again later.' },
 });
 app.use('/api/', globalLimiter);
@@ -137,7 +150,19 @@ app.use('/api/chat', chatLimiter);
 const guestChatLimiter = rateLimit({
   windowMs: 1 * 60 * 1000,
   max: 6,
-  skip: (req) => !!req.headers.authorization,
+  // B3: skip ONLY for a JWT that actually verifies — a bare
+  // `Authorization: anything` header previously bypassed the guest budget
+  // entirely (30 req/min instead of 6) without proving anything.
+  skip: (req) => {
+    const header = req.headers.authorization;
+    if (!header || !header.startsWith('Bearer ')) return false;
+    try {
+      jwt.verify(header.split(' ')[1], process.env.JWT_SECRET, { algorithms: ['HS256'] });
+      return true;
+    } catch (err) {
+      return false;
+    }
+  },
   message: { error: 'Guest chat rate limit exceeded. Sign in for a higher limit.' },
 });
 app.use('/api/chat', guestChatLimiter);

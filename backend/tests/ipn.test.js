@@ -47,3 +47,29 @@ describe('NowPayments IPN verification (fail closed)', () => {
     expect(nowpayments.verifyIPN(payload, 'deadbeef')).toBe(false);
   });
 });
+
+describe('rawBody verification (B2, v3.31.0)', () => {
+  const raw = Buffer.from(JSON.stringify(payload));
+
+  it('accepts a signature computed over the exact raw bytes', () => {
+    const sig = crypto.createHmac('sha512', SECRET).update(raw).digest('hex');
+    expect(nowpayments.verifyIPN(payload, sig, raw)).toBe(true);
+  });
+
+  it('still accepts the sorted-JSON canonical form when raw bytes differ', () => {
+    // Sender signed the canonical body; ours arrived pretty-printed.
+    const spaced = Buffer.from(JSON.stringify(payload, null, 2));
+    expect(nowpayments.verifyIPN(payload, sign(payload), spaced)).toBe(true);
+  });
+
+  it('rejects tampered raw bytes against a valid signature', () => {
+    const sig = crypto.createHmac('sha512', SECRET).update(raw).digest('hex');
+    const tampered = Buffer.from(JSON.stringify({ ...payload, price_amount: 999999 }));
+    expect(nowpayments.verifyIPN({ ...payload, price_amount: 999999 }, sig, tampered)).toBe(false);
+  });
+
+  it('accepts a string rawBody as well as a Buffer', () => {
+    const sig = crypto.createHmac('sha512', SECRET).update(raw).digest('hex');
+    expect(nowpayments.verifyIPN(payload, sig, raw.toString())).toBe(true);
+  });
+});

@@ -18,6 +18,10 @@ const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 // 'llama3:8b' — which exists in no catalog — and 'llama3.1:8b').
 const DEFAULT_MODEL = 'llama3.1:8b';
 const MINER_REVENUE_SHARE = 0.9;
+// H1: hard per-task output-token bound. tokens_used comes from the miner (it
+// both drives the user charge and the 90% miner share), so an inflated or
+// NaN count must fail the task instead of minting money.
+const MAX_TASK_TOKENS = 65536;
 
 const getModelPricing = (modelId) => {
   const found = MODELS.find(m => m.id === modelId);
@@ -335,11 +339,19 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
           logger.warn({ taskId, minerId, err: result.error }, 'Miner task failed, falling back');
           lastMinerError = result.error;
         } else {
-          response = result.response;
-          tokensUsed = result.tokens_used || 0;
-          servedByMiner = true;
-          const pricing = getModelPricing(model || DEFAULT_MODEL);
-          cost = (tokensUsed * pricing.outputPrice) / 1000000;
+          const reported = Number(result.tokens_used);
+          if (!Number.isFinite(reported) || reported < 0 || reported > MAX_TASK_TOKENS) {
+            // Out-of-bounds report: reject the miner result (falls through to
+            // the local fallback) — never charge the user or pay the miner.
+            logger.warn({ taskId, minerId, tokens_used: result.tokens_used }, 'Rejecting miner result: tokens_used out of bounds');
+            lastMinerError = 'tokens_used out of bounds';
+          } else {
+            response = result.response;
+            tokensUsed = reported;
+            servedByMiner = true;
+            const pricing = getModelPricing(model || DEFAULT_MODEL);
+            cost = (tokensUsed * pricing.outputPrice) / 1000000;
+          }
         }
 
       } catch (wsError) {
@@ -396,7 +408,7 @@ router.post('/', optionalAuth, chatRules, validate, async (req, res) => {
         response = media
           ? (ollamaResponse.data.message && ollamaResponse.data.message.content)
           : ollamaResponse.data.response;
-        tokensUsed = ollamaResponse.data.eval_count || 0;
+        tokensUsed = Math.min(Math.max(Number(ollamaResponse.data.eval_count) || 0, 0), MAX_TASK_TOKENS);
         const pricing = getModelPricing(model || DEFAULT_MODEL);
         cost = (tokensUsed * pricing.outputPrice) / 1000000;
 

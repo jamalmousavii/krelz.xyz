@@ -13,8 +13,43 @@ if (JWT_SECRET.length < 32) {
 
 const JWT_OPTIONS = { algorithms: ['HS256'] };
 
+// H3: token_version — bumped on password mutations (set/change/reset), so every
+// JWT minted before the change stops verifying. Checked against the DB with a
+// short per-user cache so the common path costs one indexed read per 10s.
+const tokenVersionCache = new Map(); // userId -> { version, expiresAt }
+const TOKEN_VERSION_CACHE_MS = 10 * 1000;
+
+async function currentTokenVersion(userId) {
+  if (!userId) return null;
+  const cached = tokenVersionCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) return cached.version;
+  try {
+    const result = await pool.query('SELECT token_version FROM users WHERE id = $1', [userId]);
+    if (result.rows.length === 0) return null;
+    const version = Number(result.rows[0].token_version) || 0;
+    tokenVersionCache.set(userId, { version, expiresAt: Date.now() + TOKEN_VERSION_CACHE_MS });
+    return version;
+  } catch (err) {
+    // Fail OPEN on lookup errors: with Postgres down every real endpoint is
+    // already dead, and a transient blip must not mass-logout every user.
+    // (auth.security.test.js runs with no DB — this path keeps it green.)
+    logger.warn({ err }, 'token_version lookup failed — allowing request');
+    return null; // null = unverified → caller allows
+  }
+}
+
+function invalidateTokenVersion(userId) {
+  tokenVersionCache.delete(userId);
+}
+
+async function tokenVersionMatches(decoded) {
+  const want = Number(decoded.token_version) || 0; // pre-H3 tokens = 0
+  const current = await currentTokenVersion(decoded.id);
+  return current === null || current === want;
+}
+
 // Verify JWT token
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Access denied. No token provided.' });
@@ -23,6 +58,9 @@ function authenticate(req, res, next) {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET, JWT_OPTIONS);
+    if (!(await tokenVersionMatches(decoded))) {
+      return res.status(401).json({ error: 'Session expired. Please log in again.' });
+    }
     req.user = decoded;
     next();
   } catch (err) {
@@ -31,13 +69,17 @@ function authenticate(req, res, next) {
 }
 
 // Optional auth (doesn't fail if no token)
-function optionalAuth(req, res, next) {
+async function optionalAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.split(' ')[1];
     try {
       const decoded = jwt.verify(token, JWT_SECRET, JWT_OPTIONS);
-      req.user = decoded;
+      // A stale (post-password-change) token degrades to anonymous instead of
+      // authenticating — same rule as authenticate, softer consequence.
+      if (await tokenVersionMatches(decoded)) {
+        req.user = decoded;
+      }
     } catch (err) { /* treat as anonymous */ }
   }
   next();
@@ -79,4 +121,4 @@ function requireAdmin(req, res, next) {
     .catch(() => res.status(500).json({ error: 'Server error' }));
 }
 
-module.exports = { authenticate, optionalAuth, requireAdmin };
+module.exports = { authenticate, optionalAuth, requireAdmin, invalidateTokenVersion };

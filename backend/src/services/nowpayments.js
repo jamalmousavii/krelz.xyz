@@ -70,13 +70,31 @@ class NowPaymentsService {
 
   // Verify IPN callback signature.
   // Fails closed when the secret is missing and compares in constant time.
-  verifyIPN(payload, signature) {
+  verifyIPN(payload, signature, rawBody) {
     if (!IPN_SECRET) {
       logger.error('IPN rejected: NOWPAYMENTS_IPN_SECRET is not configured');
       return false;
     }
     if (!signature || typeof signature !== 'string') return false;
 
+    const hmacMatches = (data) => {
+      const hmac = crypto.createHmac('sha512', IPN_SECRET);
+      hmac.update(data);
+      const expected = Buffer.from(hmac.digest('hex'), 'utf8');
+      const actual = Buffer.from(signature, 'utf8');
+      if (expected.length !== actual.length) return false;
+      return crypto.timingSafeEqual(expected, actual);
+    };
+
+    // B2 (primary): the exact bytes the sender signed — immune to any
+    // difference between their serialisation and ours.
+    if (rawBody) {
+      const raw = Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(String(rawBody));
+      if (hmacMatches(raw)) return true;
+    }
+
+    // Fallback: canonical sorted JSON (the NowPayments v1 scheme) — keeps
+    // bodies whose raw bytes differ only in key order/whitespace working.
     const sortedPayload = Object.keys(payload)
       .sort()
       .reduce((acc, key) => {
@@ -84,14 +102,7 @@ class NowPaymentsService {
         return acc;
       }, {});
 
-    const jsonString = JSON.stringify(sortedPayload);
-    const hmac = crypto.createHmac('sha512', IPN_SECRET);
-    hmac.update(jsonString);
-    const expected = Buffer.from(hmac.digest('hex'), 'utf8');
-    const actual = Buffer.from(signature, 'utf8');
-
-    if (expected.length !== actual.length) return false;
-    return crypto.timingSafeEqual(expected, actual);
+    return hmacMatches(JSON.stringify(sortedPayload));
   }
 
   // Process IPN callback — always credit USD (price_amount)

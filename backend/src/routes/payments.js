@@ -78,7 +78,10 @@ router.post('/deposit/webhook', async (req, res) => {
     const signature = req.headers['x-nowpayments-sig'];
     const payload = req.body;
 
-    if (!nowpayments.verifyIPN(payload, signature)) {
+    // B2: verify against the exact bytes that were signed (captured pre-parse
+    // by express.json's verify hook), falling back to the sorted-JSON
+    // canonicalisation inside verifyIPN.
+    if (!nowpayments.verifyIPN(payload, signature, req.rawBody)) {
       logger.error('Rejected IPN: invalid signature');
       return res.status(401).json({ error: 'Invalid signature' });
     }
@@ -291,60 +294,127 @@ router.post('/withdraw', authenticate, async (req, res) => {
     const fee = nowpayments.getWithdrawFee(amount);
     const totalDeduction = amount + fee;
 
-    // Deduct USD atomically (amount + fee, sender pays fee).
-    // The `available >= $1` guard makes check+debit a single statement, so two
-    // concurrent withdrawals can never both succeed against the same balance.
-    const deducted = await pool.query(
-      `UPDATE user_coin_balances
-          SET available = available - $1, total_spent = total_spent + $1
-        WHERE user_id = $2 AND coin = 'USD' AND available >= $1
-        RETURNING available`,
-      [totalDeduction, userId]
-    );
-
-    if (deducted.rows.length === 0) {
-      const balanceResult = await pool.query(
-        "SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = 'USD'",
-        [userId]
-      );
-      const available = parseFloat(balanceResult.rows[0]?.available || 0);
-      return res.status(400).json({
-        error: `Insufficient balance. Need $${totalDeduction.toFixed(2)} ($${amount.toFixed(2)} + $${fee.toFixed(2)} fee), have $${available.toFixed(2)}`
-      });
-    }
-
-    // Create payout in USDT TRC-20 (1 USD ≈ 1 USDT)
-    const usdtAmount = amount;
-    const payoutResult = await nowpayments.createPayout({
-      address: toAddress,
-      amount: usdtAmount,
-      coin: 'USDT',
-    });
-
-    await pool.query(
-      `INSERT INTO coin_withdrawals (user_id, coin, amount, to_address, tx_hash, fee, status)
-       VALUES ($1, 'USD', $2, $3, $4, $5, $6)`,
-      [userId, amount, toAddress, payoutResult.txHash || null, fee, payoutResult.success ? 'completed' : 'failed']
-    );
-
-    if (!payoutResult.success) {
-      // Refund
-      await pool.query(
+    // H2, phase A: debit + pending withdrawal row + pending ledger row commit
+    // together in one transaction. The `available >= $1` guard keeps two
+    // concurrent withdrawals from overdrawing; if ANY statement fails the whole
+    // txn rolls back, so money never moves without a record.
+    const desc = `USD withdrawal (USDT TRC-20) to ${toAddress.slice(0, 10)}...`;
+    const client = await pool.connect();
+    let withdrawalId;
+    let ledgerId;
+    try {
+      await client.query('BEGIN');
+      const deducted = await client.query(
         `UPDATE user_coin_balances
-         SET available = available + $1, total_spent = total_spent - $1
-         WHERE user_id = $2 AND coin = 'USD'`,
+            SET available = available - $1, total_spent = total_spent + $1
+          WHERE user_id = $2 AND coin = 'USD' AND available >= $1
+          RETURNING available`,
         [totalDeduction, userId]
       );
-      return res.status(500).json({ error: payoutResult.error || 'Payout failed' });
+      if (deducted.rows.length === 0) {
+        await client.query('ROLLBACK');
+        const balanceResult = await pool.query(
+          "SELECT available FROM user_coin_balances WHERE user_id = $1 AND coin = 'USD'",
+          [userId]
+        );
+        const available = parseFloat(balanceResult.rows[0]?.available || 0);
+        return res.status(400).json({
+          error: `Insufficient balance. Need $${totalDeduction.toFixed(2)} ($${amount.toFixed(2)} + $${fee.toFixed(2)} fee), have $${available.toFixed(2)}`
+        });
+      }
+      const pending = await client.query(
+        `INSERT INTO coin_withdrawals (user_id, coin, amount, to_address, tx_hash, fee, status)
+         VALUES ($1, 'USD', $2, $3, NULL, $4, 'pending')
+         RETURNING id`,
+        [userId, amount, toAddress, fee]
+      );
+      withdrawalId = pending.rows[0].id;
+      const ledger = await client.query(
+        `INSERT INTO transactions (from_address, to_address, amount, type, description, status)
+         VALUES ($1, 'withdrawal', $2, 'usd_withdrawal', $3, 'pending')
+         RETURNING id`,
+        [userId, amount, desc]
+      );
+      ledgerId = ledger.rows[0].id;
+      await client.query('COMMIT');
+    } catch (phaseAErr) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw phaseAErr;
+    } finally {
+      client.release();
     }
 
-    await pool.query(
-      `INSERT INTO transactions (from_address, to_address, amount, type, description, status)
-       VALUES ($1, 'withdrawal', $2, 'usd_withdrawal', $3, 'completed')`,
-      [userId, amount, `USD withdrawal (USDT TRC-20) to ${toAddress.slice(0, 10)}...`]
-    );
+    // H2, phase B: the external payout call — deliberately OUTSIDE any DB
+    // transaction (an HTTP call inside a txn would hold locks for seconds and
+    // its throw previously ate the debit: money vanished with no row at all).
+    let payoutResult;
+    try {
+      payoutResult = await nowpayments.createPayout({
+        address: toAddress,
+        amount,
+        coin: 'USDT',
+      });
+    } catch (payoutErr) {
+      payoutResult = { success: false, error: payoutErr.message };
+    }
+
+    // H2, phase C: settle atomically — mark the rows, or refund the debit.
+    try {
+      const sclient = await pool.connect();
+      try {
+        await sclient.query('BEGIN');
+        if (payoutResult.success) {
+          await sclient.query(
+            "UPDATE coin_withdrawals SET status = 'completed', tx_hash = $1 WHERE id = $2",
+            [payoutResult.txHash || null, withdrawalId]
+          );
+          await sclient.query("UPDATE transactions SET status = 'completed' WHERE id = $1", [ledgerId]);
+        } else {
+          await sclient.query(
+            `UPDATE user_coin_balances
+                SET available = available + $1, total_spent = total_spent - $1
+              WHERE user_id = $2 AND coin = 'USD'`,
+            [totalDeduction, userId]
+          );
+          await sclient.query("UPDATE coin_withdrawals SET status = 'failed' WHERE id = $1", [withdrawalId]);
+          await sclient.query("UPDATE transactions SET status = 'refunded', description = $1 WHERE id = $2",
+            [`${desc} — refunded (payout failed)`, ledgerId]);
+        }
+        await sclient.query('COMMIT');
+      } catch (settleErr) {
+        await sclient.query('ROLLBACK').catch(() => {});
+        throw settleErr;
+      } finally {
+        sclient.release();
+      }
+    } catch (settleErr) {
+      if (payoutResult.success) {
+        // Payout went out but bookkeeping failed: DO NOT auto-refund (that
+        // would double-pay) — surface for manual reconciliation instead.
+        logger.error({ err: settleErr, withdrawalId, ledgerId }, 'CRITICAL: payout sent but settlement failed — manual reconciliation required');
+        return res.status(500).json({ error: 'Payout sent but bookkeeping failed — contact support with your timestamp' });
+      }
+      // Refund-on-throw: the debit already committed, so the refund MUST land
+      // even though settlement itself failed.
+      logger.error({ err: settleErr, withdrawalId }, 'Withdrawal settlement failed — refunding debit');
+      await pool.query(
+        `UPDATE user_coin_balances
+            SET available = available + $1, total_spent = total_spent - $1
+          WHERE user_id = $2 AND coin = 'USD'`,
+        [totalDeduction, userId]
+      ).catch((refundErr) => logger.error({ err: refundErr, userId, totalDeduction }, 'REFUND FAILED — manual intervention required'));
+      await pool.query("UPDATE coin_withdrawals SET status = 'failed' WHERE id = $1", [withdrawalId]).catch(() => {});
+      await pool.query("UPDATE transactions SET status = 'refunded' WHERE id = $1", [ledgerId]).catch(() => {});
+      return res.status(500).json({ error: payoutResult.error || 'Payout failed — you have been refunded' });
+    }
 
     invalidateCache('/api/payments/balance');
+
+    if (!payoutResult.success) {
+      return res.status(500).json({
+        error: `Payout failed${payoutResult.error ? `: ${payoutResult.error}` : ''} — you have been refunded`,
+      });
+    }
 
     res.json({
       success: true,

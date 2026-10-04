@@ -168,15 +168,18 @@ class WSServer {
 
     if (this.authRateLimited(ws)) return;
 
-    // Must have either wallet_address or miner_token
-    if (!wallet_address && !miner_token) {
+    // v3.31.0 (C1): miner_token is the ONLY miner identity. The old
+    // "wallet_address or miner_token" check let anyone who knew (or guessed)
+    // a wallet address authenticate as that miner — and auto-registered a row
+    // when none existed — hijacking dispatches and earning share for a stranger.
+    if (!miner_token) {
       this.recordAuthFailure(ws);
-      ws.send(JSON.stringify({ type: 'auth_error', message: 'wallet_address or miner_token required' }));
+      ws.send(JSON.stringify({ type: 'auth_error', message: 'miner_token required (legacy wallet auth removed in v3.31.0 — get your token from the dashboard)' }));
       return;
     }
 
     // Token hygiene: reject malformed tokens before touching the DB
-    if (miner_token && !TOKEN_RE.test(miner_token)) {
+    if (!TOKEN_RE.test(miner_token)) {
       this.recordAuthFailure(ws);
       ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid miner token' }));
       return;
@@ -235,20 +238,10 @@ class WSServer {
           minerId = result.rows[0].id;
         }
       }
-    } else {
-      // Legacy: wallet_address only
-      result = await pool.query('SELECT id, status FROM miners WHERE wallet_address = $1', [wallet_address]);
-      if (result.rows.length === 0) {
-        result = await pool.query(
-          "INSERT INTO miners (wallet_address, status) VALUES ($1, 'online') RETURNING id",
-          [wallet_address]
-        );
-      } else if (result.rows[0].status === 'removed') {
-        ws.send(JSON.stringify({ type: 'auth_error', message: 'This miner was removed. Re-add it from your profile to use it again.' }));
-        return;
-      }
-      minerId = result.rows[0].id;
     }
+    // v3.31.0 (C1): the legacy wallet_address-only branch was removed here —
+    // it trusted a client-supplied wallet with no proof and INSERTed miner
+    // rows for it. miner_token (checked above) is now mandatory.
 
     // If this miner already has a live entry (stale/zombie connection),
     // close the old socket first so the map always points at the newest

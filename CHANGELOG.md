@@ -1,5 +1,27 @@
 # Changelog
 
+## [3.31.0] - 2026-10-04
+
+Phase 1 of the full-project audit: security & money (backend).
+
+### Security
+- **WS auth (C1)** — removed the legacy `wallet_address`-only WebSocket auth: anyone who knew (or guessed) a wallet address could authenticate as that miner — or auto-register a new miner row for it — hijacking task dispatch and earning share for a stranger. `miner_token` is now the only identity; wallet-only clients get an `auth_error` with a pointer to the dashboard token (pre-v3.13 wallet miners must reconnect with a `kz_` token).
+- **Token-usage clamp (H1)** — `tokens_used` from miners (and Ollama) is validated against a hard per-task bound (65,536 output tokens, NaN/negative rejected): an out-of-bounds report fails the task into the local fallback instead of inflating the user charge **and** the 90% miner share.
+- **Withdrawal integrity (H2)** — `/api/payments/withdraw` is now three explicit phases: (A) debit + pending withdrawal row + pending ledger row commit in one transaction (no more money-without-a-record window), (B) the external payout call outside any DB transaction with its throw caught, (C) settlement in one transaction that marks `completed` **or refunds the debit** and marks `failed`/`refunded`. A settlement failure after a *successful* payout surfaces for manual reconciliation rather than double-paying. Failed payouts now tell the caller they were refunded.
+- **JWT invalidation (H3)** — new `users.token_version` column (migration) is embedded in every JWT at login/register/Google; `authenticate`/`optionalAuth` verify it against the DB (10s per-user cache, fail-open only on lookup error). `set-password`, `change-password` and `reset-password` bump it — every outstanding session dies on a password mutation — and all three now clear any pending `reset_token` (previously `change`/`set-password` left it alive).
+- **IPN raw body (B2)** — `express.json` captures the exact signed bytes (`verify` hook); `NowPayments.verifyIPN` HMAC-checks `rawBody` first and keeps the sorted-JSON canonicalisation as fallback — signature checks no longer depend on re-serialisation.
+- **Guest limiter (B3)** — the guest-chat limiter skip now requires a JWT that *verifies*, instead of any `Authorization` header (a garbage bearer previously upgraded 6/min → 30/min without proving anything).
+- **CORS & IPN limiter (B13)** — localhost origins dropped from the prod CORS allow-list (dev-only now; `https://www.krelz.xyz` added for the pending CNAME); `POST /api/payments/deposit/webhook` is exempt from the global limiter so IPN retries can never be 429'd.
+- **Google login (B8)** — `email_verified` is now required (unverified Google emails no longer map onto or create accounts), the row is updated **by primary key** instead of re-keying `WHERE email`, the create path is race-safe (`ON CONFLICT DO NOTHING` + adopt), the response never carries a password hash (`SELECT *` replaced with explicit columns), and the minted JWT carries `token_version`.
+
+### Tests
+- New `tests/phase1.security.test.js` (14 tests): WS wallet-auth rejection (pre-DB, no statements run), `token_version` accept/reject/mismatch/downgrade, IPN rawBody wiring + forged-signature 401, withdrawal insufficient/refund/success/throw-refund — all with mocked pool + NowPayments.
+- `tests/ipn.test.js` +4 rawBody cases (bytes-signed, canonical fallback, tampered raw, string body). **141/141 green** (was 123).
+
+### Operational notes
+- Run `npm run migrate` after deploy (adds `users.token_version`).
+- Password changes now log users out of all sessions (frontend already handles 401 → clean logout).
+
 ## [3.30.1] - 2026-10-04
 
 Docs release: README and DEVELOP synced through v3.30.0; no code changes.

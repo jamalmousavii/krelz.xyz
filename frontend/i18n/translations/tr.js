@@ -40,7 +40,7 @@ const tr = {
     startChat: 'Sohbeti Başlat',
     footer: 'Tüm hakları saklıdır.',
     installMetaMask: 'Lütfen MetaMask yükleyin',
-    version: 'v3.30.1',
+    version: 'v3.31.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — merkezi olmayan LLM çıkarım platformu, sürüm {version}. Tüm hakları saklıdır.',

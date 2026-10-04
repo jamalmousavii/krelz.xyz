@@ -7,6 +7,7 @@ const pool = require('../database/pool');
 const { OAuth2Client } = require('google-auth-library');
 const { validate, registerRules, loginRules, googleAuthRules } = require('../middleware/validate');
 const { isEmailConfigured, sendPasswordResetEmail } = require('../services/email');
+const { invalidateTokenVersion } = require('../middleware/auth');
 const { logger } = require('../logger');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -28,7 +29,7 @@ router.post('/register', registerRules, validate, async (req, res) => {
     const result = await pool.query(
       `INSERT INTO users (email, password, role) VALUES ($1, $2, 'user')
        ON CONFLICT (email) DO NOTHING
-       RETURNING id, email, role`,
+       RETURNING id, email, role, token_version`,
       [email, hashedPassword]
     );
 
@@ -43,7 +44,7 @@ router.post('/register', registerRules, validate, async (req, res) => {
     );
 
     const token = jwt.sign(
-      { id: result.rows[0].id, email, role: result.rows[0].role },
+      { id: result.rows[0].id, email, role: result.rows[0].role, token_version: result.rows[0].token_version || 0 },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -82,7 +83,7 @@ router.post('/login', loginRules, validate, async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
+      { id: user.id, email: user.email, role: user.role, token_version: user.token_version || 0 },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -112,40 +113,65 @@ router.post('/google', googleAuthRules, validate, async (req, res) => {
     const payload = ticket.getPayload();
     const { sub: googleId, email, name, picture } = payload;
 
-    let result = await pool.query(
-      'SELECT * FROM users WHERE google_id = $1 OR email = $2',
+    // B8: email is this route's identity key (lookup + INSERT) — an unverified
+    // Google email must never map onto (or create) an account here.
+    if (!payload.email_verified || !email) {
+      return res.status(401).json({ error: 'Google account email is not verified' });
+    }
+
+    const SAFE_COLS = 'id, email, name, avatar, role, token_version';
+    let userRow;
+    const found = await pool.query(
+      `SELECT ${SAFE_COLS} FROM users WHERE google_id = $1 OR email = $2`,
       [googleId, email]
     );
 
-    if (result.rows.length === 0) {
-      result = await pool.query(
+    if (found.rows.length > 0) {
+      userRow = found.rows[0];
+      // B8: update by PRIMARY KEY — the old `WHERE email` re-keyed the row you
+      // had just resolved via google_id (and raced with email changes).
+      const updated = await pool.query(
+        `UPDATE users
+            SET google_id = COALESCE(google_id, $1),
+                name = COALESCE(name, $2),
+                avatar = COALESCE(avatar, $3),
+                updated_at = CURRENT_TIMESTAMP
+          WHERE id = $4
+          RETURNING ${SAFE_COLS}`,
+        [googleId, name, picture, userRow.id]
+      );
+      userRow = updated.rows[0] || userRow;
+    } else {
+      const inserted = await pool.query(
         `INSERT INTO users (email, name, avatar, google_id, role)
          VALUES ($1, $2, $3, $4, 'user')
-         RETURNING id, email, name, avatar, role`,
+         ON CONFLICT (email) DO NOTHING
+         RETURNING ${SAFE_COLS}`,
         [email, name, picture, googleId]
       );
-      // Create balance for new user
+      if (inserted.rows.length > 0) {
+        userRow = inserted.rows[0];
+      } else {
+        // Lost the create race — adopt the row another request just inserted.
+        const race = await pool.query(
+          `SELECT ${SAFE_COLS} FROM users WHERE email = $1 OR google_id = $2`,
+          [email, googleId]
+        );
+        if (race.rows.length === 0) {
+          return res.status(409).json({ error: 'Account conflict. Try again.' });
+        }
+        userRow = race.rows[0];
+      }
       await pool.query(
         'INSERT INTO user_balances (user_id) VALUES ($1) ON CONFLICT DO NOTHING',
-        [result.rows[0].id]
-      );
-    } else {
-      result = await pool.query(
-        `UPDATE users
-         SET google_id = COALESCE(google_id, $1),
-             name = COALESCE(name, $2),
-             avatar = COALESCE(avatar, $3),
-             updated_at = CURRENT_TIMESTAMP
-         WHERE email = $4
-         RETURNING id, email, name, avatar, role`,
-        [googleId, name, picture, email]
+        [userRow.id]
       );
     }
 
-    const user = result.rows[0];
+    const user = userRow;
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
+      { id: user.id, email: user.email, role: user.role, token_version: user.token_version || 0 },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -197,7 +223,16 @@ router.post('/set-password', async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
-    await pool.query('UPDATE users SET password = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [hashedPassword, userId]);
+    // H3: setting a password clears any outstanding reset token and bumps
+    // token_version, so every previously issued JWT (incl. this one) dies.
+    await pool.query(
+      `UPDATE users
+          SET password = $1, reset_token = NULL, reset_token_expiry = NULL,
+              token_version = COALESCE(token_version, 0) + 1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2`,
+      [hashedPassword, userId]
+    );
+    invalidateTokenVersion(userId);
 
     res.json({ success: true, message: 'Password set successfully' });
 
@@ -256,7 +291,16 @@ router.post('/change-password', async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(new_password, 12);
-    await pool.query('UPDATE users SET password = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [hashedPassword, userId]);
+    // H3: password change = invalidate every outstanding session (and any
+    // pending reset link).
+    await pool.query(
+      `UPDATE users
+          SET password = $1, reset_token = NULL, reset_token_expiry = NULL,
+              token_version = COALESCE(token_version, 0) + 1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2`,
+      [hashedPassword, userId]
+    );
+    invalidateTokenVersion(userId);
 
     res.json({ success: true, message: 'Password changed successfully' });
 
@@ -365,10 +409,15 @@ router.post('/reset-password', async (req, res) => {
     const userId = userResult.rows[0].id;
     const hashedPassword = await bcrypt.hash(password, 12);
 
+    // H3: an email-reset takeover must kill every existing session too.
     await pool.query(
-      'UPDATE users SET password = $1, reset_token = NULL, reset_token_expiry = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      `UPDATE users
+          SET password = $1, reset_token = NULL, reset_token_expiry = NULL,
+              token_version = COALESCE(token_version, 0) + 1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2`,
       [hashedPassword, userId]
     );
+    invalidateTokenVersion(userId);
 
     res.json({ success: true, message: 'Password reset successfully' });
 

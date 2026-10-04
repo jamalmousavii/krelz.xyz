@@ -514,6 +514,15 @@ const migrate = async () => {
     await client.query('CREATE INDEX IF NOT EXISTS idx_users_miner_token ON users(miner_token)');
     console.log('✅ Miner token index created');
 
+    // === H3: JWT invalidation version — bumping it kills every outstanding session ===
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    console.log('✅ ستون token_version اضافه شد');
+
     // === Miner Resource Usage Columns ===
     await client.query(`
       DO $$ BEGIN
