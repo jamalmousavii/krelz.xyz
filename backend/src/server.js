@@ -186,9 +186,12 @@ app.get('/health', async (req, res) => {
   const cache = getCacheStats();
   let dbStatus = 'unknown';
   let dbOk = false;
+  let dbLatencyMs = null;
   try {
     const pool = require('./database/pool');
+    const startedAt = Date.now();
     await pool.query('SELECT 1');
+    dbLatencyMs = Date.now() - startedAt;
     dbStatus = 'connected';
     dbOk = true;
   } catch (e) {
@@ -196,13 +199,41 @@ app.get('/health', async (req, res) => {
     logger.error({ err: e }, 'Health check: Postgres unreachable');
   }
 
+  // B12: 'ok' while chat is actually unusable (Ollama down AND no miners
+  // online) lied to operators and dashboards. Probe both — Ollama with a
+  // 1s ceiling so health never hangs on it. Report degraded but keep HTTP
+  // 200 when Postgres is fine: pulling this box from rotation would take
+  // the whole API down, not just chat.
+  let ollamaStatus = 'unknown';
+  let onlineMiners = null;
+  if (dbOk) {
+    try {
+      const axios = require('axios');
+      await axios.get(`${process.env.OLLAMA_URL || 'http://localhost:11434'}/api/tags`, { timeout: 1000 });
+      ollamaStatus = 'connected';
+    } catch (e) {
+      ollamaStatus = 'disconnected';
+    }
+    try {
+      const pool = require('./database/pool');
+      const r = await pool.query("SELECT COUNT(*)::int AS n FROM miners WHERE status = 'online'");
+      onlineMiners = r.rows[0].n;
+    } catch (e) {
+      logger.error({ err: e }, 'Health check: miner count failed');
+    }
+  }
+
+  const chatUsable = ollamaStatus === 'connected' || (onlineMiners !== null && onlineMiners > 0);
   res.status(dbOk ? 200 : 503).json({
-    status: dbOk ? 'ok' : 'degraded',
+    status: !dbOk ? 'degraded' : (chatUsable ? 'ok' : 'degraded'),
     version: require('../package.json').version,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     redis: cache.connected ? 'connected' : 'disconnected',
     postgres: dbStatus,
+    db_latency_ms: dbLatencyMs,
+    ollama: ollamaStatus,
+    online_miners: onlineMiners,
     sentry: !!process.env.SENTRY_DSN,
   });
 });
@@ -219,20 +250,36 @@ app.use('/api/*', (req, res) => {
 app.use((err, req, res, next) => {
   logger.error({ err, url: req.url, method: req.method }, 'Request error');
 
-  if (process.env.SENTRY_DSN) {
+  // B1: honor the error's own status — body-parser/validation failures are
+  // 400/413/415, not 500. Forcing 500 lied to clients AND flooded Sentry
+  // with what is really client misbehaviour.
+  const status = err.status || err.statusCode || 500;
+
+  if (process.env.SENTRY_DSN && status >= 500) {
     Sentry.captureException(err);
   }
 
   if (err.message === 'Not allowed by CORS') {
     return res.status(403).json({ error: 'CORS not allowed' });
   }
-  res.status(500).json({ error: 'Internal server error' });
+  res.status(status).json({
+    error: status >= 500 ? 'Internal server error' : (err.message || 'Request failed'),
+  });
 });
 
 // v3.18.4: bind to loopback only — nginx is the sole public entry point
 server.listen(PORT, '127.0.0.1', () => {
   logger.info({ port: PORT }, 'Krelz Backend started');
   logger.info({ redis: getCacheStats().connected ? 'connected' : 'disconnected' }, 'Cache status');
+
+  // B4/B11: hourly payment reconciliation + old-media prune. Both jobs are
+  // idempotent (exactly-once claims; NULL-ing stale media is repeat-safe), so
+  // restarts and overlaps are harmless. First run waits 5 minutes after boot.
+  const { runMaintenance } = require('./services/maintenance');
+  setTimeout(() => {
+    runMaintenance();
+    setInterval(runMaintenance, 60 * 60 * 1000);
+  }, 5 * 60 * 1000);
 });
 
 wsServerHttp.listen(WS_PORT, '127.0.0.1', () => {

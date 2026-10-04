@@ -1,6 +1,6 @@
 {
   "name": "krelz-backend",
-  "version": "3.32.0",
+  "version": "3.33.0",
   "description": "Krelz Network Backend API",
   "main": "src/server.js",
   "scripts": {

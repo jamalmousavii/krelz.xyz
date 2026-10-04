@@ -368,7 +368,9 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
 
         // Smart fallback: check available models
         try {
-          const tagsRes = await axios.get(`${OLLAMA_URL}/api/tags`);
+        // B5: a hung Ollama /api/tags probe had NO timeout — it could stall
+        // the whole chat request indefinitely. Fail fast to the fallback.
+        const tagsRes = await axios.get(`${OLLAMA_URL}/api/tags`, { timeout: 2000 });
           const available = (tagsRes.data.models || []).map(m => m.name);
           if (available.length === 0) {
             throw new Error('No local Ollama models');

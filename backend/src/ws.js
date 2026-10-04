@@ -92,6 +92,17 @@ class WSServer {
       for (const [minerId, miner] of this.miners) {
         if (miner.ws === ws) {
           this.miners.delete(minerId);
+          // B6: a vanished miner leaves its in-flight tasks hanging — they
+          // would sit the full 180s dispatch timeout (+overhead) and blow
+          // through nginx's 300s ceiling → user gets a 504. Reject them NOW:
+          // the chat route falls back to local Ollama immediately.
+          for (const [taskId, cb] of this.taskCallbacks) {
+            if (cb.minerId === minerId) {
+              clearTimeout(cb.timeout);
+              this.taskCallbacks.delete(taskId);
+              cb.reject(new Error('Miner disconnected'));
+            }
+          }
           pool.query("UPDATE miners SET status = 'offline' WHERE id = $1", [minerId])
             .catch((err) => logger.error({ err, minerId }, 'Failed to mark miner offline'));
           invalidateCache('/api/miners');
@@ -505,7 +516,9 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
         reject(new Error('Task timeout'));
       }, timeoutMs);
 
-      this.taskCallbacks.set(taskId, { resolve, reject, timeout });
+      // minerId lets the close handler reject this miner's in-flight tasks
+      // immediately (B6) instead of letting them ride out the full timeout.
+      this.taskCallbacks.set(taskId, { resolve, reject, timeout, minerId });
 
       const payload = {
         type: 'task',

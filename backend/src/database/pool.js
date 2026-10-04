@@ -16,6 +16,13 @@ if (!connectionString) {
 
 const pool = new Pool({
   connectionString: connectionString || 'postgresql://krelz:local_dev_only@localhost:5432/krelz',
+  // B7: without bounds a hung statement parked every waiter — including
+  // GET /health, so the LB never saw the box was stuck. These cap queueing,
+  // connect attempts and single-statement runtime.
+  max: parseInt(process.env.PG_POOL_MAX || '10', 10),
+  connectionTimeoutMillis: 5000,
+  idleTimeoutMillis: 30000,
+  statement_timeout: parseInt(process.env.PG_STATEMENT_TIMEOUT_MS || '15000', 10),
 });
 
 pool.on('connect', () => {

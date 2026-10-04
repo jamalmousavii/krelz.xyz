@@ -1,5 +1,24 @@
 # Changelog
 
+## [3.33.0] - 2026-10-04
+
+Phase 3 of the full-project audit: backend robustness.
+
+### Fixed
+- **B1 error statuses** — the global error handler forced every failure to 500 (and sent client mistakes to Sentry); it now honors `err.status`/`err.statusCode`: body-parser/validation 400/413/415 reach the client truthfully, and only genuine 5xx are captured.
+- **B4 invoice-before-row** — all three purchase routes (`/plans/tokens/purchase`, `/plans/:tier/purchase`, `/payments/deposit/create`) now write their `pending` row *before* calling NowPayments: a failed insert aborts before any live invoice exists, a failed invoice call marks the row `failed` instead of leaving a hole where the IPN would have deduped against nothing (paid, never credited). Credit paths (webhook **and** the new reconciler) were extracted into `services/paymentClaims.js` — one `UPDATE … WHERE status='pending'` claim keeps replays exactly-once in a single place.
+- **B4 nightly reconciliation** — new `services/maintenance.js`: hourly (first run 5 min after boot), re-checks pending purchases >30 min old against the NowPayments invoice API and applies `finished` ones through the same claim helpers — an IPN that never arrived is no longer permanent.
+- **B5 Ollama probe timeout** — the chat route's `/api/tags` capability probe had no timeout; now 2s, failing fast into the local fallback instead of hanging the request.
+- **B6 disconnect rejection** — in-flight tasks for a vanished miner are rejected the moment its socket closes (they used to sit out the full 180s dispatch timeout and blow through nginx's 300s ceiling → user 504); the chat route now falls back to Ollama immediately.
+- **B7 pool bounds** — `max=10`, 5s connect timeout, 30s idle timeout and a 15s `statement_timeout` (env-overridable): a hung statement can no longer park every waiter, including `/health`.
+- **B9 indexes** — `users(reset_token)` and `tasks(user_id, created_at DESC)` (migration — run `npm run migrate`): forgot-password and session history were sequential scans.
+- **B10 users leaderboard** — reads `user_coin_balances` (where every money flow writes) instead of the frozen `user_balances.total_earned`, which made the board permanently empty.
+- **B11 media retention** — nightly prune strips `tasks.media` base64 older than 7 days (`MEDIA_RETENTION_DAYS`): session fetches no longer re-select ancient screenshots forever.
+- **B12 health probes** — `/health` now reports `ollama` (1s probe), `online_miners`, `db_latency_ms` and returns `degraded` when chat is unusable (Ollama down **and** zero miners) instead of `ok`; Postgres down still 503s readiness, an Ollama outage stays HTTP 200 so the API keeps serving.
+
+### Tests
+- New suites: `phase3.claims.test.js` (exactly-once claim + rollback/replay, 8), `phase3.maintenance.test.js` (reconcile + prune, 7), `phase3.robustness.test.js` (pending-row-first ordering ×5, disconnect rejection ×2, leaderboard source, 8). **168/168 green** (was 145).
+
 ## [3.32.0] - 2026-10-04
 
 Phase 2 of the full-project audit: frontend correctness.

@@ -4,8 +4,9 @@ const pool = require('../database/pool');
 const { authenticate } = require('../middleware/auth');
 const nowpayments = require('../services/nowpayments');
 const { getMinerCreditStatus } = require('../services/minerCredit');
-const { activatePlan, FREE_DAILY_TOKENS, PLANS, TOKEN_BUNDLE, listPlans, getActivePlan } = require('../services/plans');
-const { creditTokens, getTokenBalance } = require('../services/tokenBundles');
+const { FREE_DAILY_TOKENS, PLANS, TOKEN_BUNDLE, listPlans, getActivePlan } = require('../services/plans');
+const { getTokenBalance } = require('../services/tokenBundles');
+const { applyPlanPurchase, applyDeposit } = require('../services/paymentClaims');
 const { getFreeStatus } = require('../services/freeAllowance');
 const { invalidateCache } = require('../cache');
 const { logger } = require('../logger');
@@ -38,22 +39,36 @@ router.post('/deposit/create', authenticate, async (req, res) => {
       return res.status(400).json({ error: `Unsupported coin: ${coin}` });
     }
 
+    // B4: pending row BEFORE the invoice. order_id is the IPN correlation key
+    // and is generated up front; if the insert fails we abort before any live
+    // invoice exists (an invoice with no local row = IPN credits nothing), and
+    // if invoice creation fails the row is marked 'failed' instead of lingering.
+    const orderId = `krelz-${userId}-${Date.now()}`;
+    await pool.query(
+      `INSERT INTO coin_deposits (user_id, coin, amount, order_id, status)
+       VALUES ($1, 'USD', $2, $3, 'pending')`,
+      [userId, amount, orderId]
+    );
+
     const result = await nowpayments.createInvoice({
       userId,
       coin,
       amount,
+      orderId,
     });
 
     if (!result.success) {
+      await pool.query(
+        `UPDATE coin_deposits SET status = 'failed' WHERE order_id = $1 AND status = 'pending'`,
+        [orderId]
+      ).catch((err) => logger.error({ err, orderId }, 'Failed to mark deposit failed'));
       return res.status(500).json({ error: result.error });
     }
 
-    // Save deposit record (USD). order_id is the IPN correlation key.
     await pool.query(
-      `INSERT INTO coin_deposits (user_id, coin, amount, processor_id, order_id, status)
-       VALUES ($1, 'USD', $2, $3, $4, 'pending')`,
-      [userId, amount, result.invoiceId, result.orderId]
-    );
+      `UPDATE coin_deposits SET processor_id = $2 WHERE order_id = $1`,
+      [orderId, result.invoiceId]
+    ).catch((err) => logger.error({ err, orderId }, 'Failed to store processor_id'));
 
     res.status(201).json({
       success: true,
@@ -101,111 +116,19 @@ router.post('/deposit/webhook', async (req, res) => {
     }
 
     // Paid order ids: "<tier>-…" (v3.28.0). Plan tiers activate the
-    // subscription; 'tok' credits the prepaid token pot. The plan_purchases
-    // claim keeps replays exactly-once — a second 'finished' IPN can never
-    // extend or credit twice. Wallet deposits keep the legacy "krelz-…" prefix.
+    // subscription; 'tok' credits the prepaid token pot; wallet deposits keep
+    // the legacy "krelz-…" prefix. The UPDATE-while-pending claim (now in
+    // services/paymentClaims.js) keeps replays exactly-once — a second
+    // 'finished' IPN can never extend or credit twice. B4: the webhook and the
+    // nightly reconciler share those helpers so both apply money identically.
     const orderPrefix = (orderId || '').split('-')[0];
     if (orderId && (orderPrefix === 'tok' || PLANS[orderPrefix])) {
-      const claimClient = await pool.connect();
-      let applied = false;
-      let appliedType = orderPrefix;
-      try {
-        await claimClient.query('BEGIN');
-        const claim = await claimClient.query(
-          `UPDATE plan_purchases
-              SET status = 'completed', tx_hash = COALESCE($1, tx_hash)
-            WHERE order_id = $2 AND user_id = $3 AND status = 'pending'
-            RETURNING plan_type, tokens`,
-          [txHash, orderId, userId]
-        );
-
-        if (claim.rows.length === 0) {
-          await claimClient.query('COMMIT');
-          logger.warn({ userId, orderId }, 'IPN replay ignored (purchase already processed)');
-          return res.json({ status: 'ok', deduped: true });
-        }
-
-        appliedType = claim.rows[0].plan_type || orderPrefix;
-        if (appliedType === 'tokens') {
-          await creditTokens(userId, claim.rows[0].tokens, claimClient);
-        } else {
-          await activatePlan(userId, appliedType, claimClient);
-        }
-        await claimClient.query('COMMIT');
-        applied = true;
-      } catch (err) {
-        await claimClient.query('ROLLBACK').catch(() => {});
-        throw err;
-      } finally {
-        claimClient.release();
-      }
-
-      if (applied) {
-        invalidateCache('/api/payments/balance');
-        logger.info({ userId, orderId, planType: appliedType }, 'Plan/token purchase applied');
-      }
-      return res.json({ status: 'ok' });
+      const { deduped } = await applyPlanPurchase({ userId, orderId, txHash });
+      return res.json(deduped ? { status: 'ok', deduped: true } : { status: 'ok' });
     }
 
-    const client = await pool.connect();
-    let credited = false;
-    let storedAmount = amount;
-    try {
-      await client.query('BEGIN');
-
-      // Claim the deposit exactly once: UPDATE only while still pending, so a
-      // replayed/forged 'finished' IPN can never credit twice.
-      const claim = await client.query(
-        `UPDATE coin_deposits
-            SET status = 'completed', tx_hash = COALESCE($1, tx_hash)
-          WHERE user_id = $2
-            AND status = 'pending'
-            AND (order_id = $3 OR processor_id = $3 OR processor_id = $4)
-          RETURNING id, amount`,
-        [txHash, userId, orderId, invoiceId]
-      );
-
-      if (claim.rows.length === 0) {
-        // Already completed (replay) — acknowledge without crediting.
-        await client.query('COMMIT');
-        logger.warn({ userId, orderId }, 'IPN replay ignored (deposit already processed)');
-        return res.json({ status: 'ok', deduped: true });
-      }
-
-      // Credit the amount we stored when the invoice was created, never the
-      // amount asserted by the webhook payload.
-      storedAmount = parseFloat(claim.rows[0].amount);
-
-      await client.query(
-        `INSERT INTO user_coin_balances (user_id, coin, chain, available, total_earned)
-         VALUES ($1, 'USD', 'usd', $2, $2)
-         ON CONFLICT (user_id, coin) DO UPDATE SET
-         available = user_coin_balances.available + $2,
-         total_earned = user_coin_balances.total_earned + $2`,
-        [userId, storedAmount]
-      );
-
-      await client.query(
-        `INSERT INTO transactions (from_address, to_address, amount, type, description, status)
-         VALUES ('deposit', $1, $2, 'usd_deposit', $3, 'completed')`,
-        [userId, storedAmount, `USD deposit via NowPayments (${cryptoCoin || 'crypto'} paid)`]
-      );
-
-      await client.query('COMMIT');
-      credited = true;
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
-
-    if (credited) {
-      invalidateCache('/api/payments/balance');
-      logger.info({ userId, amount: storedAmount, orderId }, 'Deposit confirmed');
-    }
-    res.json({ status: 'ok' });
-
+    const { deduped } = await applyDeposit({ userId, orderId, invoiceId, txHash, cryptoCoin });
+    return res.json(deduped ? { status: 'ok', deduped: true } : { status: 'ok' });
   } catch (err) {
     logger.error({ err }, 'IPN webhook error');
     if (!process.env.NOWPAYMENTS_IPN_SECRET) {

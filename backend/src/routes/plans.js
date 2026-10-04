@@ -76,6 +76,15 @@ router.post('/tokens/purchase', authenticate, async (req, res) => {
 
     const tokens = quoteTokens(amountUsd);
     const orderId = `tok-${userId}-${Date.now()}`;
+    // B4: the pending row must exist BEFORE the invoice does. An invoice with
+    // no local row means the later IPN deduped against nothing — paid, never
+    // credited. A failed row insert now aborts before any invoice is created.
+    await pool.query(
+      `INSERT INTO plan_purchases (order_id, user_id, invoice_id, amount, plan_type, tokens, status)
+       VALUES ($1, $2, NULL, $3, 'tokens', $4, 'pending')`,
+      [orderId, userId, amountUsd, tokens]
+    );
+
     const result = await nowpayments.createInvoice({
       userId,
       amount: amountUsd,
@@ -84,14 +93,17 @@ router.post('/tokens/purchase', authenticate, async (req, res) => {
     });
 
     if (!result.success) {
+      await pool.query(
+        `UPDATE plan_purchases SET status = 'failed' WHERE order_id = $1 AND status = 'pending'`,
+        [orderId]
+      ).catch((err) => logger.error({ err, orderId }, 'Failed to mark purchase failed'));
       return res.status(500).json({ error: result.error || 'Invoice creation failed' });
     }
 
     await pool.query(
-      `INSERT INTO plan_purchases (order_id, user_id, invoice_id, amount, plan_type, tokens, status)
-       VALUES ($1, $2, $3, $4, 'tokens', $5, 'pending')`,
-      [orderId, userId, result.invoiceId ? String(result.invoiceId) : null, amountUsd, tokens]
-    );
+      `UPDATE plan_purchases SET invoice_id = $2 WHERE order_id = $1`,
+      [orderId, result.invoiceId ? String(result.invoiceId) : null]
+    ).catch((err) => logger.error({ err, orderId }, 'Failed to store invoice_id'));
 
     res.status(201).json({
       success: true,
@@ -122,6 +134,13 @@ router.post('/:tier/purchase', authenticate, async (req, res) => {
     }
 
     const orderId = `${tier}-${userId}-${Date.now()}`;
+    // B4: pending row first — see the note in /tokens/purchase above.
+    await pool.query(
+      `INSERT INTO plan_purchases (order_id, user_id, invoice_id, amount, plan_type, status)
+       VALUES ($1, $2, NULL, $3, $4, 'pending')`,
+      [orderId, userId, plan.price, tier]
+    );
+
     const result = await nowpayments.createInvoice({
       userId,
       amount: plan.price,
@@ -130,14 +149,17 @@ router.post('/:tier/purchase', authenticate, async (req, res) => {
     });
 
     if (!result.success) {
+      await pool.query(
+        `UPDATE plan_purchases SET status = 'failed' WHERE order_id = $1 AND status = 'pending'`,
+        [orderId]
+      ).catch((err) => logger.error({ err, orderId }, 'Failed to mark purchase failed'));
       return res.status(500).json({ error: result.error || 'Invoice creation failed' });
     }
 
     await pool.query(
-      `INSERT INTO plan_purchases (order_id, user_id, invoice_id, amount, plan_type, status)
-       VALUES ($1, $2, $3, $4, $5, 'pending')`,
-      [orderId, userId, result.invoiceId ? String(result.invoiceId) : null, plan.price, tier]
-    );
+      `UPDATE plan_purchases SET invoice_id = $2 WHERE order_id = $1`,
+      [orderId, result.invoiceId ? String(result.invoiceId) : null]
+    ).catch((err) => logger.error({ err, orderId }, 'Failed to store invoice_id'));
 
     res.status(201).json({
       success: true,

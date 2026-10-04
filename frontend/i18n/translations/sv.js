@@ -40,7 +40,7 @@ const sv = {
     startChat: 'Starta chatt',
     footer: 'Alla rättigheter förbehållna.',
     installMetaMask: 'Installera MetaMask',
-    version: 'v3.32.0',
+    version: 'v3.33.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — decentraliserad LLM-inferensplattform, version {version}. Alla rättigheter förbehållna.',

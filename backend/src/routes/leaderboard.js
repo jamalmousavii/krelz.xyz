@@ -107,12 +107,15 @@ router.get('/miners', async (req, res) => {
 // GET /api/leaderboard/users
 router.get('/users', async (req, res) => {
   try {
+    // B10: earnings live in user_coin_balances (all money flows write there);
+    // the legacy user_balances.total_earned column nobody updates made the
+    // users leaderboard permanently empty.
     const result = await pool.query(
-      `SELECT u.id, u.name, u.avatar, COALESCE(b.total_earned, 0) as earned, COALESCE(b.total_spent, 0) as spent
+      `SELECT u.id, u.name, u.avatar, COALESCE(c.total_earned, 0) as earned, COALESCE(c.total_spent, 0) as spent
        FROM users u
-       LEFT JOIN user_balances b ON u.id = b.user_id
-       WHERE COALESCE(b.total_earned, 0) > 0
-       ORDER BY b.total_earned DESC
+       LEFT JOIN user_coin_balances c ON u.id = c.user_id AND c.coin = 'USD'
+       WHERE COALESCE(c.total_earned, 0) > 0
+       ORDER BY c.total_earned DESC
        LIMIT 50`
     );
     res.json({ success: true, users: result.rows });

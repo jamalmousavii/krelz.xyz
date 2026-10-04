@@ -511,6 +511,12 @@ const migrate = async () => {
     `);
     console.log('✅ ستون reset_token_expiry اضافه شد');
 
+    // B9: forgot-password looks up by reset_token, chat history sorts tasks by
+    // (user_id, created_at DESC) — both were sequential scans.
+    await client.query('CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_token)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_tasks_user_created ON tasks(user_id, created_at DESC)');
+    console.log('✅ ایندکس‌های reset_token و tasks(user_id, created_at) ساخته شد');
+
     await client.query('CREATE INDEX IF NOT EXISTS idx_users_miner_token ON users(miner_token)');
     console.log('✅ Miner token index created');
 

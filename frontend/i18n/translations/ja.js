@@ -40,7 +40,7 @@ const ja = {
     startChat: 'チャットを開始',
     footer: 'すべての権利を保有します。',
     installMetaMask: 'MetaMaskをインストールしてください',
-    version: 'v3.32.0',
+    version: 'v3.33.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — 分散型LLM推論プラットフォーム、バージョン {version}。すべての権利を保有します。',
