@@ -3,7 +3,6 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useLanguage } from '../i18n/LanguageContext';
-import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
 
 export default function ResetPassword() {
@@ -59,7 +58,7 @@ export default function ResetPassword() {
     'w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400';
 
   return (
-    <div className={`min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
+    <div className={`min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50`}>
       <Head>
         <title>{t('nav.resetPassword')} - Krelz Network</title>
       </Head>

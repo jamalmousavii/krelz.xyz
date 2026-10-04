@@ -8,14 +8,13 @@
 
 set -e
 
-KRELZ_VERSION="3.35.0"
+KRELZ_VERSION="3.36.0"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
-BOLD='\033[1m'
 
 INSTALL_DIR="$HOME/krelz-miner"
 
@@ -57,7 +56,7 @@ echo -e "  ${GREEN}2${NC}) Everything (miner + Ollama + all downloaded models)"
 echo -e "  ${RED}0${NC}) Cancel"
 echo ""
 
-read -p "  Choice [0-2]: " choice
+read -r -p "  Choice [0-2]: " choice
 
 case $choice in
   1)

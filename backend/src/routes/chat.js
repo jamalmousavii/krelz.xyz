@@ -5,6 +5,17 @@ const axios = require('axios');
 const { invalidateCache } = require('../cache');
 const { authenticate, strictIfHeader } = require('../middleware/auth');
 const { validate, chatRules } = require('../middleware/validate');
+
+// Miners control task_result.error, and that text is reflected into the 503
+// below — strip control characters/markup and cap it so a hostile miner can't
+// forge response content or log lines.
+function sanitizeMinerDetail(raw) {
+  return String(raw)
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/[<>]/g, '')
+    .trim()
+    .slice(0, 80);
+}
 const MODELS = require('../models');
 const { logger } = require('../logger');
 const { prepareAttachment, AttachmentError } = require('../services/attachments');
@@ -437,7 +448,7 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
           [taskId]
         );
         const detail = lastMinerError
-          ? ` (miner: ${lastMinerError})`
+          ? ` (miner: ${sanitizeMinerDetail(lastMinerError)})`
           : '';
         return res.status(503).json({
           error: `No inference source available. No miners are online and the local model is unreachable. Please try again later.${detail}`,
@@ -631,5 +642,9 @@ router.get('/history', authenticate, async (req, res) => {
 router.getModelPricing = getModelPricing;
 router.DEFAULT_MODEL = DEFAULT_MODEL;
 router.MINER_REVENUE_SHARE = MINER_REVENUE_SHARE;
+
+// Test hook: the 503 detail sanitiser is module-private; expose it the same
+// way stats.js exposes its aggregate reset.
+router.__sanitizeMinerDetail = sanitizeMinerDetail;
 
 module.exports = router;

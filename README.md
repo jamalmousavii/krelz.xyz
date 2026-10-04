@@ -65,6 +65,9 @@ The install script automatically sets up:
 - Selected AI models (10 available)
 - Krelz Miner (CLI mode, systemd service)
 
+Requires **~15 GB free disk** (checked before the model download; bypass with
+`KRELZ_SKIP_DISK_CHECK=1`). Every script passes `shellcheck` (enforced in CI).
+
 ### Add another miner (same account, unlimited)
 Each server-miner gets its **own unique token** (the token IS the miner identity).
 1. Profile → Miner Settings → **+ Add Miner** (optional name) → copy its token
@@ -140,7 +143,7 @@ krelz.xyz/
 │   │   ├── models.js          # AI models + pricing
 │   │   ├── database/
 │   │   │   ├── pool.js        # PostgreSQL connection
-│   │   │   └── migrate.js     # DB migration (18 tables + resource columns)
+│   │   │   └── migrate.js     # DB migration (20 tables + resource columns)
 │   │   ├── routes/
 │   │   │   ├── auth.js        # Authentication
 │   │   │   ├── miners.js      # Miner management
@@ -156,8 +159,7 @@ krelz.xyz/
 │   └── package.json
 ├── frontend/                   # UI (Next.js 14 + Tailwind CSS)
 │   ├── pages/
-│   │   ├── index.js           # Chat homepage (chat-first; fullscreen frame; attachments/voice v3.20.0)
-│   │   ├── chat.js            # Redirects to / (chat is homepage now)
+│   │   ├── index.js           # Chat homepage (state hub; UI split into components/chat/ v3.36.0)
 │   │   ├── profile.js         # Dashboard (balance, plans + token bundle cards, earnings breakdown, miner credit, rank)
 │   │   ├── miners.js          # Miner management + Quick Install copy + history (v3.22.0)
 │   │   ├── settings.js        # Settings (USD wallet, 33-lang dropdown, password)
@@ -173,9 +175,12 @@ krelz.xyz/
 │   │   ├── Footer.js          # Global version footer (v3.16.0)
 │   │   ├── GoogleLogin.js     # Google OAuth
 │   │   ├── ErrorBoundary.js   # Error boundary
-│   │   └── LanguageSwitcher.js # 33-lang dropdown with flags
+│   │   ├── LanguageSwitcher.js # 33-lang dropdown with flags
+│   │   └── chat/              # Chat UI split (Sidebar, MessageList, Composer, UpgradeWall; v3.36.0)
+│   ├── hooks/
+│   │   └── useApi.js          # Abort-aware fetch hook (leaderboard/explorer; v3.36.0)
 │   ├── i18n/
-│   │   ├── translations.js    # Aggregator + LANGUAGES + detectLanguage
+│   │   ├── translations.js    # Code-split registry (en static + 32 lazy) + LANGUAGES + detectLanguage
 │   │   ├── translations/      # One file per language (33 files)
 │   │   └── LanguageContext.js  # Provider (browser detect + sessionStorage)
 │   └── package.json

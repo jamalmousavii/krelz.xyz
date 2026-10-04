@@ -1,5 +1,32 @@
 # Changelog
 
+## [3.36.0] - 2026-10-04
+
+Phase 6 of the full-project audit (final): hardening leftovers, dead code, performance and release engineering.
+
+### Security
+- **Replay guard on the error path** — `ws.js` `handleTaskResult` checks the `UPDATE tasks … RETURNING` result for `error` results too (the success path already did): a miner replaying an error `task_result` can no longer rewrite `tasks.error`/`status` after the fact (logged as `Ignored replayed task_result` instead).
+- **NowPayments error text no longer reaches the client** — `POST /api/payments/deposit/create` and both plan/token purchase routes log the provider error server-side and answer with a generic message (the raw NP `error` payload used to be echoed verbatim).
+- **Sanitized 503 detail** — the chat route's `Service unavailable` detail strips control characters and `<>`, trims and caps at 80 chars before it is reflected to the caller.
+- **Dormant `POST /api/payments/deduct` removed** — unreachable (no frontend caller, no docs entry) and it debited `user_token_balances` outside the row-locked chat payment chain; now 404 along with its `deductRules` validator.
+
+### Performance
+- **Locale code-split (B)** — only `en` stays a static import in `i18n/translations.js`; the other 32 locales load through literal dynamic-import loaders, and `LanguageContext` waits for the chunk before committing detection/`changeLang` (the switch never flashes English). `_app` bundle: **500,461 → 26,860 B raw (94,677 → 10,254 B gzip)**.
+- **Stats aggregate memo (A)** — `/api/stats/network`'s two full-table scans (`loadAggregates`) are memoized 30s in-process; bursts no longer re-scan `tasks`/`miner_coin_earnings` per request.
+- **Cache auth-hint** — `isCacheableRequest` skips any request carrying a `Cookie` header as well (error bodies were already never cached — the `body.success` gate).
+- **Chat page re-render cut (D)** — `pages/index.js` (1,107 → 850 lines) now renders extracted, `memo`ized `components/chat/{Sidebar,MessageList,Composer,UpgradeWall}` over `props`; the handlers they receive are `useCallback`-stable, so typing in the composer no longer re-renders the transcript or the sidebar.
+
+### Changed
+- **`useApi` hook (C)** — new `frontend/hooks/useApi.js` (abort-aware, checks the `success` flag, `reload()`); adopted by leaderboard + explorer, dropping their hand-rolled fetch ladders.
+- **Dead-code purge (E)** — deleted `pages/chat.js` (redirect stub; `/` *is* the chat) and `utils/auth.js` (unimported); removed every no-op `${isRtl(...) ? 'rtl' : 'ltr'}` fragment plus the now-unused `isRtl` imports across 10 pages/components.
+- **Miner release engineering** — `cli.js` no longer logs the token prefix at startup; `install-*.sh` verify **15 GB free disk** before the model download (`KRELZ_SKIP_DISK_CHECK=1` bypass); Electron ships real `assets/icon.png` (128×128) and `assets/tray-icon.png` (32×32); all four scripts are `shellcheck`-clean (SC2004/SC2162/SC2034/SC2086).
+
+### Tests
+- New `phase6.hardening.test.js` (9): replay guard (accepted / superseded / replayed-error), 503 sanitization (×4), deduct-route 404, NP error non-leak (×2).
+- New `integration.money.test.js` (3, gated on `DATABASE_URL`): migration idempotency; the deposit → signed IPN → balance credit → replay-dedup → `coin_deposits` flow against real PostgreSQL; forged/tampered `x-nowpayments-sig` → 401 with zero credit. **198/198 green with `DATABASE_URL` (195 + 3 skipped without it)**; `phase5.stats.test.js` resets the new aggregate memo between tests.
+- **CI hardened** — `.github/workflows/ci.yml`: backend jest against a `postgres:16-alpine` service (the integration suite executes), frontend gates on `npm run i18n:check` before the build, install scripts run through real `shellcheck` + `node --check` over every `miner-app/src` file.
+- Docs accuracy pass — README/DEVELOP: 20 tables, deleted `chat.js`, code-split i18n, `components/chat/` + `hooks/useApi.js`, disk preflight, and a new Tests & Quality Gates section.
+
 ## [3.35.0] - 2026-10-04
 
 Phase 5 of the full-project audit: i18n & UX completeness.

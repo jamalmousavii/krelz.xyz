@@ -38,7 +38,12 @@ if (cacheDisabled) {
 // derived from the URL only, so a cached body would be served to other users.
 function isCacheableRequest(req) {
   if (req.method !== 'GET') return false;
+  // The key is URL-only, so anything that could identify the caller must
+  // bypass the cache: bearer headers, cookies (a future/session auth) and
+  // any middleware-resolved user. This runs before route auth, so req.user
+  // is checked defensively as well.
   if (req.headers.authorization) return false;
+  if (req.headers.cookie) return false;
   if (req.user) return false;
   return true;
 }

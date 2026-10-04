@@ -2,7 +2,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
-import { LANGUAGES, isRtl } from '../i18n/translations';
+import { LANGUAGES } from '../i18n/translations';
 import Navbar from '../components/Navbar';
 import { useAuth, clearSession, apiFetch, ApiError, setSession, getUser } from '../utils/api';
 
@@ -193,7 +193,7 @@ export default function Settings() {
   );
 
   return (
-    <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
+    <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50`}>
       <Head><title>{t('profile.settings')} - Krelz Network</title></Head>
 
       <Navbar />

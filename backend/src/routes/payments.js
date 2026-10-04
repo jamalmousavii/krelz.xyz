@@ -62,7 +62,9 @@ router.post('/deposit/create', authenticate, async (req, res) => {
         `UPDATE coin_deposits SET status = 'failed' WHERE order_id = $1 AND status = 'pending'`,
         [orderId]
       ).catch((err) => logger.error({ err, orderId }, 'Failed to mark deposit failed'));
-      return res.status(500).json({ error: result.error });
+      logger.error({ orderId, err: result.error }, 'NowPayments invoice creation failed');
+      // Never forward provider error bodies to the client (plan LOW: NP error text).
+      return res.status(500).json({ error: 'Invoice creation failed' });
     }
 
     await pool.query(
@@ -387,38 +389,6 @@ router.get('/history', authenticate, async (req, res) => {
       deposits: deposits.rows,
       withdrawals: withdrawals.rows,
     });
-
-  } catch (err) {
-    logger.error({ err }, 'Request failed');
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// POST /api/payments/deduct — internal deduct (for chat payments) — USD only
-router.post('/deduct', authenticate, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const amount = parseFloat(req.body.amount);
-
-    if (!amount || !Number.isFinite(amount) || amount <= 0) {
-      return res.status(400).json({ error: 'amount required' });
-    }
-
-    // Single atomic statement: a read-then-write pair lets two parallel
-    // requests both pass the balance check and overspend the wallet.
-    const result = await pool.query(
-      `UPDATE user_coin_balances
-          SET available = available - $1, total_spent = total_spent + $1
-        WHERE user_id = $2 AND coin = 'USD' AND available >= $1
-        RETURNING available`,
-      [amount, userId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(400).json({ error: 'Insufficient balance' });
-    }
-
-    res.json({ success: true, message: `Deducted $${amount.toFixed(4)} USD` });
 
   } catch (err) {
     logger.error({ err }, 'Request failed');

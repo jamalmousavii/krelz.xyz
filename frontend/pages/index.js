@@ -1,14 +1,15 @@
 import Head from 'next/head';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
-import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
 import PlansContent from '../components/PlansContent';
 import PlansModal from '../components/PlansModal';
+import Sidebar from '../components/chat/Sidebar';
+import MessageList from '../components/chat/MessageList';
+import Composer from '../components/chat/Composer';
 import { apiFetch, ApiError } from '../utils/api';
 import { audioBlobToWav16k } from '../lib/audio';
 
-const CATEGORY_ICONS = { chat: '💬', code: '💻', vision: '👁️', embedding: '🔗' };
 const MAX_RAW_BYTES = 1.5 * 1024 * 1024;   // pdf/text/audio budget (audio is WAVed after this check)
 const IMAGE_MAX_EDGE = 1280;               // client-side image compression target
 const TEXT_FILE_RE = /\.(txt|md|csv|json|js|jsx|ts|tsx|py|java|c|h|cpp|hpp|cs|go|rs|rb|php|sh|sql|yml|yaml|xml|html|css|log|ini|cfg|conf|toml)$/i;
@@ -72,14 +73,14 @@ export default function Home() {
   // Bumped on every session switch; in-flight loads check it and bail.
   const loadSeqRef = useRef(0);
   const sendAbortRef = useRef(null);
-  const setActiveSession = (sid) => {
+  const setActiveSession = useCallback((sid) => {
     activeSessionRef.current = sid;
     setActiveSessionId(sid);
     loadSeqRef.current += 1;
     // Switching threads kills the answer bound for the old one: it is already
     // stored server-side and reappears when the user comes back.
     if (sendAbortRef.current) { sendAbortRef.current.abort(); sendAbortRef.current = null; }
-  };
+  }, []);
   const [subject, setSubject] = useState('');
   const [editingSubject, setEditingSubject] = useState(false);
   const [subjectInput, setSubjectInput] = useState('');
@@ -265,7 +266,7 @@ export default function Home() {
 
   // Plan/token purchase: one NowPayments invoice per purchase; activation or
   // pot credit happens in the IPN webhook. Hosted checkout opens in a new tab.
-  const purchasePlan = async (tier) => {
+  const purchasePlan = useCallback(async (tier) => {
     if (!token) return;
     setPurchaseError('');
     try {
@@ -279,10 +280,10 @@ export default function Home() {
       if (err instanceof ApiError && err.status === 401) setPurchaseError(t('home.loginToBuy'));
       else setPurchaseError(err instanceof ApiError ? err.message : t('chat.errorConnection'));
     }
-  };
+  }, [token, t]);
 
   // Token bundle ($1 = 1M tokens, whole dollars, never expires).
-  const purchaseTokens = async () => {
+  const purchaseTokens = useCallback(async () => {
     if (!token) return;
     setPurchaseError('');
     const amount = parseInt(bundleAmount, 10);
@@ -304,7 +305,7 @@ export default function Home() {
       if (err instanceof ApiError && err.status === 401) setPurchaseError(t('home.loginToBuy'));
       else setPurchaseError(err instanceof ApiError ? err.message : t('chat.errorConnection'));
     }
-  };
+  }, [token, t, bundleAmount]);
 
   const dismissUpgradeNotice = () => {
     try { localStorage.setItem('krelz_upg_notice', new Date().toISOString().slice(0, 10)); } catch (e) {}
@@ -362,7 +363,7 @@ export default function Home() {
     }
   };
 
-  const loadSession = async (sessionId, tkn) => {
+  const loadSession = useCallback(async (sessionId, tkn) => {
     const useToken = tkn || token;
     if (!useToken) return;
     const seq = ++loadSeqRef.current;
@@ -386,9 +387,9 @@ export default function Home() {
     } catch (err) {
       if (!(err instanceof ApiError && err.status === 401)) console.error('Failed to load session');
     }
-  };
+  }, [token, t, setActiveSession]);
 
-  const createNewSession = async () => {
+  const createNewSession = useCallback(async () => {
     if (!token) {
       setActiveSession(null);
       setSubject('');
@@ -409,9 +410,9 @@ export default function Home() {
     } catch (err) {
       if (!(err instanceof ApiError && err.status === 401)) console.error('Failed to create session');
     }
-  };
+  }, [token, t, selectedModel, setActiveSession]);
 
-  const deleteSession = async (sessionId) => {
+  const deleteSession = useCallback(async (sessionId) => {
     if (!token) return;
     try {
       // Only drop the row if the server actually deleted it — a failed DELETE
@@ -431,7 +432,7 @@ export default function Home() {
     } catch (err) {
       if (!(err instanceof ApiError && err.status === 401)) console.error('Failed to delete session');
     }
-  };
+  }, [token, activeSessionId, sessions, loadSession, setActiveSession]);
 
   const updateSubject = async () => {
     if (!token || !activeSessionId || !subjectInput.trim()) return;
@@ -629,112 +630,10 @@ export default function Home() {
     }
   };
 
-  // F7: NOT components — calling these as plain functions keeps their output
-  // part of Home's element tree. As `<ModelDropdown/>` inside Home they were a
-  // brand-new component type every render, remounting the subtree (incl. the
-  // hidden file input, losing focus/selection) on every keystroke.
-  const renderModelDropdown = ({ upward }) => (
-    <div className="relative flex-1 md:flex-none md:w-auto min-w-0" ref={dropdownRef}>
-      <button
-        onClick={() => setDropdownOpen(!dropdownOpen)}
-        className="w-full md:w-auto bg-white hover:bg-sky-50 text-gray-700 border border-sky-200 px-4 py-3 md:py-3.5 rounded-xl transition flex items-center gap-2 min-w-[180px] justify-between text-sm shadow-sm"
-      >
-        <span className="truncate font-medium">
-          {selectedModelData ? `${CATEGORY_ICONS[selectedModelData.category]} ${selectedModelData.name}` : selectedModel}
-        </span>
-        <span className="text-gray-400 text-xs">▼</span>
-      </button>
-      {dropdownOpen && (
-        <div className={`absolute ${upward ? 'bottom-full mb-2' : 'top-full mt-2'} left-0 w-full md:w-72 bg-white border border-sky-200 rounded-xl shadow-xl overflow-hidden z-50 max-h-[min(300px,40dvh)] overflow-y-auto`}>
-          {models.map((model) => {
-            const isSelected = selectedModel === model.id;
-            const hasMiners = model.miners_online > 0;
-            const canSelect = hasMiners;
-            return (
-              <button
-                key={model.id}
-                onClick={() => { if (canSelect) { setSelectedModel(model.id); setDropdownOpen(false); } }}
-                disabled={!canSelect}
-                className={`w-full text-left px-4 py-3 flex items-center justify-between transition text-sm border-b border-sky-50 last:border-0 ${
-                  isSelected ? 'bg-sky-100 text-sky-800' : canSelect ? 'hover:bg-sky-50 text-gray-700' : 'opacity-40 cursor-not-allowed text-gray-400'
-                }`}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span>{CATEGORY_ICONS[model.category]}</span>
-                  <span className="truncate font-medium">{model.name}</span>
-                  <span className="text-sky-600 text-xs">{model.size}</span>
-                </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  {hasMiners ? (
-                    <span className="text-emerald-600 text-xs">✅ {model.miners_online}</span>
-                  ) : (
-                    <span className="text-red-400 text-xs">⚠️ 0</span>
-                  )}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-
-  // 📎 / 🎤 controls shared by both input bars (hero + active chat).
-  const renderMediaButtons = () => (
-    <div className="flex items-center gap-1.5 flex-shrink-0">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*,.pdf,.txt,.md,.csv,.json,application/pdf,text/*"
-        className="hidden"
-        onChange={onPickFile}
-      />
-      <button
-        type="button"
-        onClick={() => { if (attachFileAllowed) fileInputRef.current?.click(); }}
-        disabled={!attachFileAllowed}
-        title={attachFileAllowed ? t('chat.attach') : t('chat.attachEmbedding')}
-        className="flex-shrink-0 w-10 h-10 md:h-12 rounded-xl border border-sky-200 bg-white text-base hover:bg-sky-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
-        aria-label={t('chat.attach')}
-      >📎</button>
-      <button
-        type="button"
-        onClick={recording ? stopRecording : startRecording}
-        disabled={!audioOk && !recording}
-        title={audioOk ? (recording ? t('chat.voiceStop') : t('chat.voice')) : t('chat.needAudioModel')}
-        className={`flex-shrink-0 w-10 h-10 md:h-12 rounded-xl border text-base transition disabled:opacity-40 disabled:cursor-not-allowed ${
-          recording ? 'bg-red-500 border-red-500 text-white animate-pulse' : 'border-sky-200 bg-white hover:bg-sky-50'
-        }`}
-        aria-label={recording ? t('chat.voiceStop') : t('chat.voice')}
-      >{recording ? '⏹' : '🎙️'}</button>
-    </div>
-  );
-
-  const pendingAttachmentChip = attachment && (
-    <div className="flex items-center gap-2 bg-white border border-sky-200 rounded-full pl-2.5 pr-2 py-1.5 text-xs text-gray-700 shadow-sm max-w-full">
-      {attachment.type === 'image' ? (
-        <img src={`data:${attachment.mime || 'image/jpeg'};base64,${attachment.data}`} alt="" className="w-5 h-5 rounded object-cover flex-shrink-0" />
-      ) : (
-        <span>{attachment.type === 'audio' ? '🎙️' : '📄'}</span>
-      )}
-      <span className="truncate max-w-[160px]">{attachment.name}</span>
-      <button
-        type="button"
-        onClick={removeAttachment}
-        className="flex items-center justify-center w-9 h-9 -my-1.5 -mr-1.5 text-gray-400 hover:text-red-500 font-bold rounded-md active:bg-red-50"
-        title={t('chat.removeAttachment')}
-      >✕</button>
-    </div>
-  );
-
-  const attachErrorLine = attachError ? (
-    <div className="text-red-500 text-xs">⚠️ {attachError}</div>
-  ) : null;
-
   // ===== EMPTY STATE: centered hero =====
   if (!hasStarted) {
     return (
-      <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex flex-col ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
+      <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex flex-col`}>
         <Head>
           <title>Krelz Network - Decentralized LLM Inference</title>
           <meta name="description" content="Decentralized LLM Inference Network. Chat with AI models." />
@@ -749,39 +648,32 @@ export default function Home() {
           </div>
 
           <div className="w-full max-w-2xl bg-white rounded-2xl shadow-lg border border-sky-100 p-4 md:p-5">
-            {(attachment || attachError) && (
-              <div className="flex flex-col gap-1.5 mb-3 items-start">
-                {pendingAttachmentChip}
-                {attachErrorLine}
-              </div>
-            )}
-            {/* Mobile: [model | 📎🎙] on one row, [input | send] on the next.
-                md:contents dissolves the wrappers so desktop keeps the original
-                single row (model, media, input, send). */}
-            <div className="flex flex-col md:flex-row gap-2 md:gap-3">
-              <div className="flex items-center gap-2 md:contents">
-                {renderModelDropdown({ upward: false })}
-                {renderMediaButtons()}
-              </div>
-              <div className="flex gap-2 md:contents">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) sendMessage(); }}
-                  placeholder={t('chat.placeholder')}
-                  className="flex-1 min-w-0 bg-sky-50 text-gray-800 placeholder-gray-500 border border-sky-100 px-4 md:px-6 py-3 md:py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 text-sm md:text-base"
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={loading}
-                  className="w-auto md:w-auto bg-sky-500 hover:bg-sky-600 text-white px-6 md:px-8 py-3 md:py-3.5 rounded-xl transition disabled:opacity-50 font-bold text-sm md:text-base shadow-sm flex-shrink-0"
-                >
-                  {loading ? '...' : t('chat.send')}
-                </button>
-              </div>
-            </div>
+            <Composer
+              variant="hero"
+              t={t}
+              message={message}
+              setMessage={setMessage}
+              sendMessage={sendMessage}
+              loading={loading}
+              models={models}
+              selectedModel={selectedModel}
+              selectedModelData={selectedModelData}
+              setSelectedModel={setSelectedModel}
+              dropdownOpen={dropdownOpen}
+              setDropdownOpen={setDropdownOpen}
+              dropdownRef={dropdownRef}
+              inputRef={inputRef}
+              fileInputRef={fileInputRef}
+              onPickFile={onPickFile}
+              attachFileAllowed={attachFileAllowed}
+              audioOk={audioOk}
+              recording={recording}
+              startRecording={startRecording}
+              stopRecording={stopRecording}
+              attachment={attachment}
+              removeAttachment={removeAttachment}
+              attachError={attachError}
+            />
           </div>
 
           <p className="text-gray-400 text-sm mt-6">{t('chat.startTyping')}</p>
@@ -820,64 +712,23 @@ export default function Home() {
 
   // ===== ACTIVE STATE: sidebar + messages + bottom input =====
   return (
-    <div className={`flex-1 min-h-0 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex flex-col ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
+    <div className={`flex-1 min-h-0 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex flex-col`}>
       <Head><title>{t('chat.title')}</title></Head>
 
       <Navbar />
 
       <main className="flex-1 container mx-auto px-2 md:px-6 pb-[max(1rem,env(safe-area-inset-bottom))] md:pb-6 max-w-6xl flex gap-0 md:gap-4 min-h-0">
-        {/* Sidebar — history. On phones it is an overlay drawer (fixed, 85%
-            wide + backdrop) so it never squashes the chat column to 0 width;
-            from md up it is the normal in-flow column. */}
-        {isLoggedIn && sidebarOpen && (
-          <div className="md:hidden fixed inset-0 z-30 bg-black/40" onClick={() => setSidebarOpen(false)} />
-        )}
-        {isLoggedIn && (
-          <div className={`${sidebarOpen ? 'flex' : 'hidden'} md:flex fixed md:static inset-y-0 left-0 md:inset-auto z-40 w-[85%] max-w-xs md:w-64 md:max-w-none flex-shrink-0 md:mb-0 flex-col min-h-0 pt-4 md:pt-0 px-2 md:px-0`}>
-            <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-3 h-full flex flex-col">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-gray-700 font-bold text-sm">💬 {t('chat.history')}</span>
-                <button
-                  onClick={() => setSidebarOpen(false)}
-                  className="md:hidden flex items-center justify-center text-gray-400 hover:text-gray-600 text-lg min-w-[40px] min-h-[40px] -mr-2 -mt-2"
-                >✕</button>
-              </div>
-              <button
-                onClick={createNewSession}
-                className="w-full bg-sky-500 hover:bg-sky-600 text-white px-4 py-2.5 rounded-lg transition font-medium text-sm mb-3"
-              >
-                + {t('chat.newChat')}
-              </button>
-
-              <div className="flex-1 overflow-y-auto space-y-1">
-                {sessions.length === 0 ? (
-                  <p className="text-gray-400 text-xs text-center py-4">{t('chat.noSessions')}</p>
-                ) : (
-                  sessions.map(session => (
-                    <div
-                      key={session.id}
-                      className={`group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition text-sm ${
-                        activeSessionId === session.id
-                          ? 'bg-sky-100 text-sky-800 font-medium'
-                          : 'text-gray-600 hover:bg-sky-50'
-                      }`}
-                      onClick={() => loadSession(session.id)}
-                    >
-                      <span className="flex-1 truncate">{session.subject || t('chat.untitled')}</span>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); deleteSession(session.id); }}
-                        className="flex items-center justify-center w-10 h-10 -my-2 flex-shrink-0 text-red-400 hover:text-red-500 text-sm rounded-md active:bg-red-50 md:hidden md:group-hover:flex group-focus-within:flex"
-                        title={t('chat.deleteSession')}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+        <Sidebar
+          t={t}
+          isLoggedIn={isLoggedIn}
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSelect={loadSession}
+          onNewChat={createNewSession}
+          onDelete={deleteSession}
+        />
 
         {/* Chat area */}
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -913,122 +764,19 @@ export default function Home() {
             </div>
           )}
 
-          {/* Messages */}
-          <div ref={messagesRef} className={`bg-white border border-sky-100 ${isLoggedIn && activeSessionId ? 'rounded-b-xl' : 'rounded-xl'} p-3 md:p-5 flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain mb-3 shadow-sm`}>
-            {chat.map((msg, i) => (
-              <div key={i} className={`mb-4 ${msg.role === 'user' ? (isRtl(lang) ? 'text-right' : 'text-left') : (isRtl(lang) ? 'text-left' : 'text-right')}`}>
-                <div className={`inline-block max-w-[85%] md:max-w-[80%] p-3 md:p-4 rounded-2xl text-sm md:text-base ${
-                  msg.role === 'user'
-                    ? 'bg-sky-500 text-white'
-                    : 'bg-sky-50 text-gray-800 border border-sky-100'
-                }`}>
-                  {msg.media && msg.media.type === 'image' && msg.media.data && (
-                    <img
-                      src={`data:${msg.media.mime || 'image/jpeg'};base64,${msg.media.data}`}
-                      alt={msg.media.name || 'image'}
-                      className="rounded-xl max-h-48 md:max-h-64 max-w-full mb-2"
-                    />
-                  )}
-                  {msg.media && msg.media.type !== 'image' && (
-                    <div className={`inline-flex items-center gap-1.5 text-xs rounded-lg px-2 py-1 mb-1 ${
-                      msg.role === 'user' ? 'bg-white/20 text-white' : 'bg-white border border-sky-100 text-gray-600'
-                    }`}>
-                      <span>{msg.media.type === 'audio' ? '🎙️' : '📄'}</span>
-                      <span className="truncate max-w-[180px]">{msg.media.name}</span>
-                    </div>
-                  )}
-                  {msg.upgrade_wall ? (
-                    <div className="min-w-[240px] md:min-w-[340px]">
-                      <div className="font-bold text-violet-800 mb-1">⭐ {t('chat.upgradeTitle')}</div>
-                      <div className="text-gray-700 mb-2 whitespace-pre-wrap">{msg.content}</div>
-                      {msg.upgrade_wall.free && (
-                        <div className="text-xs text-gray-500 mb-2">
-                          {t('chat.upgradeFree')
-                            .replace('{used}', Number(msg.upgrade_wall.free.used || 0).toLocaleString('en-US'))
-                            .replace('{limit}', Number(msg.upgrade_wall.free.limit || 0).toLocaleString('en-US'))}
-                        </div>
-                      )}
-                      <div className="flex flex-col gap-1.5 mb-3">
-                        {(msg.upgrade_wall.plans || []).map(p => (
-                          <div key={p.name} className="flex items-center justify-between gap-2 bg-white border border-violet-100 rounded-lg px-2.5 py-2">
-                            <div className="min-w-0 text-xs">
-                              <span className="font-bold text-gray-800">{p.label}</span>
-                              <span className="text-gray-600">
-                                {' — '}
-                                {t('chat.planRow')
-                                  .replace('{price}', `$${p.price}`)
-                                  .replace('{tokens}', Number(p.daily_tokens).toLocaleString('en-US'))}
-                              </span>
-                              <div className="text-[10px] text-gray-400">
-                                {t('chat.planValue').replace('{value}', `$${p.value_usd_day}`)}
-                              </div>
-                            </div>
-                            {msg.upgrade_wall.signed_in && (
-                              <button
-                                onClick={() => purchasePlan(p.name)}
-                                className="bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition flex-shrink-0"
-                              >
-                                ⬆ {p.label}
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                      {msg.upgrade_wall.signed_in && msg.upgrade_wall.token_bundle && (
-                        <div className="bg-white border border-sky-100 rounded-lg px-2.5 py-2 mb-2 flex items-center gap-2">
-                          <div className="min-w-0 flex-1 text-xs text-gray-600">
-                            🎟️ {t('chat.bundleDesc')
-                              .replace('{rate}', Number(msg.upgrade_wall.token_bundle.tokens_per_usd || 1000000).toLocaleString('en-US'))}
-                          </div>
-                          <input
-                            value={bundleAmount}
-                            onChange={(e) => setBundleAmount(e.target.value.replace(/[^0-9]/g, ''))}
-                            inputMode="numeric"
-                            aria-label={t('chat.bundlePlaceholder')}
-                            className="w-16 border border-sky-200 rounded-lg px-2 py-1.5 text-xs text-center"
-                          />
-                          <button
-                            onClick={purchaseTokens}
-                            className="bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition flex-shrink-0"
-                          >
-                            {t('chat.bundleBtn')}
-                          </button>
-                        </div>
-                      )}
-                      {!msg.upgrade_wall.signed_in && (
-                        <div className="text-xs text-gray-600 bg-white border border-violet-100 rounded-lg px-3 py-2">
-                          {t('chat.upgradeGuestHint')}
-                        </div>
-                      )}
-                      {purchaseError && <div className="text-red-500 text-xs mt-2">{purchaseError}</div>}
-                    </div>
-                  ) : msg.content ? <div className="break-words whitespace-pre-wrap">{msg.content}</div> : null}
-                </div>
-                {msg.role === 'assistant' && (
-                  <div className={`text-xs text-gray-400 mt-1 ${isRtl(lang) ? 'text-left' : 'text-right'}`}>
-                    {msg.source === 'miner' && (
-                      <span className="text-emerald-600">⛏️ {t('chat.viaMiner')}{msg.miner_id ? ` #${msg.miner_id}` : ''}</span>
-                    )}
-                    {msg.source === 'local' && (
-                      <span>💻 {t('chat.viaLocal')}</span>
-                    )}
-                    {msg.payment_status === 'free_miner' && (
-                      <span className="text-amber-600"> 🎁 {t('chat.freeMinerCredit')}</span>
-                    )}
-                    {msg.payment_status === 'tokens' && (
-                      <span className="text-sky-600"> 🎟️ {t('chat.paidTokens')}</span>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-            {loading && (
-              <div className={isRtl(lang) ? 'text-left' : 'text-right'}>
-                <div className="inline-block bg-sky-50 text-gray-600 border border-sky-100 p-3 md:p-4 rounded-2xl text-sm md:text-base">{t('chat.typing')}</div>
-              </div>
-            )}
-            <div />
-          </div>
+          <MessageList
+            messagesRef={messagesRef}
+            chat={chat}
+            loading={loading}
+            lang={lang}
+            t={t}
+            hasSubjectBar={isLoggedIn && !!activeSessionId}
+            purchasePlan={purchasePlan}
+            purchaseTokens={purchaseTokens}
+            bundleAmount={bundleAmount}
+            setBundleAmount={setBundleAmount}
+            purchaseError={purchaseError}
+          />
 
           {/* v3.28.0 — plan upsell after a wallet-paid message (once/day) */}
           {upgradeNotice && (
@@ -1056,38 +804,32 @@ export default function Home() {
               </button>
             </div>
           )}
-          {/* Input bar — pinned bottom */}
-          {(attachment || attachError) && (
-            <div className="flex flex-col gap-1.5 mb-2 items-start">
-              {pendingAttachmentChip}
-              {attachErrorLine}
-            </div>
-          )}
-          {/* Mobile: two compact rows; md:contents restores the single desktop row. */}
-          <div className="flex flex-col md:flex-row gap-2 md:gap-3">
-            <div className="flex items-center gap-2 md:contents">
-              {renderModelDropdown({ upward: true })}
-              {renderMediaButtons()}
-            </div>
-            <div className="flex gap-2 md:contents">
-              <input
-                ref={inputRef}
-                type="text"
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) sendMessage(); }}
-                placeholder={t('chat.placeholder')}
-                className="flex-1 min-w-0 bg-white text-gray-800 placeholder-gray-500 border border-sky-200 px-4 md:px-6 py-3 md:py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 text-sm md:text-base shadow-sm"
-              />
-              <button
-                onClick={sendMessage}
-                disabled={loading}
-                className="bg-sky-500 hover:bg-sky-600 text-white px-6 md:px-8 py-3 md:py-3.5 rounded-xl transition disabled:opacity-50 font-bold text-sm md:text-base shadow-sm flex-shrink-0"
-              >
-                {loading ? '...' : t('chat.send')}
-              </button>
-            </div>
-          </div>
+          <Composer
+            variant="chat"
+            t={t}
+            message={message}
+            setMessage={setMessage}
+            sendMessage={sendMessage}
+            loading={loading}
+            models={models}
+            selectedModel={selectedModel}
+            selectedModelData={selectedModelData}
+            setSelectedModel={setSelectedModel}
+            dropdownOpen={dropdownOpen}
+            setDropdownOpen={setDropdownOpen}
+            dropdownRef={dropdownRef}
+            inputRef={inputRef}
+            fileInputRef={fileInputRef}
+            onPickFile={onPickFile}
+            attachFileAllowed={attachFileAllowed}
+            audioOk={audioOk}
+            recording={recording}
+            startRecording={startRecording}
+            stopRecording={stopRecording}
+            attachment={attachment}
+            removeAttachment={removeAttachment}
+            attachError={attachError}
+          />
         </div>
       </main>
 

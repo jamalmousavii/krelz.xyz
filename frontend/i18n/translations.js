@@ -1,41 +1,10 @@
+// Locale dictionaries are code-split: only `en` (the universal fallback)
+// ships in the app bundle; the other 32 locales load on demand via webpack
+// dynamic import (~70KB gzip off _app). `translations` is the sync registry
+// that t() walks — it starts with `en` and is filled by loadLocale().
 import en from './translations/en';
-import fa from './translations/fa';
-import ar from './translations/ar';
-import he from './translations/he';
-import ur from './translations/ur';
-import fr from './translations/fr';
-import de from './translations/de';
-import es from './translations/es';
-import pt from './translations/pt';
-import it from './translations/it';
-import nl from './translations/nl';
-import ru from './translations/ru';
-import uk from './translations/uk';
-import pl from './translations/pl';
-import tr from './translations/tr';
-import zh from './translations/zh';
-import zhTW from './translations/zh-TW';
-import ja from './translations/ja';
-import ko from './translations/ko';
-import hi from './translations/hi';
-import bn from './translations/bn';
-import id from './translations/id';
-import vi from './translations/vi';
-import th from './translations/th';
-import ms from './translations/ms';
-import sv from './translations/sv';
-import da from './translations/da';
-import fi from './translations/fi';
-import no from './translations/no';
-import cs from './translations/cs';
-import ro from './translations/ro';
-import el from './translations/el';
-import hu from './translations/hu';
 
-const translations = {
-  en, fa, ar, he, ur, fr, de, es, pt, it, nl, ru, uk, pl, tr,
-  zh, 'zh-TW': zhTW, ja, ko, hi, bn, id, vi, th, ms, sv, da, fi, no, cs, ro, el, hu,
-};
+export const translations = { en };
 
 export const LANGUAGES = [
   { code: 'en', name: 'English', flag: '🇬🇧', rtl: false },
@@ -75,6 +44,67 @@ export const LANGUAGES = [
 
 export const RTL_LANGS = new Set(LANGUAGES.filter(l => l.rtl).map(l => l.code));
 
+const CODES = new Set(LANGUAGES.map((l) => l.code));
+
+// Codes are known synchronously (for detection/validation) even while the
+// dictionary chunk is still in flight.
+export function hasLocale(code) {
+  return CODES.has(code);
+}
+
+// One dynamic-import loader per locale (literal paths so webpack can split).
+const loaders = {
+  fa: () => import('./translations/fa'),
+  ar: () => import('./translations/ar'),
+  he: () => import('./translations/he'),
+  ur: () => import('./translations/ur'),
+  fr: () => import('./translations/fr'),
+  de: () => import('./translations/de'),
+  es: () => import('./translations/es'),
+  pt: () => import('./translations/pt'),
+  it: () => import('./translations/it'),
+  nl: () => import('./translations/nl'),
+  ru: () => import('./translations/ru'),
+  uk: () => import('./translations/uk'),
+  pl: () => import('./translations/pl'),
+  tr: () => import('./translations/tr'),
+  zh: () => import('./translations/zh'),
+  'zh-TW': () => import('./translations/zh-TW'),
+  ja: () => import('./translations/ja'),
+  ko: () => import('./translations/ko'),
+  hi: () => import('./translations/hi'),
+  bn: () => import('./translations/bn'),
+  id: () => import('./translations/id'),
+  vi: () => import('./translations/vi'),
+  th: () => import('./translations/th'),
+  ms: () => import('./translations/ms'),
+  sv: () => import('./translations/sv'),
+  da: () => import('./translations/da'),
+  fi: () => import('./translations/fi'),
+  no: () => import('./translations/no'),
+  cs: () => import('./translations/cs'),
+  ro: () => import('./translations/ro'),
+  el: () => import('./translations/el'),
+  hu: () => import('./translations/hu'),
+};
+
+// Idempotent: resolves with the dict (already-loaded locales return
+// synchronously-wrapped promises), undefined for unknown codes.
+export async function loadLocale(code) {
+  if (translations[code]) return translations[code];
+  const load = loaders[code];
+  if (!load) return undefined;
+  try {
+    const mod = await load();
+    const dict = mod && mod.default ? mod.default : mod;
+    if (dict) translations[code] = dict;
+    return dict;
+  } catch (err) {
+    console.warn('Failed to load locale', code, err);
+    return undefined;
+  }
+}
+
 export function isRtl(code) {
   return RTL_LANGS.has(code);
 }
@@ -83,18 +113,18 @@ export function detectLanguage() {
   if (typeof window === 'undefined') return 'en';
   try {
     const saved = sessionStorage.getItem('krelz-lang');
-    if (saved && translations[saved]) return saved;
+    if (saved && CODES.has(saved)) return saved;
   } catch (e) {}
   const prefs = navigator.languages || [navigator.language || 'en'];
   for (const p of prefs) {
     const code = String(p).toLowerCase();
     if (code.startsWith('zh-tw') || code.startsWith('zh-hk') || code.startsWith('zh-hant')) {
-      if (translations['zh-TW']) return 'zh-TW';
+      if (CODES.has('zh-TW')) return 'zh-TW';
     }
-    if (translations[code]) return code;
+    if (CODES.has(code)) return code;
     const base = code.split('-')[0];
     if (base === 'nb' || base === 'nn' || base === 'no') return 'no';
-    if (translations[base]) return base;
+    if (CODES.has(base)) return base;
   }
   return 'en';
 }

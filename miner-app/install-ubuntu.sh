@@ -11,7 +11,7 @@
 
 set -e
 
-KRELZ_VERSION="3.35.0"
+KRELZ_VERSION="3.36.0"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -175,7 +175,7 @@ STEP_START=$(date +%s)
 run_with_spinner "Downloading packages..." $SUDO apt-get update -qq
 run_with_spinner "Installing build tools..." $SUDO apt-get install -y -qq curl git build-essential jq
 STEP_END=$(date +%s)
-step_done "Prerequisites installed ($(($STEP_END - $STEP_START))s)"
+step_done "Prerequisites installed ($((STEP_END - STEP_START))s)"
 
 # --- Step 2: Node.js ---
 step_start 2 "Installing Node.js..."
@@ -185,11 +185,11 @@ if ! command -v node &> /dev/null || [ "$(node -v | cut -d'.' -f1 | tr -d 'v')" 
   run_with_spinner "Installing Node.js..." $SUDO apt-get install -y -qq nodejs
   NODE_VER=$(node -v)
   STEP_END=$(date +%s)
-  step_done "Node.js ${NODE_VER} installed ($(($STEP_END - $STEP_START))s)"
+  step_done "Node.js ${NODE_VER} installed ($((STEP_END - STEP_START))s)"
 else
   NODE_VER=$(node -v)
   STEP_END=$(date +%s)
-  step_done "Node.js ${NODE_VER} already installed ($(($STEP_END - $STEP_START))s)"
+  step_done "Node.js ${NODE_VER} already installed ($((STEP_END - STEP_START))s)"
 fi
 
 # --- Step 3: Ollama ---
@@ -198,10 +198,10 @@ STEP_START=$(date +%s)
 if ! command -v ollama &> /dev/null; then
   run_with_spinner "Installing Ollama (sha256-verified)..." install_ollama_binary
   STEP_END=$(date +%s)
-  step_done "Ollama installed ($(($STEP_END - $STEP_START))s)"
+  step_done "Ollama installed ($((STEP_END - STEP_START))s)"
 else
   STEP_END=$(date +%s)
-  step_done "Ollama already installed ($(($STEP_END - $STEP_START))s)"
+  step_done "Ollama already installed ($((STEP_END - STEP_START))s)"
 fi
 
 $SUDO systemctl enable ollama 2>/dev/null || true
@@ -264,7 +264,7 @@ echo ""
 
 SELECTED_MODELS=""
 
-read -p "  Enter choice [1-9, a-g, 0] (default: 1): " choice
+read -r -p "  Enter choice [1-9, a-g, 0] (default: 1): " choice
 choice=${choice:-4}
 
 case $choice in
@@ -299,7 +299,7 @@ case $choice in
     echo -e "  ${GREEN}a${NC}) nomic-embed-text   (0.3 GB)"
     echo -e "  ${GREEN}b${NC}) bge-m3             (1.2 GB)"
     echo ""
-    read -p "  Numbers (e.g. 1 4 7): " custom_input
+    read -r -p "  Numbers (e.g. 1 4 7): " custom_input
     SELECTED_MODELS=""
     for num in $custom_input; do
       case $num in
@@ -316,7 +316,7 @@ case $choice in
         b) SELECTED_MODELS="$SELECTED_MODELS bge-m3" ;;
       esac
     done
-    SELECTED_MODELS=$(echo $SELECTED_MODELS | xargs)
+    SELECTED_MODELS=$(echo "$SELECTED_MODELS" | xargs)
     SELECTED_MODELS=${SELECTED_MODELS:-"llama3.1:8b"}
     ;;
   *) SELECTED_MODELS="llama3.1:8b" ;;
@@ -326,10 +326,23 @@ echo ""
 echo -e "${CYAN}  Installing models: ${SELECTED_MODELS}${NC}"
 echo ""
 
+# Disk preflight: a full disk mid-pull leaves a corrupt blob and a miner
+# that fails every task. 15GB covers the default picks (llama3.1:8b ≈ 5GB)
+# with headroom; KRELZ_SKIP_DISK_CHECK=1 overrides (air-gapped/tiny boxes).
+if [ "${KRELZ_SKIP_DISK_CHECK:-0}" != "1" ]; then
+  FREE_KB=$(df -Pk / | awk 'NR==2 {print $4}')
+  FREE_GB=$(( ${FREE_KB:-0} / 1024 / 1024 ))
+  if [ "$FREE_GB" -lt 15 ]; then
+    echo -e "  ${RED:-}  ✗ Only ${FREE_GB}GB free on / — model downloads need ≥15GB.${NC:-}"
+    echo -e "  ${YELLOW:-}  Free up disk space and re-run, or set KRELZ_SKIP_DISK_CHECK=1 to skip this check.${NC:-}"
+    exit 1
+  fi
+fi
+
 # --- Step 4: Download Models ---
 step_start 4 "Downloading models..."
 STEP_START=$(date +%s)
-MODEL_COUNT=$(echo $SELECTED_MODELS | wc -w)
+MODEL_COUNT=$(echo "$SELECTED_MODELS" | wc -w)
 MODEL_CURRENT=0
 
 for MODEL in $SELECTED_MODELS; do
@@ -341,9 +354,9 @@ for MODEL in $SELECTED_MODELS; do
 done
 
 STEP_END=$(date +%s)
-ELAPSED=$(($STEP_END - $STEP_START))
-MINUTES=$(($ELAPSED / 60))
-SECONDS=$(($ELAPSED % 60))
+ELAPSED=$((STEP_END - STEP_START))
+MINUTES=$((ELAPSED / 60))
+SECONDS=$((ELAPSED % 60))
 if [ $MINUTES -gt 0 ]; then
   step_done "Models ready (${MINUTES}m ${SECONDS}s)"
 else
@@ -364,7 +377,7 @@ fi
 # onto headless miners for nothing.
 run_with_spinner "Installing npm dependencies..." bash -c "cd '$INSTALL_DIR/miner-app' && npm ci --omit=dev"
 STEP_END=$(date +%s)
-step_done "Miner installed at $INSTALL_DIR ($(($STEP_END - $STEP_START))s)"
+step_done "Miner installed at $INSTALL_DIR ($((STEP_END - STEP_START))s)"
 
 # --- Email & Token ---
 echo ""
@@ -377,7 +390,7 @@ if [ -z "$USER_EMAIL" ]; then
   echo -e "  Enter your account email and miner token"
   echo -e "  (Get your token from https://krelz.xyz/profile)"
   echo ""
-  read -p "  Email: " USER_EMAIL
+  read -r -p "  Email: " USER_EMAIL
 fi
 
 if [ -z "$MINER_TOKEN" ]; then
@@ -389,7 +402,7 @@ fi
 # --- Miner name (shown in dashboard) ---
 if [ -z "$MINER_NAME" ]; then
   DEFAULT_NAME=$(hostname 2>/dev/null || echo "miner")
-  read -p "  Miner Name [${DEFAULT_NAME}]: " MINER_NAME
+  read -r -p "  Miner Name [${DEFAULT_NAME}]: " MINER_NAME
   MINER_NAME=${MINER_NAME:-$DEFAULT_NAME}
 fi
 
@@ -416,7 +429,7 @@ fi
 echo -e "  ${GREEN}✓ CPU: ${CPU_MODEL}${NC}"
 
 STEP_END=$(date +%s)
-step_done "System info detected ($(($STEP_END - $STEP_START))s)"
+step_done "System info detected ($((STEP_END - STEP_START))s)"
 
 # --- Step 7: Register Miner ---
 step_start 7 "Registering miner..."
@@ -441,7 +454,7 @@ SETUP_RESPONSE=$(printf '%s' "$SETUP_PAYLOAD" | curl -s -X POST https://krelz.xy
 
 STEP_END=$(date +%s)
 if echo "$SETUP_RESPONSE" | grep -q '"success":true'; then
-  step_done "Miner registered ($(($STEP_END - $STEP_START))s)"
+  step_done "Miner registered ($((STEP_END - STEP_START))s)"
 else
   step_fail "Registration failed. Check email and token."
   echo -e "  ${YELLOW}Response: $SETUP_RESPONSE${NC}"
@@ -457,8 +470,8 @@ STEP_START=$(date +%s)
 # M6/H4: jq-encode (a quote in the miner name used to produce invalid JSON)
 # and keep the file owner-only — it holds the miner token.
 jq -n \
-  --arg models "$(echo $SELECTED_MODELS | tr ' ' ',')" \
-  --arg default_model "$(echo $SELECTED_MODELS | awk '{print $1}')" \
+  --arg models "$(echo "$SELECTED_MODELS" | tr ' ' ',')" \
+  --arg default_model "$(echo "$SELECTED_MODELS" | awk '{print $1}')" \
   --arg miner_token "$MINER_TOKEN" \
   --arg name "$MINER_NAME" \
   '{models: $models, default_model: $default_model, miner_token: $miner_token, name: $name}' \
@@ -485,13 +498,13 @@ run_with_spinner "Enabling service..." $SUDO systemctl daemon-reload
 run_with_spinner "Starting service..." bash -c "$SUDO systemctl enable krelz-miner && $SUDO systemctl start krelz-miner"
 
 STEP_END=$(date +%s)
-step_done "Service started ($(($STEP_END - $STEP_START))s)"
+step_done "Service started ($((STEP_END - STEP_START))s)"
 
 # --- Summary ---
 SCRIPT_END=$(date +%s)
-TOTAL_ELAPSED=$(($SCRIPT_END - $SCRIPT_START))
-TOTAL_MINUTES=$(($TOTAL_ELAPSED / 60))
-TOTAL_SECONDS=$(($TOTAL_ELAPSED % 60))
+TOTAL_ELAPSED=$((SCRIPT_END - SCRIPT_START))
+TOTAL_MINUTES=$((TOTAL_ELAPSED / 60))
+TOTAL_SECONDS=$((TOTAL_ELAPSED % 60))
 
 echo ""
 echo -e "${GREEN}========================================${NC}"

@@ -48,6 +48,32 @@ cd backend
 node src/server.js
 ```
 
+### 5. Tests & Quality Gates
+
+```bash
+# Backend — jest: 195 tests / 19 suites (integration.money skips without DATABASE_URL)
+cd backend
+npm test   # = node --experimental-vm-modules ./node_modules/jest/bin/jest.js (plain `npx jest` breaks attachments.test.js)
+
+# Money integration suite against a throwaway PostgreSQL (198 tests / 20 suites):
+docker run -d --name krelz-it-pg -e POSTGRES_USER=krelz -e POSTGRES_PASSWORD=krelz \
+  -e POSTGRES_DB=krelz_it -p 5433:5432 postgres:16-alpine
+DATABASE_URL='postgresql://krelz:krelz@localhost:5433/krelz_it' npm test
+docker rm -f krelz-it-pg
+
+# Frontend — lint (warning-only), i18n parity, production build
+cd frontend
+npm run lint && npm run i18n:check && npm run build
+
+# Install scripts — must be clean (CI enforces)
+shellcheck miner-app/*.sh && bash -n miner-app/*.sh
+```
+
+CI (`.github/workflows/ci.yml`) runs all of it on every push: backend jest with a
+`postgres:16-alpine` service (so `integration.money` executes), frontend lint +
+`i18n:check` + `next build`, `shellcheck miner-app/*.sh`, and `node --check` over
+`miner-app/src/**/*.js`.
+
 ## Project Structure
 
 ### frontend/
@@ -56,8 +82,7 @@ Next.js 14 frontend with Tailwind CSS and i18n support.
 ```
 frontend/
 ├── pages/
-│   ├── index.js           # Chat homepage (chat-first; fullscreen frame; attachments/voice v3.20.0)
-│   ├── chat.js            # Redirects to /
+│   ├── index.js           # Chat homepage (state hub; UI split into components/chat/ v3.36.0)
 │   ├── profile.js         # Dashboard (balance, plans + token bundle, earnings breakdown, rank card)
 │   ├── miners.js          # Miner mgmt + Quick Install copy + history (v3.22.0)
 │   ├── settings.js         # Settings (USD wallet, 33-lang dropdown, password)
@@ -73,9 +98,12 @@ frontend/
 │   ├── Footer.js          # Global version footer (every page, v3.16.0)
 │   ├── GoogleLogin.js     # Google OAuth
 │   ├── ErrorBoundary.js   # Error boundary
-│   └── LanguageSwitcher.js # Dropdown: flag + language name (33 langs)
+│   ├── LanguageSwitcher.js # Dropdown: flag + language name (33 langs)
+│   └── chat/              # Chat UI split (Sidebar, MessageList, Composer, UpgradeWall; v3.36.0)
+├── hooks/
+│   └── useApi.js          # Abort-aware fetch hook (leaderboard/explorer; v3.36.0)
 ├── i18n/
-│   ├── translations.js    # Aggregator, LANGUAGES, RTL_LANGS, isRtl, detectLanguage
+│   ├── translations.js    # Code-split registry: en static + 32 lazy loaders, LANGUAGES, RTL_LANGS, isRtl, hasLocale, loadLocale, detectLanguage
 │   ├── translations/      # One file per language (33 files: en, fa, ar, ...)
 │   └── LanguageContext.js  # Provider: browser detect + sessionStorage
 └── styles/
@@ -92,9 +120,12 @@ backend/
 │   ├── cache.js           # Redis caching
 │   ├── database/
 │   │   ├── pool.js        # PostgreSQL connection
-│   │   └── migrate.js     # DB migration (18 tables + resource columns)
+│   │   └── migrate.js     # DB migration (20 tables + resource columns)
 │   ├── middleware/
-│   │   └── auth.js        # JWT + Google OAuth
+│   │   ├── auth.js        # JWT + Google OAuth
+│   │   └── validate.js    # Body validators (chat/register/deposit/withdraw)
+│   ├── services/
+│   │   └── plans.js       # PLANS catalog, getActivePlan, activatePlan, charge chain helpers
 │   └── routes/
 │       ├── auth.js        # Register/Login/Google
 │       ├── chat.js        # LLM chat + payment chain + coverage wall
@@ -117,6 +148,7 @@ miner-app/
 ├── install-redhat.sh      # RedHat/Fedora installer
 ├── uninstall-ubuntu.sh    # Ubuntu/Debian uninstaller
 ├── uninstall-redhat.sh    # RedHat/Fedora uninstaller
+├── assets/                # Electron icon.png + tray-icon.png (v3.36.0)
 └── src/                   # Miner source
     ├── main.js            # Electron desktop app
     ├── cli.js             # Headless CLI entry (no Electron)
@@ -374,18 +406,18 @@ const accounts = await window.ethereum.request({ method: 'eth_accounts' });
 ### How it works
 
 - Language files: `frontend/i18n/translations/<code>.js` (one per language, full key set)
-- Aggregator: `frontend/i18n/translations.js` exports `translations`, `LANGUAGES` (code/name/flag/rtl), `RTL_LANGS`, `isRtl()`, `detectLanguage()`
+- Registry: `frontend/i18n/translations.js` exports `translations` (sync registry, starts with `en`), `LANGUAGES` (code/name/flag/rtl), `RTL_LANGS`, `isRtl()`, `hasLocale()`, `loadLocale()`, `detectLanguage()`
+- **Code-split (v3.36.0):** only `en` is statically imported; the other 32 locales load as webpack chunks via literal `() => import('./translations/<code>')` loaders (`_app` shrank from ~500 kB to ~27 kB raw). `changeLang()` waits for the chunk before committing so the switch never flashes English
 - **Detection (first visit):** `sessionStorage['krelz-lang']` → else `navigator.languages` match → else `en`
 - **User choice:** stored in `sessionStorage['krelz-lang']` (persists while user is on the site / same tab)
 - **RTL:** `fa`, `ar`, `he`, `ur` — `document.documentElement.dir` set by LanguageContext
-- Fallback: missing keys fall back to English (`t()` walks `translations[lang]` then `translations.en`)
+- Fallback: missing keys (and a still-loading locale chunk) fall back to English (`t()` walks `translations[lang]` then `translations.en`)
 
 ### Adding a new language
 
 1. Copy `frontend/i18n/translations/en.js` → `<code>.js` and translate all values
-2. Import it in `frontend/i18n/translations.js` and add to the `translations` object
-3. Add `{ code, name, flag, rtl }` to `LANGUAGES`
-4. If RTL, add code to RTL set (via `rtl: true` on the LANGUAGES entry)
+2. Register a loader in `frontend/i18n/translations.js`: add the `{ code, ... }` row to `LANGUAGES` and a `code: () => import('./translations/<code>')` entry to `loaders` (`en` stays the only static import)
+3. Run `npm run i18n:check` — it fails unless the new file matches `en.js` key-for-key and every referenced key exists
 
 ### Translation Keys (Profile)
 

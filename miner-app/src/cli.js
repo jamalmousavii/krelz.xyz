@@ -20,7 +20,6 @@ if (!config.miner_token) {
 }
 
 console.log('🚀 Krelz Miner starting...');
-console.log(`   Token: ${config.miner_token.slice(0, 10)}...`);
 console.log(`   Model: ${config.default_model}`);
 
 const ollama = new OllamaService(config.default_model);

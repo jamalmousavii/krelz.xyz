@@ -1,43 +1,24 @@
 import Head from 'next/head';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
-import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
+import useApi from '../hooks/useApi';
 
 export default function Leaderboard() {
   const { t, lang } = useLanguage();
   const [tab, setTab] = useState('miners');
-  const [miners, setMiners] = useState([]);
-  const [users, setUsers] = useState([]);
-  // F15: the old fetch swallowed every error — the tab just sat empty.
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => { fetchData(); }, [tab]);
-
-  const fetchData = async () => {
-    setLoading(true);
-    setError(false);
-    try {
-      const res = await fetch(`/api/leaderboard/${tab}`);
-      const data = await res.json();
-      if (data.success) {
-        if (tab === 'miners') setMiners(data.miners || []);
-        else setUsers(data.users || []);
-      } else {
-        setError(true);
-      }
-    } catch (err) {
-      console.error(err);
-      setError(true);
-    }
-    setLoading(false);
-  };
+  // Phase 6: shared abort-aware hook — switching tabs cancels the in-flight
+  // request, so a slow miners response can no longer land on the users tab.
+  const { data, loading, error, reload } = useApi(`/api/leaderboard/${tab}`, {
+    deps: [tab],
+  });
+  const miners = data?.miners || [];
+  const users = data?.users || [];
 
   const medals = ['🥇', '🥈', '🥉'];
 
   return (
-    <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
+    <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50`}>
       <Head><title>{t('leaderboard.title')} - Krelz Network</title></Head>
       <Navbar />
 
@@ -60,7 +41,7 @@ export default function Leaderboard() {
         {!loading && error && (
           <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3 flex items-center justify-between gap-3">
             <span>{t('common.loadFailed')}</span>
-            <button onClick={fetchData} className="font-bold underline min-h-[36px]">{t('common.retry')}</button>
+            <button onClick={reload} className="font-bold underline min-h-[36px]">{t('common.retry')}</button>
           </div>
         )}
 

@@ -9,25 +9,37 @@ const PLATFORM_REVENUE_SHARE = 0.1;
 
 // GET /api/stats/network — powers the public explorer page: summary stats
 // plus the rows its transactions/miners tabs render.
+
+// The two aggregates below walk the whole tasks table; memoise them for 30s
+// in-process so a Redis outage (or a cold cache) can't turn every page view
+// into a full-table scan.
+const AGG_TTL_MS = 30000;
+let aggMemo = { at: 0, miners: null, totals: null };
+
+async function loadAggregates() {
+  const now = Date.now();
+  if (aggMemo.miners && now - aggMemo.at < AGG_TTL_MS) return aggMemo;
+  const minersResult = await pool.query(
+    `SELECT COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE status = 'online') AS online
+       FROM miners
+      WHERE status IS NULL OR status != 'removed'`
+  );
+  const totalsResult = await pool.query(`
+    SELECT (SELECT COUNT(*) FROM users) AS total_users,
+           (SELECT COUNT(*) FROM tasks) AS total_requests,
+           (SELECT COUNT(*) FROM tasks WHERE status = 'completed') AS completed_tasks,
+           COALESCE(SUM(cost) FILTER (WHERE status = 'completed'), 0) AS total_cost,
+           COALESCE(SUM(cost * ${PLATFORM_REVENUE_SHARE}) FILTER (WHERE status = 'completed'), 0) AS platform_revenue
+      FROM tasks
+  `);
+  aggMemo = { at: now, miners: minersResult.rows[0], totals: totalsResult.rows[0] };
+  return aggMemo;
+}
+
 router.get('/network', async (req, res) => {
   try {
-    const minersResult = await pool.query(
-      `SELECT COUNT(*) AS total,
-              COUNT(*) FILTER (WHERE status = 'online') AS online
-         FROM miners
-        WHERE status IS NULL OR status != 'removed'`
-    );
-
-    const totalsResult = await pool.query(`
-      SELECT (SELECT COUNT(*) FROM users) AS total_users,
-             (SELECT COUNT(*) FROM tasks) AS total_requests,
-             (SELECT COUNT(*) FROM tasks WHERE status = 'completed') AS completed_tasks,
-             COALESCE(SUM(cost) FILTER (WHERE status = 'completed'), 0) AS total_cost,
-             COALESCE(SUM(cost * ${PLATFORM_REVENUE_SHARE}) FILTER (WHERE status = 'completed'), 0) AS platform_revenue
-        FROM tasks
-    `);
-
-    const totals = totalsResult.rows[0];
+    const { miners: minerRow, totals } = await loadAggregates();
 
     const tasksResult = await pool.query(`
       SELECT id, user_id, miner_id, tokens_used, cost, status, created_at
@@ -47,8 +59,8 @@ router.get('/network', async (req, res) => {
     res.json({
       success: true,
       stats: {
-        total_miners: parseInt(minersResult.rows[0].total, 10),
-        active_miners: parseInt(minersResult.rows[0].online, 10),
+        total_miners: parseInt(minerRow.total, 10),
+        active_miners: parseInt(minerRow.online, 10),
         total_users: parseInt(totals.total_users, 10),
         total_requests: parseInt(totals.total_requests, 10),
         completed_tasks: parseInt(totals.completed_tasks, 10),
@@ -64,5 +76,11 @@ router.get('/network', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+// Test hook: module-level memo would otherwise leak across test cases that
+// share a process (a stale entry would swallow the aggregate queries).
+router.__resetAggregates = () => {
+  aggMemo = { at: 0, miners: null, totals: null };
+};
 
 module.exports = router;

@@ -83,11 +83,6 @@ const depositRules = [
   body('tx_hash').optional().isLength({ max: 66 }),
 ];
 
-const deductRules = [
-  body('amount').isFloat({ min: 0.00000001 }).withMessage('Amount must be positive'),
-  body('reason').optional().isLength({ max: 200 }),
-];
-
 const transferRules = [
   body('to_user_id').isInt({ min: 1 }).withMessage('Valid recipient required'),
   body('amount').isFloat({ min: 0.00000001 }).withMessage('Amount must be positive'),
@@ -106,7 +101,6 @@ module.exports = {
   minerRegisterRules,
   heartbeatRules,
   depositRules,
-  deductRules,
   transferRules,
   stakeRules,
 };

@@ -35,7 +35,7 @@ export default function PlansModal({
   if (!open) return null;
 
   return (
-    <div className={`fixed inset-0 z-[70] flex items-center justify-center p-3 md:p-6 ${rtl ? 'rtl' : 'ltr'}`} role="dialog" aria-modal="true" aria-label={t('home.pricingTitle')}>
+    <div className={`fixed inset-0 z-[70] flex items-center justify-center p-3 md:p-6`} role="dialog" aria-modal="true" aria-label={t('home.pricingTitle')}>
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-xl border border-sky-100 w-full max-w-4xl max-h-[85vh] overflow-y-auto p-4 md:p-6">
         <button

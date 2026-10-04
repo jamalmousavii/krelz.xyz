@@ -56,6 +56,9 @@ describe('GET /api/stats/network', () => {
   beforeEach(() => {
     pool.__state.statements.length = 0;
     pool.__state.queryImpl = scriptQueries();
+    // The route memoises its two aggregate queries for 30s in-process — reset
+    // so each case sees the full query sequence.
+    statsRouter.__resetAggregates();
   });
 
   it('returns stats plus the explorer rows', async () => {

@@ -426,10 +426,17 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
     }
 
     if (error) {
-      await pool.query(
-        "UPDATE tasks SET response = $1, status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $2 AND status IN ('pending', 'processing')",
+      // Same replay guard as the success branch: a duplicate error result for
+      // an already-resolved (or re-dispatched-and-resolved) task must not
+      // flip it back to failed or resolve a new pending callback.
+      const failed = await pool.query(
+        "UPDATE tasks SET response = $1, status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $2 AND status IN ('pending', 'processing') RETURNING id",
         [error, task_id]
       );
+      if (failed.rows.length === 0) {
+        logger.warn({ taskId: task_id, minerId: miner.id }, 'Ignored replayed task_result (error)');
+        return;
+      }
     } else {
       // This handler only records the raw result. Billing (cost, miner earnings,
       // daily tokens) is owned exclusively by routes/chat.js so a task is never

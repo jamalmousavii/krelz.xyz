@@ -97,7 +97,8 @@ router.post('/tokens/purchase', authenticate, async (req, res) => {
         `UPDATE plan_purchases SET status = 'failed' WHERE order_id = $1 AND status = 'pending'`,
         [orderId]
       ).catch((err) => logger.error({ err, orderId }, 'Failed to mark purchase failed'));
-      return res.status(500).json({ error: result.error || 'Invoice creation failed' });
+      logger.error({ err: result.error }, 'Plan invoice creation failed');
+      return res.status(500).json({ error: 'Invoice creation failed' });
     }
 
     await pool.query(
@@ -153,7 +154,8 @@ router.post('/:tier/purchase', authenticate, async (req, res) => {
         `UPDATE plan_purchases SET status = 'failed' WHERE order_id = $1 AND status = 'pending'`,
         [orderId]
       ).catch((err) => logger.error({ err, orderId }, 'Failed to mark purchase failed'));
-      return res.status(500).json({ error: result.error || 'Invoice creation failed' });
+      logger.error({ err: result.error }, 'Plan invoice creation failed');
+      return res.status(500).json({ error: 'Invoice creation failed' });
     }
 
     await pool.query(

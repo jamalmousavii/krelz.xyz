@@ -2,7 +2,6 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
-import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
 import EarningsBreakdown from '../components/EarningsBreakdown';
 import { useAuth, apiFetch, ApiError } from '../utils/api';
@@ -230,7 +229,7 @@ export default function Miners() {
   );
 
   return (
-    <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
+    <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50`}>
       <Head><title>{t('profile.myMiners')} - Krelz Network</title></Head>
 
       {/* Guide modal */}

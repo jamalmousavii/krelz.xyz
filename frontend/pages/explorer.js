@@ -1,40 +1,18 @@
 import Head from 'next/head';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
-import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
+import useApi from '../hooks/useApi';
 
 export default function Explorer() {
   const { t, lang } = useLanguage();
   const [activeTab, setActiveTab] = useState('transactions');
-  const [transactions, setTransactions] = useState([]);
-  const [miners, setMiners] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
   const [query, setQuery] = useState('');
-
-  useEffect(() => { fetchData(); }, []);
-
-  const fetchData = async () => {
-    setLoading(true);
-    setError(false);
-    try {
-      const res = await fetch('/api/stats/network');
-      const data = await res.json();
-      if (data.success) {
-        setTransactions(data.recent_tasks || []);
-        setMiners(data.top_miners || []);
-        setStats(data.stats || null);
-      } else {
-        setError(true);
-      }
-    } catch (err) {
-      console.error('Error:', err);
-      setError(true);
-    }
-    setLoading(false);
-  };
+  // Phase 6: abort-aware shared hook (see hooks/useApi.js).
+  const { data, loading, error, reload } = useApi('/api/stats/network');
+  const transactions = data?.recent_tasks || [];
+  const miners = data?.top_miners || [];
+  const stats = data?.stats || null;
 
   // F13: the search box used to be decorative — it now filters whichever
   // list is on screen (task id/user/miner/status, gpu/wallet/id).
@@ -60,7 +38,7 @@ export default function Explorer() {
   ];
 
   return (
-    <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 ${isRtl(lang) ? 'rtl' : 'ltr'}`}>
+    <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50`}>
       <Head><title>{t('explorer.title')}</title></Head>
 
       <Navbar />
@@ -99,7 +77,7 @@ export default function Explorer() {
         {!loading && error && (
           <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3 flex items-center justify-between gap-3">
             <span>{t('common.loadFailed')}</span>
-            <button onClick={fetchData} className="font-bold underline min-h-[36px]">{t('common.retry')}</button>
+            <button onClick={reload} className="font-bold underline min-h-[36px]">{t('common.retry')}</button>
           </div>
         )}
 
