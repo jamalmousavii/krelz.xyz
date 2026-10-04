@@ -6,7 +6,7 @@ const http = require('http');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
-const rateLimit = require('express-rate-limit');
+const { makeLimiter } = require('./middleware/rateLimit');
 const jwt = require('jsonwebtoken');
 const pinoHttp = require('pino-http');
 const WSServer = require('./ws');
@@ -110,7 +110,8 @@ app.use(express.json({
   verify: (req, res, buf) => { req.rawBody = buf; },
 }));
 
-const globalLimiter = rateLimit({
+const globalLimiter = makeLimiter({
+  name: 'global',
   windowMs: 15 * 60 * 1000,
   max: 200,
   standardHeaders: true,
@@ -122,7 +123,8 @@ const globalLimiter = rateLimit({
 });
 app.use('/api/', globalLimiter);
 
-const authLimiter = rateLimit({
+const authLimiter = makeLimiter({
+  name: 'auth',
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: { error: 'Too many auth attempts, try again in 15 minutes.' },
@@ -131,7 +133,8 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
 // Password reset endpoints are account-takeover vectors: keep them as tight as login.
-const resetLimiter = rateLimit({
+const resetLimiter = makeLimiter({
+  name: 'reset',
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: { error: 'Too many reset attempts, try again in 15 minutes.' },
@@ -139,7 +142,8 @@ const resetLimiter = rateLimit({
 app.use('/api/auth/forgot-password', resetLimiter);
 app.use('/api/auth/reset-password', resetLimiter);
 
-const chatLimiter = rateLimit({
+const chatLimiter = makeLimiter({
+  name: 'chat',
   windowMs: 1 * 60 * 1000,
   max: 30,
   message: { error: 'Chat rate limit exceeded.' },
@@ -147,7 +151,8 @@ const chatLimiter = rateLimit({
 app.use('/api/chat', chatLimiter);
 
 // Anonymous chat stays free, but gets a much tighter per-IP budget than signed-in users.
-const guestChatLimiter = rateLimit({
+const guestChatLimiter = makeLimiter({
+  name: 'guest-chat',
   windowMs: 1 * 60 * 1000,
   max: 6,
   // B3: skip ONLY for a JWT that actually verifies — a bare

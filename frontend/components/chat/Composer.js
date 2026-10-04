@@ -1,10 +1,11 @@
-import { memo } from 'react';
+import { memo, useEffect } from 'react';
 
-// Shared composer for both homepage states: model picker, 📎/🎙 controls,
-// attachment chip + error, text input and send button. `variant` picks the
-// empty-state ("hero") or in-chat styling. Extracted from pages/index.js in
-// Phase 6 as a module-level component (F7: an inline component type would
-// remount the hidden file input on every keystroke and drop the selection).
+// Shared composer for both homepage states: ChatGPT-style card with an
+// auto-growing textarea on top and a tools row underneath (model picker,
+// 📎/🎙, circular send). `variant` picks the empty-state ("hero") or in-chat
+// dropdown direction. Extracted from pages/index.js in Phase 6 as a
+// module-level component (F7: an inline component type would remount the
+// hidden file input on every keystroke and drop the selection).
 const CATEGORY_ICONS = { chat: '💬', code: '💻', vision: '👁️', embedding: '🔗' };
 
 function Composer({
@@ -16,11 +17,23 @@ function Composer({
   recording, startRecording, stopRecording,
   attachment, removeAttachment, attachError,
 }) {
-  const renderModelDropdown = ({ upward }) => (
-    <div className="relative flex-1 md:flex-none md:w-auto min-w-0" ref={dropdownRef}>
+  // Clearing the draft (after send / session switch) collapses the textarea
+  // back to one line — without this the explicit height would stick around.
+  useEffect(() => {
+    if (!message && inputRef.current) inputRef.current.style.height = 'auto';
+  }, [message, inputRef]);
+
+  const growTextarea = (el) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  };
+
+  const renderModelDropdown = () => (
+    <div className="relative min-w-0 max-w-[60%]" ref={dropdownRef}>
       <button
         onClick={() => setDropdownOpen(!dropdownOpen)}
-        className="w-full md:w-auto bg-white hover:bg-sky-50 text-gray-700 border border-sky-200 px-4 py-3 md:py-3.5 rounded-xl transition flex items-center gap-2 min-w-[180px] justify-between text-sm shadow-sm"
+        className="max-w-full bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 px-3 py-1.5 rounded-full transition flex items-center gap-2 justify-between text-sm"
       >
         <span className="truncate font-medium">
           {selectedModelData ? `${CATEGORY_ICONS[selectedModelData.category]} ${selectedModelData.name}` : selectedModel}
@@ -28,7 +41,7 @@ function Composer({
         <span className="text-gray-400 text-xs">▼</span>
       </button>
       {dropdownOpen && (
-        <div className={`absolute ${upward ? 'bottom-full mb-2' : 'top-full mt-2'} left-0 w-full md:w-72 bg-white border border-sky-200 rounded-xl shadow-xl overflow-hidden z-50 max-h-[min(300px,40dvh)] overflow-y-auto`}>
+        <div className={`absolute ${variant === 'chat' ? 'bottom-full mb-2' : 'top-full mt-2'} left-0 w-[min(20rem,85vw)] bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden z-50 max-h-[min(300px,40dvh)] overflow-y-auto`}>
           {models.map((model) => {
             const isSelected = selectedModel === model.id;
             const hasMiners = model.miners_online > 0;
@@ -38,8 +51,8 @@ function Composer({
                 key={model.id}
                 onClick={() => { if (canSelect) { setSelectedModel(model.id); setDropdownOpen(false); } }}
                 disabled={!canSelect}
-                className={`w-full text-left px-4 py-3 flex items-center justify-between transition text-sm border-b border-sky-50 last:border-0 ${
-                  isSelected ? 'bg-sky-100 text-sky-800' : canSelect ? 'hover:bg-sky-50 text-gray-700' : 'opacity-40 cursor-not-allowed text-gray-400'
+                className={`w-full text-left px-4 py-3 flex items-center justify-between transition text-sm border-b border-gray-100 last:border-0 ${
+                  isSelected ? 'bg-sky-50 text-sky-800' : canSelect ? 'hover:bg-gray-50 text-gray-700' : 'opacity-40 cursor-not-allowed text-gray-400'
                 }`}
               >
                 <div className="flex items-center gap-2 min-w-0">
@@ -63,7 +76,7 @@ function Composer({
   );
 
   const renderMediaButtons = () => (
-    <div className="flex items-center gap-1.5 flex-shrink-0">
+    <div className="flex items-center gap-1 flex-shrink-0">
       <input
         ref={fileInputRef}
         type="file"
@@ -76,7 +89,7 @@ function Composer({
         onClick={() => { if (attachFileAllowed) fileInputRef.current?.click(); }}
         disabled={!attachFileAllowed}
         title={attachFileAllowed ? t('chat.attach') : t('chat.attachEmbedding')}
-        className="flex-shrink-0 w-10 h-10 md:h-12 rounded-xl border border-sky-200 bg-white text-base hover:bg-sky-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+        className="flex-shrink-0 w-9 h-9 rounded-full text-base hover:bg-gray-100 transition disabled:opacity-40 disabled:cursor-not-allowed"
         aria-label={t('chat.attach')}
       >📎</button>
       <button
@@ -84,8 +97,8 @@ function Composer({
         onClick={recording ? stopRecording : startRecording}
         disabled={!audioOk && !recording}
         title={audioOk ? (recording ? t('chat.voiceStop') : t('chat.voice')) : t('chat.needAudioModel')}
-        className={`flex-shrink-0 w-10 h-10 md:h-12 rounded-xl border text-base transition disabled:opacity-40 disabled:cursor-not-allowed ${
-          recording ? 'bg-red-500 border-red-500 text-white animate-pulse' : 'border-sky-200 bg-white hover:bg-sky-50'
+        className={`flex-shrink-0 w-9 h-9 rounded-full text-base transition disabled:opacity-40 disabled:cursor-not-allowed ${
+          recording ? 'bg-red-500 text-white animate-pulse' : 'hover:bg-gray-100'
         }`}
         aria-label={recording ? t('chat.voiceStop') : t('chat.voice')}
       >{recording ? '⏹' : '🎙️'}</button>
@@ -93,9 +106,9 @@ function Composer({
   );
 
   const pendingAttachmentChip = attachment && (
-    <div className="flex items-center gap-2 bg-white border border-sky-200 rounded-full pl-2.5 pr-2 py-1.5 text-xs text-gray-700 shadow-sm max-w-full">
+    <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-full pl-2.5 pr-2 py-1.5 text-xs text-gray-700 shadow-sm max-w-full">
       {attachment.type === 'image' ? (
-        <img src={`data:${attachment.mime || 'image/jpeg'};base64,${attachment.data}`} alt="" className="w-5 h-5 rounded object-cover flex-shrink-0" />
+        <img src={`data:${attachment.mime || 'image/jpeg'};base64,${attachment.data}`} alt="" width={20} height={20} className="w-5 h-5 rounded object-cover flex-shrink-0" />
       ) : (
         <span>{attachment.type === 'audio' ? '🎙️' : '📄'}</span>
       )}
@@ -121,27 +134,33 @@ function Composer({
           {attachErrorLine}
         </div>
       )}
-      <div className="flex flex-col md:flex-row gap-2 md:gap-3">
-        <div className="flex items-center gap-2 md:contents">
-          {renderModelDropdown({ upward: variant === 'chat' })}
+      <div className={`bg-white border border-gray-200/80 rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.05)] focus-within:border-sky-300 focus-within:ring-2 focus-within:ring-sky-400/50 transition ${variant === 'hero' ? 'p-2.5 md:p-3' : 'p-2 md:p-2.5'}`}>
+        <textarea
+          ref={inputRef}
+          rows={1}
+          value={message}
+          onChange={(e) => { growTextarea(e.target); setMessage(e.target.value); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
+              e.preventDefault();
+              sendMessage();
+            }
+          }}
+          placeholder={t('chat.placeholder')}
+          className="w-full resize-none bg-transparent border-0 text-gray-800 placeholder-gray-500 px-3 py-2.5 text-sm md:text-base focus:outline-none overflow-y-auto max-h-40 leading-relaxed"
+        />
+        <div className="flex items-center gap-2 px-1 pb-0.5">
+          {renderModelDropdown()}
+          <div className="flex-1" />
           {renderMediaButtons()}
-        </div>
-        <div className="flex gap-2 md:contents">
-          <input
-            ref={inputRef}
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) sendMessage(); }}
-            placeholder={t('chat.placeholder')}
-            className={`flex-1 min-w-0 text-gray-800 placeholder-gray-500 border px-4 md:px-6 py-3 md:py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 text-sm md:text-base ${variant === 'hero' ? 'bg-sky-50 border-sky-100' : 'bg-white border-sky-200 shadow-sm'}`}
-          />
           <button
             onClick={sendMessage}
             disabled={loading}
-            className={`${variant === 'hero' ? 'w-auto md:w-auto ' : ''}bg-sky-500 hover:bg-sky-600 text-white px-6 md:px-8 py-3 md:py-3.5 rounded-xl transition disabled:opacity-50 font-bold text-sm md:text-base shadow-sm flex-shrink-0`}
+            aria-label={t('chat.send')}
+            title={t('chat.send')}
+            className="flex items-center justify-center w-9 h-9 rounded-full bg-gray-900 hover:bg-gray-700 text-white transition disabled:opacity-40 flex-shrink-0 text-lg leading-none"
           >
-            {loading ? '...' : t('chat.send')}
+            {loading ? '…' : '↑'}
           </button>
         </div>
       </div>

@@ -72,7 +72,7 @@ export default function Leaderboard() {
                 <div className="text-2xl w-10 text-center">{medals[i] || `#${i + 1}`}</div>
                 <div className="flex-1 min-w-0">
                   {u.avatar ? (
-                    <img src={u.avatar} className="w-8 h-8 rounded-full inline-block mr-2" alt="" />
+                    <img src={u.avatar} width={32} height={32} loading="lazy" className="w-8 h-8 rounded-full inline-block mr-2" alt="" />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-sky-500 inline-flex items-center justify-center mr-2 text-sm text-white">{(u.name || '?')[0]}</div>
                   )}

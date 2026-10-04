@@ -11,7 +11,7 @@ function Sidebar({ t, isLoggedIn, sidebarOpen, setSidebarOpen, sessions, activeS
       )}
       {isLoggedIn && (
         <div className={`${sidebarOpen ? 'flex' : 'hidden'} md:flex fixed md:static inset-y-0 left-0 md:inset-auto z-40 w-[85%] max-w-xs md:w-64 md:max-w-none flex-shrink-0 md:mb-0 flex-col min-h-0 pt-4 md:pt-0 px-2 md:px-0`}>
-          <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-3 h-full flex flex-col">
+          <div className="bg-white rounded-2xl border border-gray-200/80 shadow-sm p-3 h-full flex flex-col">
             <div className="flex items-center justify-between mb-3">
               <span className="text-gray-700 font-bold text-sm">💬 {t('chat.history')}</span>
               <button
@@ -21,7 +21,7 @@ function Sidebar({ t, isLoggedIn, sidebarOpen, setSidebarOpen, sessions, activeS
             </div>
             <button
               onClick={onNewChat}
-              className="w-full bg-sky-500 hover:bg-sky-600 text-white px-4 py-2.5 rounded-lg transition font-medium text-sm mb-3"
+              className="w-full border border-gray-300 hover:bg-gray-100 active:bg-gray-200 text-gray-800 px-4 py-2.5 rounded-xl transition font-medium text-sm mb-3"
             >
               + {t('chat.newChat')}
             </button>
@@ -33,10 +33,10 @@ function Sidebar({ t, isLoggedIn, sidebarOpen, setSidebarOpen, sessions, activeS
                 sessions.map(session => (
                   <div
                     key={session.id}
-                    className={`group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition text-sm ${
+                    className={`group flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer transition text-sm ${
                       activeSessionId === session.id
-                        ? 'bg-sky-100 text-sky-800 font-medium'
-                        : 'text-gray-600 hover:bg-sky-50'
+                        ? 'bg-gray-200 text-gray-900 font-medium'
+                        : 'text-gray-600 hover:bg-gray-100'
                     }`}
                     onClick={() => onSelect(session.id)}
                   >

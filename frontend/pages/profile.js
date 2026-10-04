@@ -149,7 +149,7 @@ export default function Profile() {
           <h2 className="text-lg font-bold text-gray-800 mb-4">📊 {t('profile.dashboard')}</h2>
           <div className="flex items-center gap-4 mb-4">
             {user.avatar ? (
-              <img src={user.avatar} alt="avatar" className="w-14 h-14 rounded-full border-2 border-sky-200" />
+              <img src={user.avatar} alt="avatar" width={56} height={56} loading="lazy" className="w-14 h-14 rounded-full border-2 border-sky-200" />
             ) : (
               <div className="w-14 h-14 rounded-full bg-sky-500 flex items-center justify-center text-white text-xl font-bold">
                 {(user.name || user.email || '?')[0].toUpperCase()}

@@ -42,7 +42,7 @@ function UpgradeWall({ wall, content, t, purchasePlan, purchaseTokens, bundleAmo
         ))}
       </div>
       {wall.signed_in && wall.token_bundle && (
-        <div className="bg-white border border-sky-100 rounded-lg px-2.5 py-2 mb-2 flex items-center gap-2">
+        <div className="bg-white border border-gray-200 rounded-lg px-2.5 py-2 mb-2 flex items-center gap-2">
           <div className="min-w-0 flex-1 text-xs text-gray-600">
             🎟️ {t('chat.bundleDesc')
               .replace('{rate}', Number(wall.token_bundle.tokens_per_usd || 1000000).toLocaleString('en-US'))}
@@ -52,7 +52,7 @@ function UpgradeWall({ wall, content, t, purchasePlan, purchaseTokens, bundleAmo
             onChange={(e) => setBundleAmount(e.target.value.replace(/[^0-9]/g, ''))}
             inputMode="numeric"
             aria-label={t('chat.bundlePlaceholder')}
-            className="w-16 border border-sky-200 rounded-lg px-2 py-1.5 text-xs text-center"
+            className="w-16 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-center"
           />
           <button
             onClick={purchaseTokens}

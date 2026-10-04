@@ -633,7 +633,7 @@ export default function Home() {
   // ===== EMPTY STATE: centered hero =====
   if (!hasStarted) {
     return (
-      <div className={`flex-1 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex flex-col`}>
+      <div className="flex-1 bg-[#f7f7f8] flex flex-col">
         <Head>
           <title>Krelz Network - Decentralized LLM Inference</title>
           <meta name="description" content="Decentralized LLM Inference Network. Chat with AI models." />
@@ -643,11 +643,11 @@ export default function Home() {
 
         <main className="flex-1 flex flex-col items-center justify-center px-4 pb-16">
           <div className="text-center mb-8 md:mb-10">
-            <h1 className="text-4xl md:text-6xl font-bold text-gray-800 mb-3">🚀 Krelz Network</h1>
+            <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-gray-900 mb-3">🚀 Krelz Network</h1>
             <p className="text-lg md:text-xl text-gray-500">{t('home.subtitle')}</p>
           </div>
 
-          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-lg border border-sky-100 p-4 md:p-5">
+          <div className="w-full max-w-2xl">
             <Composer
               variant="hero"
               t={t}
@@ -712,7 +712,7 @@ export default function Home() {
 
   // ===== ACTIVE STATE: sidebar + messages + bottom input =====
   return (
-    <div className={`flex-1 min-h-0 bg-gradient-to-br from-sky-50 via-blue-50 to-cyan-50 flex flex-col`}>
+    <div className="flex-1 min-h-0 bg-[#f7f7f8] flex flex-col">
       <Head><title>{t('chat.title')}</title></Head>
 
       <Navbar />
@@ -734,7 +734,7 @@ export default function Home() {
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
           {/* Subject bar */}
           {isLoggedIn && activeSessionId && (
-            <div className="bg-white border border-sky-100 rounded-t-xl px-4 py-2.5 flex items-center gap-2 mb-0 shadow-sm">
+            <div className="bg-white border border-b-0 border-gray-200/80 rounded-t-2xl px-4 py-2.5 flex items-center gap-2 mb-0 shadow-sm">
               {isLoggedIn && !sidebarOpen && (
                 <button onClick={() => setSidebarOpen(true)} className="md:hidden flex items-center justify-center text-gray-400 hover:text-sky-600 min-w-[40px] min-h-[40px] -my-2 -ml-2 mr-1 text-lg">☰</button>
               )}

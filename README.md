@@ -22,7 +22,7 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Miner Free Credit (v3.25.0)** — an online/busy miner earns its host a free **$1/day** chat allowance; platform-funded (no wallet debit, no miner revenue share).
 - **Fullscreen Chat Frame (v3.19.1)** — chat fits the viewport exactly (no page scrolling at any resolution/zoom); input keeps focus while the model answers; the latest message is always in view, including after refresh
 - **Attachments & Voice (v3.20.0)** — 📎 send an image, PDF or text file (file text is read server-side so any model can answer; images go to vision models), 🎤 record a ≤60s voice note (client-side WAV encoder, `gemma4:12b`); gated per model with explicit errors — attachments are never silently dropped
-- **Per-Model Pricing** — 10 models from 300M to 70B parameters, priced 30-50% cheaper than DeepSeek
+- **Per-Model Pricing** — 16 models from 274M to 70B parameters, priced 30-50% cheaper than DeepSeek
 - **Chat Sessions** — Persistent chat history with auto-generated subjects
 - **Profile Dashboard** — USD balance, logout, quick-nav; leaderboard rank card for miners (v3.21.0)
 - **Miner CLI Mode** — Headless CLI for servers (no Electron needed)
@@ -42,7 +42,7 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **USD Wallet (v3.18.0)** — Settings/Profile show `$` balance; Top Up → NowPayments; withdraw USDT-TRC20
 - **Chat-First Homepage (v3.15.0)** — Landing page IS the chat: centered model picker + input; after start, history sidebar left + input bottom
 - **Split Pages (v3.15.0)** — Dashboard (`/profile`), Miners (`/miners`), Settings (`/settings`) separated
-- **Light Sky Theme (v3.15.0)** — Sky-blue light UI across all pages
+- **Modern Neutral Chat UI (v3.37.0)** — ChatGPT/Gemini-style chat experience (auto-growing composer, neutral palette, sky accents)
 - **Miner Docs vs Interactive (v3.16.0)** — `/miner`: full install/connect/delete guide + GitHub; `/miners`: copy-command Quick Install + miner cards
 
 ## Quick Install (Miner)
@@ -62,7 +62,7 @@ wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/in
 The install script automatically sets up:
 - Node.js 20
 - Ollama
-- Selected AI models (10 available)
+- Selected AI models (16 available)
 - Krelz Miner (CLI mode, systemd service)
 
 Requires **~15 GB free disk** (checked before the model download; bypass with
@@ -95,13 +95,19 @@ Choose to remove miner only or everything (miner + Ollama + models).
 | Model | Size | Input/1M | Output/1M | vs DeepSeek |
 |-------|------|----------|-----------|-------------|
 | nomic-embed-text | 274M | $0.070 | $0.140 | -50% |
+| llama3.2:3b | 3B | $0.071 | $0.142 | -49% |
 | embeddinggemma | 300M | $0.073 | $0.146 | -48% |
 | bge-m3 | 567M | $0.076 | $0.152 | -46% |
 | llama3.1:8b | 8B | $0.079 | $0.158 | -44% |
 | qwen3-vl:8b | 8B | $0.082 | $0.164 | -42% |
 | gemma4:12b | 12B | $0.085 | $0.170 | -40% |
+| phi4:14b | 14B | $0.086 | $0.172 | -39% |
+| gpt-oss:20b | 21B MoE | $0.088 | $0.176 | -37% |
+| mistral-small3.2:24b | 24B | $0.090 | $0.180 | -36% |
 | qwen3-coder:30b | 30B | $0.091 | $0.182 | -36% |
+| gemma3:27b | 27B | $0.092 | $0.184 | -34% |
 | qwen2.5-coder:32b | 32B | $0.094 | $0.188 | -34% |
+| qwen3:32b | 32B | $0.095 | $0.190 | -32% |
 | llama3.3:70b | 70B | $0.097 | $0.194 | -32% |
 | deepseek-r1:70b | 70B | $0.098 | $0.196 | -30% |
 
@@ -219,7 +225,7 @@ krelz.xyz/
 |-------|-----------|
 | Frontend | Next.js 14, React 18, Tailwind CSS |
 | Backend | Node.js 20, Express, PostgreSQL, Redis |
-| LLM | Ollama, 10 models (Llama, Qwen, Gemma, DeepSeek, BGE) |
+| LLM | Ollama, 16 models (Llama, Qwen, Gemma, DeepSeek, Phi, GPT-OSS, Mistral, BGE) |
 | Auth | Google OAuth 2.0, JWT |
 | Payments | NowPayments — USD wallet, 7 coins at checkout, USDT TRC-20 withdraw |
 | Server | Ubuntu 24.04, Nginx, Let's Encrypt |

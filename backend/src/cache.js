@@ -105,4 +105,14 @@ async function closeCache() {
   }
 }
 
-module.exports = { cacheMiddleware, invalidateCache, getCacheStats, closeCache, isCacheableRequest };
+module.exports = {
+  cacheMiddleware,
+  invalidateCache,
+  getCacheStats,
+  closeCache,
+  isCacheableRequest,
+  // Raw connection for the rate-limit store (falls back to local counters
+  // when disconnected — see middleware/rateLimit.js).
+  getRedis: () => redis,
+  isRedisConnected: () => connected,
+};

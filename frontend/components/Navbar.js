@@ -177,8 +177,8 @@ export default function Navbar() {
   };
 
   return (
-    <nav className="container mx-auto px-4 md:px-6 py-4">
-      <div className="flex items-center justify-between">
+    <nav className="w-full border-b border-gray-200/70 bg-white/70 backdrop-blur-md">
+      <div className="container mx-auto px-4 md:px-6 py-3 flex items-center justify-between">
         <Link href="/" className="text-xl md:text-2xl font-bold text-gray-800">🚀 Krelz Network</Link>
 
         {/* Desktop */}
@@ -194,10 +194,10 @@ export default function Navbar() {
               <>
                 <button
                   onClick={() => setDropdownOpen(!dropdownOpen)}
-                  className="flex items-center gap-2 bg-white hover:bg-sky-50 px-3 py-2 rounded-lg transition border border-sky-200"
+                  className="flex items-center gap-2 bg-white hover:bg-gray-50 px-3 py-2 rounded-lg transition border border-gray-200"
                 >
                   {user.avatar ? (
-                    <img src={user.avatar} alt="avatar" className="w-7 h-7 rounded-full border border-sky-200" />
+                    <img src={user.avatar} alt="avatar" width={28} height={28} className="w-7 h-7 rounded-full border border-gray-200" />
                   ) : (
                     <div className="w-7 h-7 rounded-full bg-sky-500 flex items-center justify-center text-white text-xs font-bold">
                       {(user.name || user.email || '?')[0].toUpperCase()}
@@ -207,17 +207,17 @@ export default function Navbar() {
                   <span className="text-gray-400 text-xs">▼</span>
                 </button>
                 {dropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-52 bg-white border border-sky-200 rounded-xl shadow-xl overflow-hidden z-50">
-                    <Link href="/profile" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-sky-50 transition">
+                  <div className="absolute right-0 mt-2 w-52 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden z-50">
+                    <Link href="/profile" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition">
                       📊 {t('nav.dashboard')}
                     </Link>
-                    <Link href="/miners" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-sky-50 transition">
+                    <Link href="/miners" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition">
                       ⛏️ {t('nav.miners')}
                     </Link>
-                    <Link href="/settings" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-sky-50 transition">
+                    <Link href="/settings" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition">
                       ⚙️ {t('nav.settings')}
                     </Link>
-                    <hr className="border-sky-100" />
+                    <hr className="border-gray-200" />
                     <button
                       onClick={handleLogout}
                       className="w-full flex items-center gap-2 px-4 py-3 text-sm text-red-500 hover:bg-red-50 transition"
@@ -236,14 +236,14 @@ export default function Navbar() {
                   {t('nav.login')}
                 </button>
                 {dropdownOpen && (
-                  <div className="absolute right-0 mt-2 w-80 bg-white border border-sky-200 rounded-xl shadow-xl overflow-hidden z-50 p-5">
+                  <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden z-50 p-5">
                     {authMode === 'login' && (
                       <div className="space-y-3">
                         <h3 className="text-gray-800 font-bold text-center">{t('nav.login')}</h3>
                         <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)}
-                          placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" />
+                          placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-gray-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" />
                         <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)}
-                          placeholder={t('nav.password')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                          placeholder={t('nav.password')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-gray-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
                           onKeyDown={(e) => e.key === 'Enter' && handleLogin()} />
                         {authError && <p className="text-red-500 text-xs">{authError}</p>}
                         <button onClick={handleLogin} disabled={authLoading || !authEmail || !authPassword}
@@ -255,9 +255,9 @@ export default function Navbar() {
                           {t('nav.forgotPassword')}
                         </button>
                         <div className="flex items-center gap-2 my-2">
-                          <div className="flex-1 h-px bg-sky-100"></div>
+                          <div className="flex-1 h-px bg-gray-200"></div>
                           <span className="text-gray-400 text-xs">{t('nav.or')}</span>
-                          <div className="flex-1 h-px bg-sky-100"></div>
+                          <div className="flex-1 h-px bg-gray-200"></div>
                         </div>
                         <GoogleLogin onSuccess={() => setDropdownOpen(false)} />
                         <p className="text-center text-gray-500 text-xs">
@@ -273,9 +273,9 @@ export default function Navbar() {
                       <div className="space-y-3">
                         <h3 className="text-gray-800 font-bold text-center">{t('nav.signup')}</h3>
                         <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)}
-                          placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" />
+                          placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-gray-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400" />
                         <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)}
-                          placeholder={t('nav.password')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                          placeholder={t('nav.password')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-gray-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
                           onKeyDown={(e) => e.key === 'Enter' && handleSignup()} />
                         <p className="text-gray-500 text-xs">{t('nav.passwordHint')}</p>
                         {authError && <p className="text-red-500 text-xs">{authError}</p>}
@@ -284,9 +284,9 @@ export default function Navbar() {
                           {authLoading ? '...' : `📧 ${t('nav.signup')}`}
                         </button>
                         <div className="flex items-center gap-2 my-2">
-                          <div className="flex-1 h-px bg-sky-100"></div>
+                          <div className="flex-1 h-px bg-gray-200"></div>
                           <span className="text-gray-400 text-xs">{t('nav.or')}</span>
-                          <div className="flex-1 h-px bg-sky-100"></div>
+                          <div className="flex-1 h-px bg-gray-200"></div>
                         </div>
                         <GoogleLogin onSuccess={() => setDropdownOpen(false)} />
                         <p className="text-center text-gray-500 text-xs">
@@ -302,7 +302,7 @@ export default function Navbar() {
                       <div className="space-y-3">
                         <h3 className="text-gray-800 font-bold text-center">{t('nav.forgotPassword')}</h3>
                         <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)}
-                          placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                          placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-gray-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
                           onKeyDown={(e) => e.key === 'Enter' && handleForgotPassword()} />
                         {authError && <p className="text-red-500 text-xs">{authError}</p>}
                         {!authError && forgotSent && (
@@ -323,7 +323,7 @@ export default function Navbar() {
                       <div className="space-y-3">
                         <h3 className="text-gray-800 font-bold text-center">{t('nav.resetPassword')}</h3>
                         <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)}
-                          placeholder={t('nav.newPassword')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                          placeholder={t('nav.newPassword')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-gray-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
                           onKeyDown={(e) => e.key === 'Enter' && handleResetPassword()} />
                         <p className="text-gray-500 text-xs">{t('nav.passwordHint')}</p>
                         {authError && <p className="text-red-500 text-xs">{authError}</p>}
@@ -344,7 +344,7 @@ export default function Navbar() {
           onClick={() => setMenuOpen(!menuOpen)}
           aria-label="Menu"
           aria-expanded={menuOpen}
-          className="md:hidden flex items-center justify-center w-11 h-11 -mr-2 text-gray-700 text-2xl rounded-lg active:bg-sky-50"
+          className="md:hidden flex items-center justify-center w-11 h-11 -mr-2 text-gray-700 text-2xl rounded-lg active:bg-gray-100"
         >
           {menuOpen ? '✕' : '☰'}
         </button>
@@ -354,12 +354,12 @@ export default function Navbar() {
           frame, scrollable on its own, 44px close target, safe-area padded. */}
       {menuOpen && (
         <div className="md:hidden fixed inset-0 z-[60] bg-white flex flex-col">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-sky-200 flex-shrink-0">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
             <Link href="/" onClick={closeMenu} className="text-xl font-bold text-gray-800">🚀 Krelz Network</Link>
             <button
               onClick={closeMenu}
               aria-label="Close menu"
-              className="flex items-center justify-center w-11 h-11 text-gray-700 text-2xl rounded-lg active:bg-sky-50"
+              className="flex items-center justify-center w-11 h-11 text-gray-700 text-2xl rounded-lg active:bg-gray-100"
             >✕</button>
           </div>
           <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-[max(2rem,env(safe-area-inset-bottom))]">
@@ -384,9 +384,9 @@ export default function Navbar() {
                 {authMode === 'login' && (
                   <>
                     <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)}
-                      placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm" />
+                      placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-gray-200 px-3 py-2 rounded-lg text-sm" />
                     <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)}
-                      placeholder={t('nav.password')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm" />
+                      placeholder={t('nav.password')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-gray-200 px-3 py-2 rounded-lg text-sm" />
                     {authError && <p className="text-red-500 text-xs">{authError}</p>}
                     <button onClick={handleLogin} disabled={authLoading || !authEmail || !authPassword}
                       className="w-full bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">
@@ -395,9 +395,9 @@ export default function Navbar() {
                     <button onClick={() => { setAuthMode('forgot'); resetAuthForm(); }}
                       className="text-gray-500 hover:text-sky-600 text-xs">{t('nav.forgotPassword')}</button>
                     <div className="flex items-center gap-2 my-2">
-                      <div className="flex-1 h-px bg-sky-100"></div>
+                      <div className="flex-1 h-px bg-gray-200"></div>
                       <span className="text-gray-400 text-xs">{t('nav.or')}</span>
-                      <div className="flex-1 h-px bg-sky-100"></div>
+                      <div className="flex-1 h-px bg-gray-200"></div>
                     </div>
                     <GoogleLogin />
                     <p className="text-gray-500 text-xs">
@@ -410,9 +410,9 @@ export default function Navbar() {
                 {authMode === 'signup' && (
                   <>
                     <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)}
-                      placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm" />
+                      placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-gray-200 px-3 py-2 rounded-lg text-sm" />
                     <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)}
-                      placeholder={t('nav.password')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm" />
+                      placeholder={t('nav.password')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-gray-200 px-3 py-2 rounded-lg text-sm" />
                     <p className="text-gray-500 text-xs">{t('nav.passwordHint')}</p>
                     {authError && <p className="text-red-500 text-xs">{authError}</p>}
                     <button onClick={handleSignup} disabled={authLoading || !authEmail || !authPassword}
@@ -420,9 +420,9 @@ export default function Navbar() {
                       {authLoading ? '...' : `📧 ${t('nav.signup')}`}
                     </button>
                     <div className="flex items-center gap-2 my-2">
-                      <div className="flex-1 h-px bg-sky-100"></div>
+                      <div className="flex-1 h-px bg-gray-200"></div>
                       <span className="text-gray-400 text-xs">{t('nav.or')}</span>
-                      <div className="flex-1 h-px bg-sky-100"></div>
+                      <div className="flex-1 h-px bg-gray-200"></div>
                     </div>
                     <GoogleLogin />
                     <p className="text-gray-500 text-xs">
@@ -435,7 +435,7 @@ export default function Navbar() {
                 {authMode === 'forgot' && (
                   <>
                     <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)}
-                      placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm" />
+                      placeholder={t('nav.email')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-gray-200 px-3 py-2 rounded-lg text-sm" />
                     {authError && <p className="text-red-500 text-xs">{authError}</p>}
                     {!authError && forgotSent && (
                       <p className="text-emerald-600 text-xs">{t('nav.resetEmailSent')}</p>
@@ -452,7 +452,7 @@ export default function Navbar() {
                 {authMode === 'reset' && (
                   <>
                     <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)}
-                      placeholder={t('nav.newPassword')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm" />
+                      placeholder={t('nav.newPassword')} className="w-full bg-white text-gray-800 placeholder-gray-400 border border-gray-200 px-3 py-2 rounded-lg text-sm" />
                     <p className="text-gray-500 text-xs">{t('nav.passwordHint')}</p>
                     {authError && <p className="text-red-500 text-xs">{authError}</p>}
                     <button onClick={handleResetPassword} disabled={authLoading || !authPassword}

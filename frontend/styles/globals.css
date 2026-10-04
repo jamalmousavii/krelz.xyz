@@ -7,10 +7,32 @@ body {
 }
 
 html {
-  background-color: #f0f9ff;
+  /* Neutral canvas (ChatGPT/Gemini-style) instead of the old sky tint. */
+  background-color: #f7f7f8;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   overscroll-behavior: none;
+}
+
+::selection {
+  background-color: rgba(14, 165, 233, 0.25);
+}
+
+/* Thin, quiet scrollbars like modern chat UIs. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d4d4d8 transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: #d4d4d8;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* Reliable taps: no 300ms double-tap delay, no gray flash over the sky theme. */

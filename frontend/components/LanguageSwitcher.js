@@ -19,7 +19,7 @@ export default function LanguageSwitcher() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 bg-sky-100 hover:bg-sky-200 border border-sky-200 px-3 py-2 rounded-lg transition text-sm font-medium text-gray-700 min-h-[40px]"
+        className="flex items-center gap-2 bg-white hover:bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg transition text-sm font-medium text-gray-700 min-h-[40px]"
         aria-label="Language"
       >
         <span className="text-base leading-none">{current.flag}</span>
@@ -27,13 +27,13 @@ export default function LanguageSwitcher() {
         <span className="text-gray-400 text-xs">▼</span>
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 w-56 max-h-[360px] overflow-y-auto bg-white border border-sky-200 rounded-xl shadow-xl z-50 py-1">
+        <div className="absolute right-0 mt-2 w-56 max-h-[360px] overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1">
           {LANGUAGES.map(l => (
             <button
               key={l.code}
               onClick={() => { changeLang(l.code); setOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition text-left min-h-[40px] ${
-                lang === l.code ? 'bg-sky-50 text-sky-700 font-bold' : 'text-gray-700 hover:bg-sky-50'
+                lang === l.code ? 'bg-gray-100 text-gray-900 font-bold' : 'text-gray-700 hover:bg-gray-50'
               }`}
             >
               <span className="text-base leading-none w-5">{l.flag}</span>

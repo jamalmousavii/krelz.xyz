@@ -11,7 +11,7 @@
 
 set -e
 
-KRELZ_VERSION="3.36.0"
+KRELZ_VERSION="3.37.0"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -132,6 +132,12 @@ MODEL_SIZES[gemma4:12b]="7 GB"
 MODEL_SIZES[embeddinggemma]="0.5 GB"
 MODEL_SIZES[nomic-embed-text]="0.3 GB"
 MODEL_SIZES[bge-m3]="1.2 GB"
+MODEL_SIZES[llama3.2:3b]="2 GB"
+MODEL_SIZES[phi4:14b]="9 GB"
+MODEL_SIZES[gpt-oss:20b]="14 GB"
+MODEL_SIZES[mistral-small3.2:24b]="15 GB"
+MODEL_SIZES[gemma3:27b]="18 GB"
+MODEL_SIZES[qwen3:32b]="20 GB"
 
 TOTAL_STEPS=8
 SCRIPT_START=$(date +%s)
@@ -242,7 +248,12 @@ echo -e "  ${GREEN}1${NC}) llama3.1:8b        (5 GB)   - Best budget all-rounder
 echo -e "  ${GREEN}2${NC}) llama3.3:70b       (43 GB)  - Best large model"
 echo -e "  ${GREEN}3${NC}) deepseek-r1:70b    (43 GB)  - Best reasoning"
 echo -e "  ${GREEN}4${NC}) llama3.1:8b        (5 GB)   - Recommended default (Enter)"
+echo -e "  ${GREEN}h${NC}) llama3.2:3b        (2 GB)   - Fastest everyday chat"
+echo -e "  ${GREEN}i${NC}) phi4:14b           (9 GB)   - Best small reasoner"
+echo -e "  ${GREEN}j${NC}) gpt-oss:20b        (14 GB)  - OpenAI open-weight"
+echo -e "  ${GREEN}k${NC}) qwen3:32b          (20 GB)  - Thinking reasoning"
 echo ""
+
 echo -e "  ${CYAN}--- Code ---${NC}"
 echo -e "  ${GREEN}5${NC}) qwen3-coder:30b    (18 GB)  - Best coding model"
 echo -e "  ${GREEN}6${NC}) qwen2.5-coder:32b  (20 GB)  - Best dense coder"
@@ -250,24 +261,27 @@ echo ""
 echo -e "  ${CYAN}--- Vision ---${NC}"
 echo -e "  ${GREEN}7${NC}) qwen3-vl:8b        (8 GB)   - Best vision model"
 echo -e "  ${GREEN}8${NC}) gemma4:12b         (7 GB)   - Multimodal + tools"
+echo -e "  ${GREEN}l${NC}) mistral-small3.2:24b (15 GB) - Fast vision + tools"
+echo -e "  ${GREEN}m${NC}) gemma3:27b         (18 GB)  - Google multimodal"
 echo ""
+
 echo -e "  ${CYAN}--- Embedding ---${NC}"
 echo -e "  ${GREEN}9${NC}) embeddinggemma      (0.5 GB) - Newest embeddings"
 echo -e "  ${GREEN}a${NC}) nomic-embed-text   (0.3 GB) - Classic default"
 echo -e "  ${GREEN}b${NC}) bge-m3             (1.2 GB) - Multilingual RAG"
 echo ""
 echo -e "  ${YELLOW}--- Presets ---${NC}"
-echo -e "  ${GREEN}c${NC}) All Chat (1+2+3+4)"
+echo -e "  ${GREEN}c${NC}) All Chat (1+2+3+4+h+i+j+k)"
 echo -e "  ${GREEN}d${NC}) All Code (5+6)"
-echo -e "  ${GREEN}e${NC}) All Vision (7+8)"
+echo -e "  ${GREEN}e${NC}) All Vision (7+8+l+m)"
 echo -e "  ${GREEN}f${NC}) All recommended (1+5+7+9)"
-echo -e "  ${GREEN}g${NC}) Everything (all 10 local models)"
+echo -e "  ${GREEN}g${NC}) Everything (all 16 local models)"
 echo -e "  ${GREEN}0${NC}) Custom (enter model names manually)"
 echo ""
 
 SELECTED_MODELS=""
 
-read -r -p "  Enter choice [1-9, a-g, 0] (default: 1): " choice
+read -r -p "  Enter choice [1-9, a-m, 0] (default: 1): " choice
 choice=${choice:-4}
 
 case $choice in
@@ -282,11 +296,17 @@ case $choice in
   9) SELECTED_MODELS="embeddinggemma" ;;
   a) SELECTED_MODELS="nomic-embed-text" ;;
   b) SELECTED_MODELS="bge-m3" ;;
-  c) SELECTED_MODELS="llama3.3:70b deepseek-r1:70b llama3.1:8b" ;;
+  c) SELECTED_MODELS="llama3.3:70b deepseek-r1:70b llama3.1:8b llama3.2:3b phi4:14b gpt-oss:20b qwen3:32b" ;;
   d) SELECTED_MODELS="qwen3-coder:30b qwen2.5-coder:32b" ;;
-  e) SELECTED_MODELS="qwen3-vl:8b gemma4:12b" ;;
+  e) SELECTED_MODELS="qwen3-vl:8b gemma4:12b mistral-small3.2:24b gemma3:27b" ;;
   f) SELECTED_MODELS="llama3.1:8b qwen3-coder:30b qwen3-vl:8b embeddinggemma" ;;
-  g) SELECTED_MODELS="llama3.3:70b deepseek-r1:70b llama3.1:8b qwen3-coder:30b qwen2.5-coder:32b qwen3-vl:8b gemma4:12b embeddinggemma nomic-embed-text bge-m3" ;;
+  g) SELECTED_MODELS="llama3.3:70b deepseek-r1:70b llama3.1:8b qwen3-coder:30b qwen2.5-coder:32b qwen3-vl:8b gemma4:12b embeddinggemma nomic-embed-text bge-m3 llama3.2:3b phi4:14b gpt-oss:20b qwen3:32b mistral-small3.2:24b gemma3:27b" ;;
+  h) SELECTED_MODELS="llama3.2:3b" ;;
+  i) SELECTED_MODELS="phi4:14b" ;;
+  j) SELECTED_MODELS="gpt-oss:20b" ;;
+  k) SELECTED_MODELS="qwen3:32b" ;;
+  l) SELECTED_MODELS="mistral-small3.2:24b" ;;
+  m) SELECTED_MODELS="gemma3:27b" ;;
   0)
     echo ""
     echo -e "  ${CYAN}Select models by number:${NC}"
@@ -301,8 +321,14 @@ case $choice in
     echo -e "  ${GREEN}9${NC}) embeddinggemma      (0.5 GB)"
     echo -e "  ${GREEN}a${NC}) nomic-embed-text   (0.3 GB)"
     echo -e "  ${GREEN}b${NC}) bge-m3             (1.2 GB)"
+    echo -e "  ${GREEN}h${NC}) llama3.2:3b        (2 GB)"
+    echo -e "  ${GREEN}i${NC}) phi4:14b           (9 GB)"
+    echo -e "  ${GREEN}j${NC}) gpt-oss:20b        (14 GB)"
+    echo -e "  ${GREEN}k${NC}) qwen3:32b          (20 GB)"
+    echo -e "  ${GREEN}l${NC}) mistral-small3.2:24b (15 GB)"
+    echo -e "  ${GREEN}m${NC}) gemma3:27b         (18 GB)"
     echo ""
-    read -r -p "  Numbers (e.g. 1 4 7): " custom_input
+    read -r -p "  Numbers (e.g. 1 4 7, or h j for new picks): " custom_input
     SELECTED_MODELS=""
     for num in $custom_input; do
       case $num in
@@ -317,6 +343,12 @@ case $choice in
         9) SELECTED_MODELS="$SELECTED_MODELS embeddinggemma" ;;
         a) SELECTED_MODELS="$SELECTED_MODELS nomic-embed-text" ;;
         b) SELECTED_MODELS="$SELECTED_MODELS bge-m3" ;;
+        h) SELECTED_MODELS="$SELECTED_MODELS llama3.2:3b" ;;
+        i) SELECTED_MODELS="$SELECTED_MODELS phi4:14b" ;;
+        j) SELECTED_MODELS="$SELECTED_MODELS gpt-oss:20b" ;;
+        k) SELECTED_MODELS="$SELECTED_MODELS qwen3:32b" ;;
+        l) SELECTED_MODELS="$SELECTED_MODELS mistral-small3.2:24b" ;;
+        m) SELECTED_MODELS="$SELECTED_MODELS gemma3:27b" ;;
       esac
     done
     SELECTED_MODELS=$(echo "$SELECTED_MODELS" | xargs)

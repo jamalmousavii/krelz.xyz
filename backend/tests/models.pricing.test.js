@@ -20,8 +20,10 @@ describe('model catalog', () => {
     // Regression: a menu/catalog entry for a model that does not exist made
     // miners advertise a model the dispatcher could never route to.
     const allowed = new Set([
-      'llama3.1:8b', 'llama3.3:70b', 'deepseek-r1:70b',
-      'qwen3-coder:30b', 'qwen2.5-coder:32b', 'qwen3-vl:8b', 'gemma4:12b',
+      'llama3.1:8b', 'llama3.3:70b', 'deepseek-r1:70b', 'qwen3:32b',
+      'gpt-oss:20b', 'phi4:14b', 'llama3.2:3b',
+      'qwen3-coder:30b', 'qwen2.5-coder:32b',
+      'qwen3-vl:8b', 'gemma4:12b', 'gemma3:27b', 'mistral-small3.2:24b',
       'embeddinggemma', 'nomic-embed-text', 'bge-m3',
     ]);
     for (const m of MODELS) {

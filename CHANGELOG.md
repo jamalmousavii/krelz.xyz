@@ -1,5 +1,27 @@
 # Changelog
 
+## [3.37.0] - 2026-10-04
+
+Post-audit round: popular model catalog, modern chat UI, Redis-backed rate limiting, raw-image fixes and a frontend test suite.
+
+### Models
+- **Six popular models added (10 → 16)** — `llama3.2:3b` (fastest everyday chat, 2 GB), `phi4:14b` (best small reasoner, 9 GB), `gpt-oss:20b` (OpenAI open-weight, 14 GB), `mistral-small3.2:24b` (fast vision + tools, 15 GB), `gemma3:27b` (Google multimodal workhorse, 18 GB), `qwen3:32b` (thinking reasoning, 20 GB). Every tag was verified against the Ollama registry before landing (the `models.pricing` allowlist regression keeps it that way).
+- **Pricing extended along the existing ladder** — $0.071/$0.142 (llama3.2:3b) up to $0.095/$0.190 (qwen3:32b) per 1M tokens, still 32-49% under DeepSeek V4 Flash. README/DEVELOP pricing tables show the parameter/RAM **size** for every model.
+- **Miner tooling updated** — install menus gained the six picks (`h`-`m`), `MODEL_SIZES`, the All Chat/All Vision/Everything presets (16 models) and the custom picker; the dashboard model switcher shows each model's RAM size.
+
+### UI
+- **ChatGPT/Gemini-style chat redesign** — neutral `#f7f7f8` canvas with sky accents, blurred navbar/footer hairlines, ChatGPT-style message alignment (user right / assistant left in LTR, mirrored in RTL), user messages as light gray bubbles and assistant replies as plain text.
+- **New composer** — auto-growing textarea in a rounded card with a tools row (model pill with size + miner counts, 📎/🎙, circular ↑ send button); Enter sends, Shift+Enter inserts a newline; card focus ring via `focus-within`.
+- **Sidebar & surfaces** — outlined New Chat button, neutral session rows, thin quiet scrollbars, `::selection` accent, neutral subject bar/messages/dropdowns.
+- **Raw `<img>` optimization** — explicit width/height on the avatars and composer chip preview, `loading="lazy"`/`decoding="async"` on chat media and list avatars.
+
+### Backend
+- **Rate limits survive restarts on Redis** — all five limiters (global/auth/reset/chat/guest-chat) moved from the per-process MemoryStore to `middleware/rateLimit.js`: an atomic `INCR`+`PEXPIRE`+`PTTL` EVAL keyed `rl:<name>:`, with a per-process Map fallback whenever Redis is down (or `DISABLE_CACHE=1`), so the limiter fails local-only instead of 500ing.
+
+### Testing & CI
+- **Frontend test suite (jest 30 + next/jest + Testing Library, jsdom)** — 22 tests: i18n registry (33-locale parity at runtime, RTL set, `loadLocale` idempotency, `detectLanguage` incl. a throwing sessionStorage) and `useApi` (success/error/abort/deps/enabled/fetchOptions); `npm test` added to the frontend CI job.
+- **Backend +10 rate-limit tests** (store unit paths, window expiry, Redis-script mapping, fail-open, express integration with `skip` and independent budgets) → **208 tests / 21 suites with a database (205/20 without)**.
+
 ## [3.36.0] - 2026-10-04
 
 Phase 6 of the full-project audit (final): hardening leftovers, dead code, performance and release engineering.

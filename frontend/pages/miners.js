@@ -7,13 +7,19 @@ import EarningsBreakdown from '../components/EarningsBreakdown';
 import { useAuth, apiFetch, ApiError } from '../utils/api';
 
 const MODELS_LIST = [
-  { id: 'llama3.1:8b', name: 'Llama 3.1', category: 'chat' },
-  { id: 'llama3.3:70b', name: 'Llama 3.3', category: 'chat' },
-  { id: 'deepseek-r1:70b', name: 'DeepSeek R1', category: 'chat' },
-  { id: 'qwen3-coder:30b', name: 'Qwen 3 Coder', category: 'code' },
-  { id: 'qwen2.5-coder:32b', name: 'Qwen 2.5 Coder', category: 'code' },
-  { id: 'qwen3-vl:8b', name: 'Qwen 3 VL', category: 'vision' },
-  { id: 'gemma4:12b', name: 'Gemma 4', category: 'vision' },
+  { id: 'llama3.1:8b', name: 'Llama 3.1', size: '5 GB', category: 'chat' },
+  { id: 'llama3.3:70b', name: 'Llama 3.3', size: '43 GB', category: 'chat' },
+  { id: 'deepseek-r1:70b', name: 'DeepSeek R1', size: '43 GB', category: 'chat' },
+  { id: 'qwen3:32b', name: 'Qwen 3', size: '20 GB', category: 'chat' },
+  { id: 'gpt-oss:20b', name: 'GPT-OSS 20B', size: '14 GB', category: 'chat' },
+  { id: 'phi4:14b', name: 'Phi-4', size: '9 GB', category: 'chat' },
+  { id: 'llama3.2:3b', name: 'Llama 3.2', size: '2 GB', category: 'chat' },
+  { id: 'qwen3-coder:30b', name: 'Qwen 3 Coder', size: '18 GB', category: 'code' },
+  { id: 'qwen2.5-coder:32b', name: 'Qwen 2.5 Coder', size: '20 GB', category: 'code' },
+  { id: 'gemma3:27b', name: 'Gemma 3', size: '18 GB', category: 'vision' },
+  { id: 'mistral-small3.2:24b', name: 'Mistral Small 3.2', size: '15 GB', category: 'vision' },
+  { id: 'qwen3-vl:8b', name: 'Qwen 3 VL', size: '8 GB', category: 'vision' },
+  { id: 'gemma4:12b', name: 'Gemma 4', size: '7 GB', category: 'vision' },
 ];
 
 const CATEGORY_ICONS = { chat: '💻', code: '💻', vision: '👁️', embedding: '🔗' };
@@ -393,7 +399,7 @@ export default function Miners() {
                     <span className="text-gray-500">{t('profile.currentModel')}</span>
                     <select value={m.current_model || 'llama3.1:8b'} onChange={(e) => switchModel(e.target.value, m.id)}
                       className="bg-white text-gray-800 text-sm px-2 py-1 rounded border border-sky-200 focus:outline-none focus:ring-1 focus:ring-sky-400">
-                      {MODELS_LIST.map(md => (<option key={md.id} value={md.id}>{CATEGORY_ICONS[md.category]} {md.name}</option>))}
+                      {MODELS_LIST.map(md => (<option key={md.id} value={md.id}>{CATEGORY_ICONS[md.category]} {md.name} ({md.size})</option>))}
                     </select>
                   </div>
                   <div className="flex justify-between text-sm"><span className="text-gray-500">{t('profile.uptime')}</span><span className="text-gray-800">{parseFloat(m.uptime || 0).toFixed(1)}%</span></div>
