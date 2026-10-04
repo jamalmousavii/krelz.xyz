@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.29.1] - 2026-10-04
+
+Bugfix: an expired JWT silently emptied the dashboard (the "plans card is empty" report) and hid the homepage pricing section.
+
+### Fixed
+- **Expired token no longer renders an empty dashboard**: all authenticated page fetches (`profile`, `miners`, `miner`, `settings`, homepage catalog/sessions/purchases) now go through the shared `apiFetch` (`utils/api.js`) — a 401 clears the session and redirects home via `useAuth`, instead of the Plans card showing a header with zero rows, no balance/rank/breakdown.
+- **`GET /api/plans` stays public on a bad token**: `routes/plans.js` dropped its local strict `optionalAuth` (which 401ed the snapshot when any Bearer was present) for the shared middleware `optionalAuth` — an expired/garbage token now degrades to anonymous, so homepage pricing always renders.
+- Homepage `fetchCatalog` retries as a guest on 401; purchase buttons show the sign-in hint on session expiry; the homepage listens to `krelz:auth-changed` so a logout anywhere resets its auth state.
+
+### Tests
+- `auth.middleware.test.js`: new `optionalAuth` suite (no token / garbage token / wrong-secret token → anonymous 200; valid token → `req.user` populated). 123/123 green.
+
 ## [3.29.0] - 2026-10-03
 
 Plans and miner earnings made visible everywhere: a public pricing section on the homepage, an earnings card on `/miner`, and the 5-way breakdown on `/miners`.

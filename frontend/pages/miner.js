@@ -5,8 +5,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
 import EarningsBreakdown from '../components/EarningsBreakdown';
-import authHeaders from '../utils/auth';
-import { useAuth } from '../utils/api';
+import { useAuth, apiFetch } from '../utils/api';
 
 const CATEGORY_ICONS = { chat: '💻', code: '💻', vision: '👁️', embedding: '🔗' };
 
@@ -39,8 +38,7 @@ export default function Miner() {
 
   const fetchRank = async () => {
     try {
-      const res = await fetch('/api/leaderboard/mine', { headers: authHeaders() });
-      const data = await res.json();
+      const data = await apiFetch('/api/leaderboard/mine');
       if (data.success && data.breakdown) setMyRank(data);
     } catch (err) {}
   };

@@ -5,8 +5,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
 import EarningsBreakdown from '../components/EarningsBreakdown';
-import authHeaders from '../utils/auth';
-import { useAuth } from '../utils/api';
+import { useAuth, apiFetch, ApiError } from '../utils/api';
 
 const MODELS_LIST = [
   { id: 'llama3.1:8b', name: 'Llama 3.1', category: 'chat' },
@@ -71,8 +70,7 @@ export default function Miners() {
 
   const fetchMiners = async () => {
     try {
-      const res = await fetch('/api/miners/mine', { headers: authHeaders() });
-      const data = await res.json();
+      const data = await apiFetch('/api/miners/mine');
       if (data.success) setMiners(data.miners || (data.miner ? [data.miner] : []));
     } catch (err) {}
   };
@@ -80,16 +78,14 @@ export default function Miners() {
   // v3.29.0 — account-level earnings breakdown (all miners, 5 sources)
   const fetchRank = async () => {
     try {
-      const res = await fetch('/api/leaderboard/mine', { headers: authHeaders() });
-      const data = await res.json();
+      const data = await apiFetch('/api/leaderboard/mine');
       if (data.success && data.breakdown) setMyRank(data);
     } catch (err) {}
   };
 
   const fetchHistory = async () => {
     try {
-      const res = await fetch('/api/miners/history', { headers: authHeaders() });
-      const data = await res.json();
+      const data = await apiFetch('/api/miners/history');
       if (data.success) setHistory(data);
     } catch (err) {}
   };
@@ -98,12 +94,10 @@ export default function Miners() {
 
   const switchModel = async (modelId, minerId) => {
     try {
-      const res = await fetch('/api/miners/mine/model', {
+      const data = await apiFetch('/api/miners/mine/model', {
         method: 'PUT',
-        headers: authHeaders(),
         body: JSON.stringify({ model: modelId, miner_id: minerId || undefined })
       });
-      const data = await res.json();
       if (data.success) {
         const updatedId = minerId || data.miner?.id;
         setMiners(prev => prev.map(m => m.id === updatedId ? { ...m, current_model: modelId } : m));
@@ -114,12 +108,10 @@ export default function Miners() {
   const renameMiner = async (minerId) => {
     if (!minerNameInput.trim()) return;
     try {
-      const res = await fetch(`/api/miners/mine/${minerId}`, {
+      const data = await apiFetch(`/api/miners/mine/${minerId}`, {
         method: 'PUT',
-        headers: authHeaders(),
         body: JSON.stringify({ name: minerNameInput.trim() })
       });
-      const data = await res.json();
       if (data.success) {
         setMiners(prev => prev.map(m => m.id === minerId ? { ...m, name: minerNameInput.trim() } : m));
         setEditingMinerId(null);
@@ -127,17 +119,13 @@ export default function Miners() {
       } else {
         setMinerMsg(`❌ ${data.error}`);
       }
-    } catch (err) { setMinerMsg('❌ Rename failed'); }
+    } catch (err) { setMinerMsg(`❌ ${err instanceof ApiError ? err.message : 'Rename failed'}`); }
   };
 
   const deleteMiner = async (minerId, minerName) => {
     if (!window.confirm(t('profile.confirmRemoveMiner'))) return;
     try {
-      const res = await fetch(`/api/miners/mine/${minerId}`, {
-        method: 'DELETE',
-        headers: authHeaders()
-      });
-      const data = await res.json();
+      const data = await apiFetch(`/api/miners/mine/${minerId}`, { method: 'DELETE' });
       if (data.success) {
         setMiners(prev => prev.filter(m => m.id !== minerId));
         setMinerMsg(`✅ ${minerName || ''} ${t('profile.minerRemoved')}`);
@@ -146,7 +134,7 @@ export default function Miners() {
       } else {
         setMinerMsg(`❌ ${data.error}`);
       }
-    } catch (err) { setMinerMsg('❌ Remove failed'); }
+    } catch (err) { setMinerMsg(`❌ ${err instanceof ApiError ? err.message : 'Remove failed'}`); }
   };
 
   const copyText = (text, minerId) => {
@@ -181,12 +169,10 @@ export default function Miners() {
   const createMiner = async () => {
     setNewMinerLoading(true);
     try {
-      const res = await fetch('/api/miners', {
+      const data = await apiFetch('/api/miners', {
         method: 'POST',
-        headers: authHeaders(),
         body: JSON.stringify({ name: newMinerName.trim() || undefined })
       });
-      const data = await res.json();
       if (data.success) {
         setNewMinerToken(data.miner.miner_token);
         setNewMinerName('');
@@ -195,17 +181,13 @@ export default function Miners() {
       } else {
         setMinerMsg(`❌ ${data.error}`);
       }
-    } catch (err) { setMinerMsg('❌ Create failed'); }
+    } catch (err) { setMinerMsg(`❌ ${err instanceof ApiError ? err.message : 'Create failed'}`); }
     setNewMinerLoading(false);
   };
 
   const regenerateToken = async (minerId) => {
     try {
-      const res = await fetch(`/api/miners/mine/${minerId}/token`, {
-        method: 'PUT',
-        headers: authHeaders()
-      });
-      const data = await res.json();
+      const data = await apiFetch(`/api/miners/mine/${minerId}/token`, { method: 'PUT' });
       if (data.success) {
         setRegenTokenId(minerId);
         setRegenTokenVal(data.miner.miner_token);
@@ -214,7 +196,7 @@ export default function Miners() {
       } else {
         setMinerMsg(`❌ ${data.error}`);
       }
-    } catch (err) { setMinerMsg('❌ Token regenerate failed'); }
+    } catch (err) { setMinerMsg(`❌ ${err instanceof ApiError ? err.message : 'Token regenerate failed'}`); }
   };
 
   if (loading || !user) {

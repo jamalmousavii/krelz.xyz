@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
+import { apiFetch, ApiError } from '../utils/api';
 import { audioBlobToWav16k } from '../lib/audio';
 
 const CATEGORY_ICONS = { chat: '💬', code: '💻', vision: '👁️', embedding: '🔗' };
@@ -108,10 +109,19 @@ export default function Home() {
       setToken(savedToken);
       setIsLoggedIn(true);
       fetchSessions(savedToken);
-      fetchCatalog(savedToken);
+      fetchCatalog();
     } else {
-      fetchCatalog(null);
+      fetchCatalog();
     }
+    // v3.29.1 — any 401 anywhere clears the session (apiFetch); keep this
+    // page's auth state in sync so it stops pretending to be logged in.
+    const onAuthChanged = () => {
+      const tk = localStorage.getItem('token');
+      setToken(tk);
+      setIsLoggedIn(!!tk);
+    };
+    window.addEventListener('krelz:auth-changed', onAuthChanged);
+    return () => window.removeEventListener('krelz:auth-changed', onAuthChanged);
   }, []);
 
   useEffect(() => {
@@ -219,18 +229,15 @@ export default function Home() {
     if (!token) return;
     setPurchaseError('');
     try {
-      const res = await fetch(`/api/plans/${tier}/purchase`, {
-        method: 'POST',
-        headers: authHeaders(token),
-      });
-      const data = await res.json();
+      const data = await apiFetch(`/api/plans/${tier}/purchase`, { method: 'POST' });
       if (data.success && data.invoice?.url) {
         window.open(data.invoice.url, '_blank', 'noopener');
       } else {
         setPurchaseError(data.error || t('chat.errorResponse'));
       }
     } catch (err) {
-      setPurchaseError(t('chat.errorConnection'));
+      if (err instanceof ApiError && err.status === 401) setPurchaseError(t('home.loginToBuy'));
+      else setPurchaseError(err instanceof ApiError ? err.message : t('chat.errorConnection'));
     }
   };
 
@@ -244,19 +251,18 @@ export default function Home() {
       return;
     }
     try {
-      const res = await fetch('/api/plans/tokens/purchase', {
+      const data = await apiFetch('/api/plans/tokens/purchase', {
         method: 'POST',
-        headers: authHeaders(token),
         body: JSON.stringify({ amount_usd: amount }),
       });
-      const data = await res.json();
       if (data.success && data.invoice?.url) {
         window.open(data.invoice.url, '_blank', 'noopener');
       } else {
         setPurchaseError(data.error || t('chat.errorResponse'));
       }
     } catch (err) {
-      setPurchaseError(t('chat.errorConnection'));
+      if (err instanceof ApiError && err.status === 401) setPurchaseError(t('home.loginToBuy'));
+      else setPurchaseError(err instanceof ApiError ? err.message : t('chat.errorConnection'));
     }
   };
 
@@ -265,13 +271,21 @@ export default function Home() {
     setUpgradeNotice(null);
   };
 
-  // v3.29.0 — homepage pricing: public catalog (+ personal plan when logged in)
-  const fetchCatalog = async (tkn) => {
+  // v3.29.0 — homepage pricing: public catalog (+ personal plan when logged in).
+  // v3.29.1 — goes through apiFetch; on a 401 (expired token) the session is
+  // cleared and the catalog is retried as a guest so pricing always renders.
+  const fetchCatalog = async () => {
     try {
-      const res = await fetch('/api/plans', { headers: tkn ? authHeaders(tkn) : {} });
-      const data = await res.json();
+      const data = await apiFetch('/api/plans');
       if (data.success) setCatalog(data);
-    } catch (err) {}
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        try {
+          const guest = await fetch('/api/plans').then((r) => r.json());
+          if (guest.success) setCatalog(guest);
+        } catch (e) {}
+      }
+    }
   };
 
   const handlePlanBuy = (tier) => {
@@ -296,15 +310,16 @@ export default function Home() {
 
   const fetchSessions = async (tkn) => {
     try {
-      const res = await fetch('/api/chat/sessions', { headers: authHeaders(tkn) });
-      const data = await res.json();
+      const data = await apiFetch('/api/chat/sessions');
       if (data.success) {
         setSessions(data.sessions);
         if (data.sessions.length > 0 && !activeSessionId) {
           loadSession(data.sessions[0].id, tkn);
         }
       }
-    } catch (err) { console.error('Failed to load sessions'); }
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 401)) console.error('Failed to load sessions');
+    }
   };
 
   const loadSession = async (sessionId, tkn) => {

@@ -5,8 +5,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
 import EarningsBreakdown from '../components/EarningsBreakdown';
-import authHeaders from '../utils/auth';
-import { useAuth, clearSession } from '../utils/api';
+import { useAuth, clearSession, apiFetch, ApiError } from '../utils/api';
 
 export default function Profile() {
   const { t, lang } = useLanguage();
@@ -28,10 +27,11 @@ export default function Profile() {
     setLoading(false);
   }, [user]);
 
+  // v3.29.1 — apiFetch: a 401 (expired JWT) clears the session and redirects
+  // home via useAuth, instead of silently rendering an empty dashboard.
   const fetchUsdBalance = async () => {
     try {
-      const res = await fetch('/api/payments/balance', { headers: authHeaders() });
-      const data = await res.json();
+      const data = await apiFetch('/api/payments/balance');
       if (data.success && data.balances?.USD) setUsdBalance(data.balances.USD);
       if (data.success && data.free_tokens) {
         setExtras({
@@ -49,15 +49,14 @@ export default function Profile() {
   const purchasePlan = async (tier) => {
     setPlanMsg('');
     try {
-      const res = await fetch(`/api/plans/${tier}/purchase`, { method: 'POST', headers: authHeaders() });
-      const data = await res.json();
+      const data = await apiFetch(`/api/plans/${tier}/purchase`, { method: 'POST' });
       if (data.success && data.invoice?.url) {
         window.open(data.invoice.url, '_blank', 'noopener');
       } else {
         setPlanMsg(`❌ ${data.error || 'Error'}`);
       }
     } catch (err) {
-      setPlanMsg(`❌ ${t('chat.errorConnection')}`);
+      setPlanMsg(`❌ ${err instanceof ApiError ? err.message : t('chat.errorConnection')}`);
     }
   };
 
@@ -69,19 +68,17 @@ export default function Profile() {
       return;
     }
     try {
-      const res = await fetch('/api/plans/tokens/purchase', {
+      const data = await apiFetch('/api/plans/tokens/purchase', {
         method: 'POST',
-        headers: authHeaders(),
         body: JSON.stringify({ amount_usd: amount }),
       });
-      const data = await res.json();
       if (data.success && data.invoice?.url) {
         window.open(data.invoice.url, '_blank', 'noopener');
       } else {
         setBundleMsg(`❌ ${data.error || 'Error'}`);
       }
     } catch (err) {
-      setBundleMsg(`❌ ${t('chat.errorConnection')}`);
+      setBundleMsg(`❌ ${err instanceof ApiError ? err.message : t('chat.errorConnection')}`);
     }
   };
 
@@ -94,11 +91,9 @@ export default function Profile() {
 
   const fetchRank = async () => {
     try {
-      const mine = await fetch('/api/miners/mine', { headers: authHeaders() });
-      const mineData = await mine.json();
+      const mineData = await apiFetch('/api/miners/mine');
       if (!mineData.success || !mineData.miners?.length) return;
-      const res = await fetch('/api/leaderboard/mine', { headers: authHeaders() });
-      const data = await res.json();
+      const data = await apiFetch('/api/leaderboard/mine');
       if (data.success) setMyRank(data);
     } catch (err) {}
   };

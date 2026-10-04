@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../database/pool');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, optionalAuth } = require('../middleware/auth');
 const nowpayments = require('../services/nowpayments');
 const {
   FREE_DAILY_TOKENS,
@@ -16,11 +16,9 @@ const { getTokenBalance } = require('../services/tokenBundles');
 const { logger } = require('../logger');
 
 // Auth is optional on the snapshot: pricing/caps are public, the personal
-// allowance block only appears with a valid token.
-const optionalAuth = (req, res, next) => {
-  if (req.headers.authorization) return authenticate(req, res, next);
-  next();
-};
+// allowance block only appears with a valid token. Uses the shared middleware
+// optionalAuth (v3.29.1) — an expired/garbage Bearer degrades to anonymous
+// instead of 401ing the public catalog.
 
 // GET /api/plans — plan catalog + token-bundle quote + public pricing.
 router.get('/', optionalAuth, async (req, res) => {

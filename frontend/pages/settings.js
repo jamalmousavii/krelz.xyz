@@ -4,8 +4,7 @@ import { useState, useEffect } from 'react';
 import { useLanguage } from '../i18n/LanguageContext';
 import { LANGUAGES, isRtl } from '../i18n/translations';
 import Navbar from '../components/Navbar';
-import authHeaders from '../utils/auth';
-import { useAuth, clearSession } from '../utils/api';
+import { useAuth, clearSession, apiFetch, ApiError } from '../utils/api';
 
 export default function Settings() {
   const { t, lang, changeLang } = useLanguage();
@@ -41,16 +40,14 @@ export default function Settings() {
 
   const fetchBalance = async () => {
     try {
-      const res = await fetch('/api/payments/balance', { headers: authHeaders() });
-      const data = await res.json();
+      const data = await apiFetch('/api/payments/balance');
       if (data.success && data.balances?.USD) setUsdBalance(data.balances.USD);
     } catch (err) {}
   };
 
   const fetchHistory = async () => {
     try {
-      const res = await fetch('/api/payments/history', { headers: authHeaders() });
-      const data = await res.json();
+      const data = await apiFetch('/api/payments/history');
       if (data.success) {
         setDeposits(data.deposits || []);
         setWithdrawals(data.withdrawals || []);
@@ -62,12 +59,10 @@ export default function Settings() {
     if (!depositAmount || parseFloat(depositAmount) <= 0) return;
     setWalletLoading(true); setWalletMessage('');
     try {
-      const res = await fetch('/api/payments/deposit/create', {
+      const data = await apiFetch('/api/payments/deposit/create', {
         method: 'POST',
-        headers: authHeaders(),
         body: JSON.stringify({ amount_usd: parseFloat(depositAmount) })
       });
-      const data = await res.json();
       if (data.success) {
         window.open(data.invoice.url, '_blank');
         setWalletMessage('✅ Invoice created. Complete payment in new tab.');
@@ -75,7 +70,7 @@ export default function Settings() {
       } else {
         setWalletMessage(`❌ ${data.error}`);
       }
-    } catch (err) { setWalletMessage('❌ Deposit failed'); }
+    } catch (err) { setWalletMessage(`❌ ${err instanceof ApiError ? err.message : 'Deposit failed'}`); }
     setWalletLoading(false);
   };
 
@@ -83,12 +78,10 @@ export default function Settings() {
     if (!withdrawAmount || !withdrawAddress) return;
     setWalletLoading(true); setWalletMessage('');
     try {
-      const res = await fetch('/api/payments/withdraw', {
+      const data = await apiFetch('/api/payments/withdraw', {
         method: 'POST',
-        headers: authHeaders(),
         body: JSON.stringify({ amount: parseFloat(withdrawAmount), toAddress: withdrawAddress })
       });
-      const data = await res.json();
       if (data.success) {
         setWalletMessage(`✅ Sent $${data.withdrawal.amount} via USDT TRC-20 (fee: $${data.withdrawal.fee})`);
         setWithdrawAmount('');
@@ -97,7 +90,7 @@ export default function Settings() {
       } else {
         setWalletMessage(`❌ ${data.error}`);
       }
-    } catch (err) { setWalletMessage('❌ Withdrawal failed'); }
+    } catch (err) { setWalletMessage(`❌ ${err instanceof ApiError ? err.message : 'Withdrawal failed'}`); }
     setWalletLoading(false);
   };
 
@@ -110,12 +103,10 @@ export default function Settings() {
     setPasswordLoading('set');
     setPasswordMessage('');
     try {
-      const res = await fetch('/api/auth/set-password', {
+      const data = await apiFetch('/api/auth/set-password', {
         method: 'POST',
-        headers: authHeaders(),
         body: JSON.stringify({ password: newPassword })
       });
-      const data = await res.json();
       if (data.success) {
         setPasswordMessage('✅ Password set successfully');
         setHasPassword(true);
@@ -124,7 +115,7 @@ export default function Settings() {
       } else {
         setPasswordMessage(`❌ ${data.error}`);
       }
-    } catch (err) { setPasswordMessage('❌ Failed to set password'); }
+    } catch (err) { setPasswordMessage(`❌ ${err instanceof ApiError ? err.message : 'Failed to set password'}`); }
     setPasswordLoading('');
   };
 
@@ -137,12 +128,10 @@ export default function Settings() {
     setPasswordLoading('change');
     setPasswordMessage('');
     try {
-      const res = await fetch('/api/auth/change-password', {
+      const data = await apiFetch('/api/auth/change-password', {
         method: 'POST',
-        headers: authHeaders(),
         body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
       });
-      const data = await res.json();
       if (data.success) {
         setPasswordMessage('✅ Password changed successfully');
         setCurrentPassword('');
@@ -151,7 +140,7 @@ export default function Settings() {
       } else {
         setPasswordMessage(`❌ ${data.error}`);
       }
-    } catch (err) { setPasswordMessage('❌ Failed to change password'); }
+    } catch (err) { setPasswordMessage(`❌ ${err instanceof ApiError ? err.message : 'Failed to change password'}`); }
     setPasswordLoading('');
   };
 
