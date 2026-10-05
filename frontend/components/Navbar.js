@@ -187,6 +187,10 @@ export default function Navbar() {
           <Link href="/miner" className="text-gray-600 hover:text-sky-700 transition">{t('nav.miner')}</Link>
           <Link href="/#plans" onClick={() => window.dispatchEvent(new CustomEvent('krelz:show-plans'))} className="text-gray-600 hover:text-sky-700 transition">⭐ {t('nav.plans')}</Link>
           <Link href="/leaderboard" className="text-gray-600 hover:text-sky-700 transition">🏆</Link>
+          <Link href="/support" className="text-gray-600 hover:text-sky-700 transition">🎫 {t('nav.support')}</Link>
+          {user?.role === 'admin' && (
+            <Link href="/admin" className="text-gray-600 hover:text-sky-700 transition">🛡️ {t('nav.admin')}</Link>
+          )}
 
           <div className="relative" ref={dropdownRef}>
             {user ? (
@@ -213,9 +217,17 @@ export default function Navbar() {
                     <Link href="/miners" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition">
                       ⛏️ {t('nav.miners')}
                     </Link>
+                    <Link href="/support" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition">
+                      🎫 {t('nav.support')}
+                    </Link>
                     <Link href="/settings" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition">
                       ⚙️ {t('nav.settings')}
                     </Link>
+                    {user?.role === 'admin' && (
+                      <Link href="/admin" className="flex items-center gap-2 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 transition">
+                        🛡️ {t('nav.admin')}
+                      </Link>
+                    )}
                     <hr className="border-gray-200" />
                     <button
                       onClick={handleLogout}
@@ -372,7 +384,11 @@ export default function Navbar() {
               <>
                 <Link href="/profile" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">📊 {t('nav.dashboard')}</Link>
                 <Link href="/miners" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">⛏️ {t('nav.miners')}</Link>
+                <Link href="/support" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">🎫 {t('nav.support')}</Link>
                 <Link href="/settings" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">⚙️ {t('nav.settings')}</Link>
+                {user?.role === 'admin' && (
+                  <Link href="/admin" onClick={closeMenu} className="text-gray-600 hover:text-sky-700 transition py-2.5 text-base">🛡️ {t('nav.admin')}</Link>
+                )}
                 <button onClick={handleLogout} className="text-red-500 hover:text-red-600 transition py-2.5 text-left text-base">
                   🚪 {t('profile.logout')}
                 </button>

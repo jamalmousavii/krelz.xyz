@@ -51,17 +51,17 @@ node src/server.js
 ### 5. Tests & Quality Gates
 
 ```bash
-# Backend — jest: 202 tests + 3 skipped / 19 suites (integration.money skips without DATABASE_URL)
+# Backend — jest: 224 tests + 3 skipped / 22 suites (integration.money skips without DATABASE_URL)
 cd backend
 npm test   # = node --experimental-vm-modules ./node_modules/jest/bin/jest.js (plain `npx jest` breaks attachments.test.js)
 
-# Money integration suite against a throwaway PostgreSQL (205 tests / 20 suites):
+# Money integration suite against a throwaway PostgreSQL (227 tests / 23 suites):
 docker run -d --name krelz-it-pg -e POSTGRES_USER=krelz -e POSTGRES_PASSWORD=krelz \
   -e POSTGRES_DB=krelz_it -p 5433:5432 postgres:16-alpine
 DATABASE_URL='postgresql://krelz:krelz@localhost:5433/krelz_it' npm test
 docker rm -f krelz-it-pg
 
-# Frontend — jest (22 tests), lint (warning-only), i18n parity (33 × 304), production build
+# Frontend — jest (22 tests), lint (warning-only), i18n parity (33 × 408), production build
 cd frontend
 npm run lint && npm run i18n:check && npm test && npm run build
 
@@ -83,14 +83,15 @@ Next.js 14 frontend with Tailwind CSS and i18n support.
 frontend/
 ├── pages/
 │   ├── index.js           # Chat homepage (state hub; UI split into components/chat/ v3.36.0)
-│   ├── profile.js         # Dashboard (balance, plans + token bundle, earnings breakdown, rank card)
+│   ├── profile.js         # Dashboard (balance, plans + token bundle, transactions card v3.39.0, earnings breakdown, rank card)
 │   ├── miners.js          # Miner mgmt + Quick Install copy + history (v3.22.0)
 │   ├── settings.js         # Settings (USD wallet, 33-lang dropdown, password)
 │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)
 │   ├── leaderboard.js     # Top miners/users
-│   └── admin.js           # Admin panel
+│   ├── support.js         # Support tickets: list/new/thread (v3.39.0)
+│   └── admin.js           # Admin panel: 7 tabs + management actions (v3.39.0)
 ├── components/
-│   ├── Navbar.js          # Nav + auth dropdown + LanguageSwitcher
+│   ├── Navbar.js          # Nav + auth dropdown + LanguageSwitcher (+ 🎫 Support, 🛡️ Admin v3.39.0)
 │   ├── EarningsBreakdown.js # 5-way earnings breakdown (profile, /miners, /miner; v3.29.0)
 │   ├── PlansContent.js    # Pricing cards: shared by homepage section + modal (v3.30.0)
 │   ├── PlansModal.js      # Pricing overlay for /#plans + Navbar event (v3.30.0)
@@ -119,9 +120,9 @@ backend/
 │   ├── cache.js           # Redis caching
 │   ├── database/
 │   │   ├── pool.js        # PostgreSQL connection
-│   │   └── migrate.js     # DB migration (20 tables + resource columns)
+│   │   └── migrate.js     # DB migration (23 tables + resource columns)
 │   ├── middleware/
-│   │   ├── auth.js        # JWT + Google OAuth
+│   │   ├── auth.js        # JWT + Google OAuth (+ banned check via cached auth state, v3.39.0)
 │   │   └── validate.js    # Body validators (chat/register/deposit/withdraw)
 │   ├── services/
 │   │   └── plans.js       # PLANS catalog, getActivePlan, activatePlan, charge chain helpers
@@ -133,6 +134,8 @@ backend/
 │       ├── payments.js    # NowPayments USD wallet (deposit/withdraw/IPN + plan/token IPN)
 │       ├── plans.js       # Plan catalog (Plus/Pro/Max) + tier/token-bundle purchase
 │       ├── token.js       # Balance snapshot
+│       ├── tickets.js     # User support tickets (v3.39.0)
+│       ├── admin.js       # Admin panel API: views + audited actions (v3.39.0)
 │       └── leaderboard.js # Top miners
 └── package.json
 ```
@@ -158,11 +161,11 @@ miner-app/
         └── api.js         # REST API (register, heartbeat)
 ```
 
-## Database Schema (20 Tables)
+## Database Schema (23 Tables)
 
 | Table | Purpose |
 |-------|---------|
-| users | User accounts (email, Google OAuth) |
+| users | User accounts (email, Google OAuth; + `role`, `banned` since v3.39.0) |
 | miners | GPU miner registrations |
 | tasks | Chat task history |
 | transactions | Token transactions |
@@ -181,6 +184,9 @@ miner-app/
 | **user_plans** | Active subscription tiers (`plus`/`pro`/`max`: 10M/30M/80M tokens/day, v3.28.0; plus since v3.27.0) |
 | **plan_purchases** | Plan/token invoice claims — IPN exactly-once idempotency (`plan_type`: plus/pro/max/tokens) |
 | **user_token_balances** | Prepaid token pot — $1 = 1M tokens, never expires (v3.28.0) |
+| **tickets** | Support tickets — subject, category (`support`/`billing`/`miner`), status (`open`/`answered`/`closed`), v3.39.0 |
+| **ticket_messages** | Ticket thread messages (`is_admin` flags the staff reply, `ON DELETE CASCADE`), v3.39.0 |
+| **admin_audit_log** | Admin mutation trail — `admin_id`, `action`, `target_type/id`, `reason`, `payload JSONB`, v3.39.0 |
 | **schema_migrations** | Migration bookkeeping (applied version rows) |
 
 ### Miners Table — Resource Monitoring Columns (v3.8.0)
@@ -431,6 +437,34 @@ historical; see `CHANGELOG.md` `[3.38.0]` for the full removal record.
   (`cacheMiddleware(30)`); any revival must keep both.
 - The page consumed it through `useApi('/api/stats/network')`; the hook itself
   survives (`hooks/useApi.js` — the leaderboard still uses it).
+
+## Support Tickets & Admin Panel (v3.39.0)
+
+### Schema
+
+- `tickets(id, user_id, subject ≤200, category, status, created_at, updated_at)` — `category ∈ support|billing|miner`, `status ∈ open|answered|closed`; indexes on `(user_id, id DESC)` and `(status, updated_at DESC)`.
+- `ticket_messages(id, ticket_id CASCADE, user_id, is_admin, body ≤4000, created_at)` — a ticket is always created with its first user message in one transaction, so an empty thread cannot exist.
+- `admin_audit_log(id, admin_id, action, target_type, target_id, reason, payload JSONB, created_at)` — every admin mutation inserts its row **inside the same transaction** as the change: an action either lands with its trail or not at all.
+- `users.banned BOOLEAN` — orthogonal to `role`; enforced at `POST /api/auth/login` (403) and on every authenticated request via the cached auth state in `middleware/auth.js` (`SELECT token_version, banned` cached 10s, fail-open on lookup errors like the rest of that layer). Ban/role changes call `invalidateTokenVersion()` so live sessions die within one cache window.
+
+### Status flow
+
+`open` (waiting on staff) → `answered` (admin reply) → back to `open` on a user reply → `closed` (either side; user reply to a closed ticket → 409, admin reply to a closed ticket → 409). Admin can reopen.
+
+### Routes
+
+- **User (`routes/tickets.js`, limiter `tickets` 10/5min):** `POST /api/tickets`, `GET /api/tickets`, `GET /api/tickets/:id`, `POST /api/tickets/:id/messages`, `POST /api/tickets/:id/close` — owner-only (another user's ticket → 403, missing → 404).
+- **Admin (`routes/admin.js`, `authenticate + requireAdmin`):** tickets `GET /tickets?status=&q=`, `GET /tickets/:id`, `POST /tickets/:id/messages` (→ `answered`), `POST /tickets/:id/status` (`open`/`closed`); users `PUT /users/:id/role` (self-change → 409), `PUT /users/:id/ban` (self-ban → 409), `POST /users/:id/balance` (±USD, row-lock + floor at 0 + reason), `POST /users/:id/tokens` (±token pot), `PUT /users/:id/plan` (grants via `plans.activatePlan` → +30 days); miners `PUT /miners/:id/status` (`removed` ↔ `offline`); views `GET /payments`, `GET /purchases` (with owner email). `GET /users` returns `banned`, USD/token balances and the active plan for the action dialogs; the dashboard also counts total/open tickets.
+
+### UI
+
+- `/support` (v3.39.0): list + new-ticket form + thread with replies/close; `🎫 Support` link in the Navbar (desktop, dropdown, mobile) for everyone, `🛡️ Admin` only when `role === 'admin'`.
+- `/admin` (v3.39.0): 7 tabs — dashboard (6 cards), users (manage drawer: role, ban/unban, ±USD, ±tokens with mandatory reason, grant plan), miners (remove/restore), tasks, tickets (search/filter + thread reply/close/reopen), payments (deposits + withdrawals), purchases. Strings i18n'd (`admin.*`, `support.*` — 33 × 408 keys).
+- `/profile`: read-only **Transactions** card merging `/api/payments/history` deposits + withdrawals (newest first, status badges, link to `/settings`).
+
+### Tests
+
+`backend/tests/tickets.test.js` (8), `admin.tickets.test.js` (6), `admin.actions.test.js` (8) — mocked-pool pattern, asserting status codes, the SQL that ran (`BEGIN`/`COMMIT`, audit inserts) and the ban 403 path.
 
 ## Internationalization (i18n) — 33 languages (v3.16.0+)
 

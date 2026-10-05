@@ -639,6 +639,60 @@ const migrate = async () => {
     );
     console.log('✅ coin_deposits order_id + lookup indexes added');
 
+    // ---- v3.39.0: support tickets (user → admin thread) ----
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS tickets (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        subject VARCHAR(200) NOT NULL,
+        category VARCHAR(32) NOT NULL DEFAULT 'support',
+        status VARCHAR(16) NOT NULL DEFAULT 'open',
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_tickets_user ON tickets(user_id, id DESC)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status, updated_at DESC)');
+    console.log('✅ جدول tickets ایجاد شد');
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ticket_messages (
+        id SERIAL PRIMARY KEY,
+        ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        is_admin BOOLEAN NOT NULL DEFAULT false,
+        body TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_ticket_messages_ticket ON ticket_messages(ticket_id, id)');
+    console.log('✅ جدول ticket_messages ایجاد شد');
+
+    // ---- v3.39.0: audit trail for every admin mutation (money/role/ban/miner) ----
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS admin_audit_log (
+        id SERIAL PRIMARY KEY,
+        admin_id INTEGER NOT NULL REFERENCES users(id),
+        action VARCHAR(64) NOT NULL,
+        target_type VARCHAR(32) NOT NULL,
+        target_id INTEGER,
+        reason TEXT,
+        payload JSONB,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at DESC)');
+    console.log('✅ جدول admin_audit_log ایجاد شد');
+
+    // ---- v3.39.0: account ban — orthogonal to role (a banned miner keeps role) ----
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS banned BOOLEAN NOT NULL DEFAULT false;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    console.log('✅ ستون banned اضافه شد');
+
     // ---- Schema version bookkeeping (baseline marker for future migrations) ----
     await client.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (

@@ -42,6 +42,9 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Chat-First Homepage (v3.15.0)** — Landing page IS the chat: centered model picker + input; after start, history sidebar left + input bottom
 - **Split Pages (v3.15.0)** — Dashboard (`/profile`), Miners (`/miners`), Settings (`/settings`) separated
 - **Modern Neutral Chat UI (v3.37.0)** — ChatGPT/Gemini-style chat experience (auto-growing composer, neutral palette, sky accents)
+- **Support Tickets (v3.39.0)** — `/support`: categorized tickets (support/billing/miner) with threaded replies and close/reopen; admins answer from `/admin`
+- **Full Admin Panel (v3.39.0)** — 7 tabs (dashboard/users/miners/tasks/tickets/payments/purchases) with real actions: role & ban, ±USD balance, ±token pot, plan grant, miner remove/restore — every mutation written to `admin_audit_log`
+- **Transactions Card (v3.39.0)** — profile shows the merged deposit/withdrawal history with status badges
 - **Miner Docs vs Interactive (v3.16.0)** — `/miner`: full install/connect/delete guide + GitHub; `/miners`: copy-command Quick Install + miner cards
 
 ## Quick Install (Miner)
@@ -148,7 +151,7 @@ krelz.xyz/
 │   │   ├── models.js          # AI models + pricing
 │   │   ├── database/
 │   │   │   ├── pool.js        # PostgreSQL connection
-│   │   │   └── migrate.js     # DB migration (20 tables + resource columns)
+│   │   │   └── migrate.js     # DB migration (23 tables + resource columns)
 │   │   ├── routes/
 │   │   │   ├── auth.js        # Authentication
 │   │   │   ├── miners.js      # Miner management
@@ -156,7 +159,9 @@ krelz.xyz/
 │   │   │   ├── payments.js    # USD wallet + NowPayments (deposit/plan/token IPN)
 │   │   │   ├── plans.js       # Plan catalog (Plus/Pro/Max) + tier/token-bundle purchase
 │   │   │   ├── token.js       # Balance snapshot
-│   │   │   └── models.js      # Model list API
+│   │   │   ├── models.js      # Model list API
+│   │   │   ├── tickets.js     # User support tickets (v3.39.0)
+│   │   │   └── admin.js       # Admin panel API: views + audited actions (v3.39.0)
 │   │   ├── middleware/
 │   │   │   └── auth.js        # JWT auth
 │   │   └── cache.js           # Redis caching
@@ -164,14 +169,15 @@ krelz.xyz/
 ├── frontend/                   # UI (Next.js 14 + Tailwind CSS)
 │   ├── pages/
 │   │   ├── index.js           # Chat homepage (state hub; UI split into components/chat/ v3.36.0)
-│   │   ├── profile.js         # Dashboard (balance, plans + token bundle cards, earnings breakdown, miner credit, rank)
+│   │   ├── profile.js         # Dashboard (balance, plans + token bundle cards, transactions card v3.39.0, earnings breakdown, miner credit, rank)
 │   │   ├── miners.js          # Miner management + Quick Install copy + history (v3.22.0)
 │   │   ├── settings.js        # Settings (USD wallet, 33-lang dropdown, password)
 │   │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)
 │   │   ├── leaderboard.js     # Top miners/users
-│   │   └── admin.js           # Admin panel
+│   │   ├── support.js         # Support tickets: list/new/thread (v3.39.0)
+│   │   └── admin.js           # Admin panel: 7 tabs + management actions (v3.39.0)
 │   ├── components/
-│   │   ├── Navbar.js          # Nav (Miner, ⭐ Plans, Leaderboard) + auth + lang dropdown
+│   │   ├── Navbar.js          # Nav (Miner, ⭐ Plans, Leaderboard, 🎫 Support, 🛡️ Admin) + auth + lang dropdown
 │   │   ├── EarningsBreakdown.js # 5-way miner earnings breakdown (profile, /miners, /miner)
 │   │   ├── PlansContent.js    # Pricing cards shared by inline section + modal (v3.30.0)
 │   │   ├── PlansModal.js      # Pricing overlay for /#plans deep links + Navbar (v3.30.0)
@@ -191,11 +197,11 @@ krelz.xyz/
 └── docs/                       # Documentation
 ```
 
-## Database Schema (20 Tables)
+## Database Schema (23 Tables)
 
 | Table | Purpose |
 |-------|---------|
-| users | User accounts |
+| users | User accounts (+ `role`, `banned` since v3.39.0) |
 | miners | GPU miner registrations (multi-miner: unique `miner_token` per row) |
 | tasks | Chat task history |
 | transactions | Token transactions |
@@ -214,6 +220,9 @@ krelz.xyz/
 | user_plans | Active subscription tiers (plus/pro/max) |
 | plan_purchases | Plan/token invoice claims — IPN exactly-once idempotency |
 | user_token_balances | Prepaid token pot — $1 = 1M tokens, never expires |
+| tickets | Support tickets — subject/category/status (v3.39.0) |
+| ticket_messages | Ticket thread messages, user + admin replies (v3.39.0) |
+| admin_audit_log | Admin action trail — who/action/target/reason/payload (v3.39.0) |
 | schema_migrations | Migration bookkeeping |
 
 ## Tech Stack

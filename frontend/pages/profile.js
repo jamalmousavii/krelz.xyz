@@ -14,6 +14,7 @@ export default function Profile() {
   const [bundleMsg, setBundleMsg] = useState('');
   const [bundleAmount, setBundleAmount] = useState('5'); // whole dollars for the token bundle
   const [myRank, setMyRank] = useState(null);
+  const [txList, setTxList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
@@ -23,6 +24,7 @@ export default function Profile() {
     if (user) {
       fetchUsdBalance();
       fetchRank();
+      fetchTransactions();
     }
     setLoading(false);
   }, [user]);
@@ -85,6 +87,33 @@ export default function Profile() {
     }
   };
 
+  // v3.39.0 — wallet history card: deposits + withdrawals merged, newest first.
+  // Read-only (Top Up / Withdraw live in /settings).
+  const fetchTransactions = async () => {
+    try {
+      const data = await apiFetch('/api/payments/history?limit=50');
+      if (!data.success) return;
+      const deposits = (data.deposits || []).map((d) => ({
+        kind: 'deposit',
+        amount: d.amount,
+        status: d.status,
+        created_at: d.created_at,
+      }));
+      const withdrawals = (data.withdrawals || []).map((w) => ({
+        kind: 'withdrawal',
+        amount: w.amount,
+        status: w.status,
+        created_at: w.created_at,
+      }));
+      const merged = [...deposits, ...withdrawals]
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .slice(0, 25);
+      setTxList(merged);
+    } catch (err) {
+      // History is decorative here — a failure must not flag the whole page.
+    }
+  };
+
   const formatTokens = (n) => {
     const v = Number(n || 0);
     if (v >= 1000000) return `${(v / 1000000).toFixed(v % 1000000 === 0 ? 0 : 1)}M`;
@@ -141,6 +170,7 @@ export default function Profile() {
         <div className="flex gap-2 mb-6 flex-wrap">
           <Link href="/profile" className="px-4 py-2 min-h-[40px] inline-flex items-center rounded-lg text-sm font-bold bg-sky-500 text-white">📊 {t('nav.dashboard')}</Link>
           <Link href="/miners" className="px-4 py-2 min-h-[40px] inline-flex items-center rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⛏️ {t('nav.miners')}</Link>
+          <Link href="/support" className="px-4 py-2 min-h-[40px] inline-flex items-center rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">🎫 {t('nav.support')}</Link>
           <Link href="/settings" className="px-4 py-2 min-h-[40px] inline-flex items-center rounded-lg text-sm font-bold bg-white text-gray-600 border border-sky-200 hover:bg-sky-50">⚙️ {t('nav.settings')}</Link>
         </div>
 
@@ -278,6 +308,54 @@ export default function Profile() {
             </button>
           </div>
           {bundleMsg && <p className="text-red-500 text-xs mt-2">{bundleMsg}</p>}
+        </div>
+
+        {/* v3.39.0 — Transactions: merged deposit/withdrawal history (read-only) */}
+        <div className="bg-white rounded-xl border border-sky-100 shadow-sm p-5 md:p-6 mb-6">
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold text-gray-800">🧾 {t('profile.transactionsTitle')}</h2>
+              <p className="text-sm text-gray-500">{t('profile.transactionsDesc')}</p>
+            </div>
+            <Link href="/settings" className="text-sm font-semibold text-sky-600 hover:text-sky-700 transition flex-shrink-0">
+              {t('profile.viewAllWallet')} →
+            </Link>
+          </div>
+          {txList.length === 0 ? (
+            <div className="bg-sky-50 border border-sky-100 rounded-xl p-4 text-center text-sm text-gray-500">
+              {t('profile.noTransactions')}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {txList.map((tx, i) => (
+                <div key={i} className="flex items-center justify-between gap-3 rounded-xl border border-sky-100 bg-sky-50 px-3 py-2.5">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="text-lg flex-shrink-0">{tx.kind === 'deposit' ? '⬇️' : '⬆️'}</span>
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-gray-800">
+                        {tx.kind === 'deposit' ? t('profile.deposit') : t('profile.withdrawal')}
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {tx.created_at ? new Date(tx.created_at).toLocaleString() : ''}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-left flex-shrink-0">
+                    <div className={`text-sm font-bold ${tx.kind === 'deposit' ? 'text-emerald-600' : 'text-sky-600'}`}>
+                      {tx.kind === 'deposit' ? '+' : '−'}${parseFloat(tx.amount || 0).toFixed(2)}
+                    </div>
+                    {tx.status && tx.status !== 'completed' && (
+                      <div className="text-[10px] font-semibold">
+                        {tx.status === 'pending' && <span className="text-amber-600">{t('profile.statusPending')}</span>}
+                        {tx.status === 'failed' && <span className="text-red-500">{t('profile.statusFailed')}</span>}
+                        {tx.status === 'expired' && <span className="text-gray-400">{t('profile.statusExpired')}</span>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Leaderboard rank (miners only) */}

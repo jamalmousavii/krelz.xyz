@@ -23,6 +23,7 @@ const tokenRoutes = require('./routes/token');
 const modelRoutes = require('./routes/models');
 const adminRoutes = require('./routes/admin');
 const leaderboardRoutes = require('./routes/leaderboard');
+const ticketRoutes = require('./routes/tickets');
 
 const app = express();
 const server = http.createServer(app);
@@ -171,6 +172,16 @@ const guestChatLimiter = makeLimiter({
 });
 app.use('/api/chat', guestChatLimiter);
 
+// Support tickets: user-initiated writes, 10 creates/replies per 5 min is
+// generous for a human and useless for a spammer.
+const ticketsLimiter = makeLimiter({
+  name: 'tickets',
+  windowMs: 5 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many ticket requests, try again in 5 minutes.' },
+});
+app.use('/api/tickets', ticketsLimiter);
+
 app.use('/api/auth', authRoutes);
 // /api/miners responses are per-user (they contain miner_token) — never cache them.
 app.use('/api/miners', minerRoutes);
@@ -181,6 +192,7 @@ app.use('/api/plans', planRoutes);
 app.use('/api/token', authenticate, tokenRoutes);
 app.use('/api/models', cacheMiddleware(15), modelRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/tickets', ticketRoutes);
 app.use('/api/leaderboard', cacheMiddleware(60), leaderboardRoutes);
 
 // Readiness: fails when Postgres is down so nginx/load-balancer stop routing.

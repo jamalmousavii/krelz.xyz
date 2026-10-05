@@ -82,6 +82,12 @@ router.post('/login', loginRules, validate, async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    // v3.39.0: banned accounts cannot start a new session (enforced on every
+    // request too, via the cached auth state in authenticate()).
+    if (user.banned) {
+      return res.status(403).json({ error: 'Account banned.' });
+    }
+
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role, token_version: user.token_version || 0 },
       JWT_SECRET,

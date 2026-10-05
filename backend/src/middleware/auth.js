@@ -14,38 +14,43 @@ if (JWT_SECRET.length < 32) {
 const JWT_OPTIONS = { algorithms: ['HS256'] };
 
 // H3: token_version — bumped on password mutations (set/change/reset), so every
-// JWT minted before the change stops verifying. Checked against the DB with a
-// short per-user cache so the common path costs one indexed read per 10s.
-const tokenVersionCache = new Map(); // userId -> { version, expiresAt }
+// JWT minted before the change stops verifying. The same short-lived per-user
+// cache also carries `banned` (v3.39.0), so one indexed read per 10s enforces
+// both session freshness and account bans.
+const authStateCache = new Map(); // userId -> { version, banned, expiresAt }
 const TOKEN_VERSION_CACHE_MS = 10 * 1000;
 
-async function currentTokenVersion(userId) {
+async function currentAuthState(userId) {
   if (!userId) return null;
-  const cached = tokenVersionCache.get(userId);
-  if (cached && cached.expiresAt > Date.now()) return cached.version;
+  const cached = authStateCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return { version: cached.version, banned: cached.banned };
+  }
   try {
-    const result = await pool.query('SELECT token_version FROM users WHERE id = $1', [userId]);
+    const result = await pool.query('SELECT token_version, banned FROM users WHERE id = $1', [userId]);
     if (result.rows.length === 0) return null;
-    const version = Number(result.rows[0].token_version) || 0;
-    tokenVersionCache.set(userId, { version, expiresAt: Date.now() + TOKEN_VERSION_CACHE_MS });
-    return version;
+    const row = result.rows[0];
+    const state = { version: Number(row.token_version) || 0, banned: Boolean(row.banned) };
+    authStateCache.set(userId, { ...state, expiresAt: Date.now() + TOKEN_VERSION_CACHE_MS });
+    return state;
   } catch (err) {
     // Fail OPEN on lookup errors: with Postgres down every real endpoint is
     // already dead, and a transient blip must not mass-logout every user.
     // (auth.security.test.js runs with no DB — this path keeps it green.)
-    logger.warn({ err }, 'token_version lookup failed — allowing request');
+    logger.warn({ err }, 'auth state lookup failed — allowing request');
     return null; // null = unverified → caller allows
   }
 }
 
 function invalidateTokenVersion(userId) {
-  tokenVersionCache.delete(userId);
+  authStateCache.delete(userId);
 }
 
 async function tokenVersionMatches(decoded) {
   const want = Number(decoded.token_version) || 0; // pre-H3 tokens = 0
-  const current = await currentTokenVersion(decoded.id);
-  return current === null || current === want;
+  const state = await currentAuthState(decoded.id);
+  if (state === null) return true; // unverified → allow
+  return !state.banned && state.version === want;
 }
 
 // Verify JWT token
@@ -58,8 +63,14 @@ async function authenticate(req, res, next) {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET, JWT_OPTIONS);
-    if (!(await tokenVersionMatches(decoded))) {
-      return res.status(401).json({ error: 'Session expired. Please log in again.' });
+    const state = await currentAuthState(decoded.id);
+    if (state !== null) {
+      if (state.version !== (Number(decoded.token_version) || 0)) {
+        return res.status(401).json({ error: 'Session expired. Please log in again.' });
+      }
+      if (state.banned) {
+        return res.status(403).json({ error: 'Account banned.' });
+      }
     }
     req.user = decoded;
     next();

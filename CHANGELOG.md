@@ -1,5 +1,24 @@
 # Changelog
 
+## [3.39.0] - 2026-10-05
+
+Support tickets, a full admin panel with audited management actions, and the profile transactions card.
+
+### Support Tickets
+- **`/support` page + `GET/POST /api/tickets`** — users open categorized tickets (`support`/`billing`/`miner`), reply in a thread and close them; status flow `open → answered → closed` (user reply reopens, either side closes, replies to a closed ticket → 409). Owner-only reads (foreign ticket → 403, missing → 404), `tickets` limiter (10 / 5 min). The ticket and its first message are created in one transaction — an empty thread cannot exist.
+- **Schema** — `tickets`, `ticket_messages` (`ON DELETE CASCADE`) + indexes; Navbar gains `🎫 Support` for everyone (desktop, dropdown, mobile) and the profile links to it.
+
+### Admin Panel
+- **7 tabs** — dashboard (now with total/open tickets), users, miners, tasks, tickets (search/filter + thread reply/close/reopen), payments (global deposits + withdrawals), purchases (plan/token invoices with owner email). `🛡️ Admin` shows in the Navbar only for `role === 'admin'`.
+- **Management actions (every one admin-gated + transactional)** — user role change (self → 409), account ban/unban (self → 409; enforced at login and on **every** authenticated request via the cached `token_version`/`banned` state, 403), ±USD balance (row-lock, floor at 0, mandatory reason, ±$1M cap), ±token pot (integer, floor 0), plan grant via `plans.activatePlan` (+30 days), miner remove/restore (`removed` ↔ `offline`).
+- **`admin_audit_log`** — every mutation writes who/action/target/reason/JSON snapshot **inside the same transaction** as the change.
+
+### UI
+- **Profile Transactions card** — merged deposit + withdrawal history (newest first, status badges, top 25) with a link to the full wallet history in Settings.
+
+### Testing
+- Backend: **227 tests / 23 suites with a database (224 passed + 3 skipped / 22 suites without)** — +22 new (`tickets`, `admin.tickets`, `admin.actions`) asserting status codes, executed SQL and audit writes; frontend 22 tests, lint, i18n parity (**33 × 408** keys), build all green.
+
 ## [3.38.0] - 2026-10-05
 
 Removed the Network Explorer end-to-end: page, API, translations, docs.

@@ -20,6 +20,7 @@
 - JWT فقط با الگوریتم `HS256` و `JWT_SECRET` سرور پذیرفته می‌شود (`alg: none` یا کلید دیگر → `401`).
 - `role` در ثبت‌نام فقط `user` یا `miner` است؛ مقدار `admin` پذیرفته نمی‌شود (`400`).
 - نقش ادمین در هر درخواستِ `admin` دوباره از دیتابیس خوانده می‌شود (کش ۶۰ ثانیه‌ای) و در صورت خطا `fail-closed` است.
+- حساب مسدود (`users.banned`، v3.39.0) هم هنگام ورود و هم در هر درخواستِ احرازشده رد می‌شود: `403` با پیام `Account banned.` (کش وضعیت ۱۰ ثانیه‌ای؛ تغییر `ban`/`role` کش را باطل می‌کند).
 
 ### نرخ محدودیت (Rate limit)
 
@@ -30,6 +31,7 @@
 | `/api/auth/forgot-password` و `reset-password` | ۱۰ / ۱۵ دقیقه |
 | `/api/chat` (کاربر واردشده) | ۳۰ / دقیقه |
 | `/api/chat` (مهمان، بدون توکن) | ۶ / دقیقه |
+| `/api/tickets` | ۱۰ / ۵ دقیقه (v3.39.0) |
 | nginx روی `/api/` | ۱۰ r/s با burst=40 (پاسخ `429`) |
 
 ---
@@ -352,14 +354,49 @@ IPN با پیشوند `tok-` → ادعای exactly-once `plan_purchases` → `c
 
 ---
 
+## تیکت‌های پشتیبانی (v3.39.0 — نیازمند JWT؛ فقط تیکتِ خودِ کاربر)
+
+وضعیت‌ها: `open` (در انتظار پاسخ) → `answered` (پاسخ ادمین) → با پاسخ کاربر دوباره `open` → `closed` (هر دو طرف؛ پاسخ به تیکت بسته → `409`). دسته‌ها: `support` | `billing` | `miner`.
+
+| متد و مسیر | توضیح |
+|------|-------|
+| `POST /api/tickets` | ساخت تیکت (`subject` ≤۲۰۰، `body` ≤۴۰۰۰، `category`) — تیکت و اولین پیام در یک تراکنش |
+| `GET /api/tickets` | لیست تیکت‌های خودِ کاربر + پیش‌نمایش آخرین پیام (حداکثر ۵۰) |
+| `GET /api/tickets/:id` | جزئیات + رشته پیام‌ها — مالکیت الزامی (دیگری → `403`) |
+| `POST /api/tickets/:id/messages` | پاسخ کاربر → وضعیت `open`؛ تیکت بسته → `409` |
+| `POST /api/tickets/:id/close` | بستن تیکت توسط خودِ کاربر |
+
+---
+
 ## ادمین (نیازمند JWT + نقش `admin` در دیتابیس)
+
+هر تغییرِ مدیریتی در همان تراکنش، ردیفی در `admin_audit_log` (کاربر/اکشن/هدف/دلیل/`payload JSONB`) می‌نویسد.
+
+### مشاهده
 
 | مسیر | توضیح |
 |------|-------|
-| `GET /api/admin/dashboard` | شمارنده‌ها + درآمد پلتفرم |
-| `GET /api/admin/users` | ۱۰۰ کاربر اخیر |
-| `GET /api/admin/miners` | ۱۰۰ ماینر |
+| `GET /api/admin/dashboard` | شمارنده‌ها + درآمد پلتفرم + تیکت‌های کل/باز |
+| `GET /api/admin/users` | ۱۰۰ کاربر اخیر + موجودی دلار/توکن + پلن فعال + `banned` |
+| `GET /api/admin/miners` | ۱۰۰ ماینر + ایمیل کاربر |
 | `GET /api/admin/tasks` | ۱۰۰ تسک اخیر + ایمیل کاربر |
+| `GET /api/admin/tickets?status=&q=` | لیست تیکت‌ها با ایمیل کاربر (فیلتر وضعیت + جستجو در موضوع/ایمیل) |
+| `GET /api/admin/tickets/:id` | تیکت + ایمیل مالک + رشته پیام‌ها |
+| `GET /api/admin/payments` | ۱۰۰ واریز + ۱۰۰ برداشت اخیر + ایمیل کاربر |
+| `GET /api/admin/purchases` | ۱۰۰ خرید پلن/بسته اخیر + ایمیل کاربر |
+
+### تغییرات (همگی `PUT`/`POST` با `body` JSON)
+
+| متد و مسیر | توضیح |
+|------|-------|
+| `POST /api/admin/tickets/:id/messages` | پاسخ ادمین → وضعیت `answered`؛ تیکت بسته → `409` |
+| `POST /api/admin/tickets/:id/status` | `{status: "open"\|"closed"}` — بازگشایی/بستن (ثبت در audit) |
+| `PUT /api/admin/users/:id/role` | `{role: "user"\|"miner"\|"admin"}` — تغییر نقش خود → `409` |
+| `PUT /api/admin/users/:id/ban` | `{banned: true\|false}` — مسدودی خود → `409`؛ کش نشست‌ها باطل می‌شود |
+| `POST /api/admin/users/:id/balance` | `{delta_usd, reason}` — دلار ± (سقف ±۱M، `reason` ≥۳ حرف، موجودی منفی → `400`) |
+| `POST /api/admin/users/:id/tokens` | `{delta_tokens, reason}` — توکن پات ± (عدد صحیح، کف صفر) |
+| `PUT /api/admin/users/:id/plan` | `{plan: "plus"\|"pro"\|"max"}` — فعال‌سازی/تمدید ۳۰ روزه از `plans.activatePlan` |
+| `PUT /api/admin/miners/:id/status` | `{status: "removed"\|"offline"}` — حذف/بازگردانی ماینر |
 
 ---
 
