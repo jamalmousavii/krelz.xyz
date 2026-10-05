@@ -340,11 +340,10 @@ IPN با پیشوند `tok-` → ادعای exactly-once `plan_purchases` → `c
 
 ---
 
-## آمار، مدل‌ها، رتبه‌بندی
+## مدل‌ها، رتبه‌بندی
 
 | مسیر | توضیح |
 |------|-------|
-| `GET /api/stats/network` | شمار ماینر/کاربر/درخواست + `platform_revenue` (۱۰٪ هزینه تسک‌های کامل) — کش ۳۰ ثانیه |
 | `GET /api/models` | کاتالوگ مدل‌ها + تعداد ماینر آنلاین هر مدل (`unknown_models` برای مدل‌های خارج از کاتالوگ) — کش ۱۵ ثانیه |
 | `GET /api/models/categories` | دسته‌بندی‌ها |
 | `GET /api/leaderboard/miners` | ۵۰ ماینر برتر |

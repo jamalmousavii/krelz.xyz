@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 //  - one in-flight request per hook; a new one (url/deps/attempt change)
 //    aborts the previous, and unmount aborts whatever is running — so a slow
 //    response can never clobber a newer tab's data or set state after
-//    unmount (the race the leaderboard/exploader fetches used to have);
+//    unmount (the race the leaderboard fetches used to have);
 //  - AbortError is swallowed: it is our own cancellation, not a failure;
 //  - non-2xx and body.success === false both surface as `error` (all krelz
 //    APIs use the success flag).

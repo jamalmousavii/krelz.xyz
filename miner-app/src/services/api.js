@@ -20,11 +20,6 @@ class ApiService {
     const response = await axios.put(`${this.baseUrl}/miners/${minerId}/heartbeat`, data);
     return response.data;
   }
-
-  async getStats() {
-    const response = await axios.get(`${this.baseUrl}/stats/network`);
-    return response.data;
-  }
 }
 
 module.exports = ApiService;

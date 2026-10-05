@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.38.0] - 2026-10-05
+
+Removed the Network Explorer end-to-end: page, API, translations, docs.
+
+### Removed
+- **`/explorer` page + navbar links** — the public Network Explorer (transactions / miners / network-stats tabs) is gone from the UI; the route now 404s.
+- **`GET /api/stats/network`** — `routes/stats.js`, its `require`/mount and the `phase5.stats.test.js` suite deleted; `cache.test.js`'s fixture swapped to `/api/plans`, the dead miner-app `ApiService.getStats()` caller dropped, `admin.js` revenue-share comment no longer references the removed file.
+- **i18n** — `nav.explorer` plus the whole `explorer` namespace (29 keys) removed from all 33 locales → **304 keys per locale** (the parity gate is dynamic; the frontend test floor `>300` still holds).
+- **Docs** — README endpoint table row + tree entries, DEVELOP tree entries, `docs/api.md` endpoint row (section retitled); `docs/AUDIT.md` history untouched.
+
+### Testing
+- Backend: **205 tests / 20 suites with a database (202 passed + 3 skipped / 19 suites without)**; frontend 22 tests, lint, i18n parity (33 × 304), build all green.
+
 ## [3.37.0] - 2026-10-04
 
 Post-audit round: popular model catalog, modern chat UI, Redis-backed rate limiting, raw-image fixes and a frontend test suite.

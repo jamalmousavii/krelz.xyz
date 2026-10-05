@@ -9,7 +9,6 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 | Website | https://krelz.xyz |
 | Chat AI | https://krelz.xyz (homepage = chat) |
 | Miner Install | https://krelz.xyz/miner |
-| Explorer | https://krelz.xyz/explorer |
 | API Health | https://krelz.xyz/health |
 
 ## Features
@@ -157,7 +156,6 @@ krelz.xyz/
 │   │   │   ├── payments.js    # USD wallet + NowPayments (deposit/plan/token IPN)
 │   │   │   ├── plans.js       # Plan catalog (Plus/Pro/Max) + tier/token-bundle purchase
 │   │   │   ├── token.js       # Balance snapshot
-│   │   │   ├── stats.js       # Network stats
 │   │   │   └── models.js      # Model list API
 │   │   ├── middleware/
 │   │   │   └── auth.js        # JWT auth
@@ -170,7 +168,6 @@ krelz.xyz/
 │   │   ├── miners.js          # Miner management + Quick Install copy + history (v3.22.0)
 │   │   ├── settings.js        # Settings (USD wallet, 33-lang dropdown, password)
 │   │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)
-│   │   ├── explorer.js        # Network explorer (not in nav)
 │   │   ├── leaderboard.js     # Top miners/users
 │   │   └── admin.js           # Admin panel
 │   ├── components/
@@ -184,7 +181,7 @@ krelz.xyz/
 │   │   ├── LanguageSwitcher.js # 33-lang dropdown with flags
 │   │   └── chat/              # Chat UI split (Sidebar, MessageList, Composer, UpgradeWall; v3.36.0)
 │   ├── hooks/
-│   │   └── useApi.js          # Abort-aware fetch hook (leaderboard/explorer; v3.36.0)
+│   │   └── useApi.js          # Abort-aware fetch hook (leaderboard; v3.36.0)
 │   ├── i18n/
 │   │   ├── translations.js    # Code-split registry (en static + 32 lazy) + LANGUAGES + detectLanguage
 │   │   ├── translations/      # One file per language (33 files)

@@ -11,7 +11,7 @@ router.get('/dashboard', authenticate, requireAdmin, async (req, res) => {
       pool.query(`SELECT COUNT(*) as total, COUNT(CASE WHEN status = 'online' THEN 1 END) as online FROM miners`),
       pool.query('SELECT COUNT(*) as total FROM users'),
       pool.query(`SELECT COUNT(*) as total, COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed FROM tasks`),
-      // Platform keeps 10% (miners get 90%) — same definition as routes/stats.js
+      // Platform keeps 10% (miners get 90%)
       pool.query("SELECT COALESCE(SUM(cost * 0.1), 0) as platform_fees FROM tasks WHERE status = 'completed'"),
     ]);
 

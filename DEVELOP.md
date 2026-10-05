@@ -87,7 +87,6 @@ frontend/
 │   ├── miners.js          # Miner mgmt + Quick Install copy + history (v3.22.0)
 │   ├── settings.js         # Settings (USD wallet, 33-lang dropdown, password)
 │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)
-│   ├── explorer.js        # Network explorer (not in main nav)
 │   ├── leaderboard.js     # Top miners/users
 │   └── admin.js           # Admin panel
 ├── components/
@@ -101,7 +100,7 @@ frontend/
 │   ├── LanguageSwitcher.js # Dropdown: flag + language name (33 langs)
 │   └── chat/              # Chat UI split (Sidebar, MessageList, Composer, UpgradeWall; v3.36.0)
 ├── hooks/
-│   └── useApi.js          # Abort-aware fetch hook (leaderboard/explorer; v3.36.0)
+│   └── useApi.js          # Abort-aware fetch hook (leaderboard; v3.36.0)
 ├── i18n/
 │   ├── translations.js    # Code-split registry: en static + 32 lazy loaders, LANGUAGES, RTL_LANGS, isRtl, hasLocale, loadLocale, detectLanguage
 │   ├── translations/      # One file per language (33 files: en, fa, ar, ...)
@@ -134,7 +133,6 @@ backend/
 │       ├── payments.js    # NowPayments USD wallet (deposit/withdraw/IPN + plan/token IPN)
 │       ├── plans.js       # Plan catalog (Plus/Pro/Max) + tier/token-bundle purchase
 │       ├── token.js       # Balance snapshot
-│       ├── stats.js       # Network stats
 │       └── leaderboard.js # Top miners
 └── package.json
 ```

@@ -1,6 +1,6 @@
 const { isCacheableRequest, getCacheStats } = require('../src/cache');
 
-const base = { method: 'GET', headers: {}, originalUrl: '/api/stats/network' };
+const base = { method: 'GET', headers: {}, originalUrl: '/api/plans' };
 
 describe('cache key safety', () => {
   it('never caches an authenticated request', () => {
