@@ -51,28 +51,28 @@ node src/server.js
 ### 5. Tests & Quality Gates
 
 ```bash
-# Backend — jest: 195 tests / 19 suites (integration.money skips without DATABASE_URL)
+# Backend — jest: 202 tests + 3 skipped / 19 suites (integration.money skips without DATABASE_URL)
 cd backend
 npm test   # = node --experimental-vm-modules ./node_modules/jest/bin/jest.js (plain `npx jest` breaks attachments.test.js)
 
-# Money integration suite against a throwaway PostgreSQL (198 tests / 20 suites):
+# Money integration suite against a throwaway PostgreSQL (205 tests / 20 suites):
 docker run -d --name krelz-it-pg -e POSTGRES_USER=krelz -e POSTGRES_PASSWORD=krelz \
   -e POSTGRES_DB=krelz_it -p 5433:5432 postgres:16-alpine
 DATABASE_URL='postgresql://krelz:krelz@localhost:5433/krelz_it' npm test
 docker rm -f krelz-it-pg
 
-# Frontend — lint (warning-only), i18n parity, production build
+# Frontend — jest (22 tests), lint (warning-only), i18n parity (33 × 304), production build
 cd frontend
-npm run lint && npm run i18n:check && npm run build
+npm run lint && npm run i18n:check && npm test && npm run build
 
 # Install scripts — must be clean (CI enforces)
 shellcheck miner-app/*.sh && bash -n miner-app/*.sh
 ```
 
 CI (`.github/workflows/ci.yml`) runs all of it on every push: backend jest with a
-`postgres:16-alpine` service (so `integration.money` executes), frontend lint +
-`i18n:check` + `next build`, `shellcheck miner-app/*.sh`, and `node --check` over
-`miner-app/src/**/*.js`.
+`postgres:16-alpine` service (so `integration.money` executes), frontend
+`i18n:check` + jest (`npm test`) + `next build` + lint, `shellcheck miner-app/*.sh`,
+and `node --check` over `miner-app/src/**/*.js`.
 
 ## Project Structure
 
@@ -404,6 +404,33 @@ const accounts = await window.ethereum.request({ method: 'eth_accounts' });
 2. Add button in wallet UI section
 3. Add translation keys (`connectXxx`)
 4. Both use same `eth_requestAccounts` method
+
+## Network Explorer (removed in v3.38.0)
+
+The public Network Explorer was removed end-to-end: `pages/explorer.js` (the
+transactions / miners / network-stats tabs), `GET /api/stats/network`
+(`routes/stats.js` + its mount and 30s aggregate memo), the
+`phase5.stats.test.js` suite, the 29 translation keys (`nav.explorer` + the
+`explorer` namespace), the dead miner-app `ApiService.getStats()` caller and
+every doc/tree entry. The route and the endpoint now 404. The notes below are
+historical; see `CHANGELOG.md` `[3.38.0]` for the full removal record.
+
+### What it showed (legacy)
+
+- **Transactions** — last 50 tasks (id, user, miner, tokens, status, time),
+  client-filtered by the search box (F13 made the box functional in v3.35.0).
+- **Miners** — top 10 non-removed miners: GPU model, online/offline badge,
+  task count, earnings, truncated wallet address.
+- **Network stats** — active miners / completed tasks / platform revenue
+  (the shared 10% `PLATFORM_REVENUE_SHARE`).
+
+### If it ever comes back
+
+- The endpoint walked the whole `tasks` table — it was memoized
+  (`AGG_TTL_MS = 30000` in-process) and cached 30s at the edge
+  (`cacheMiddleware(30)`); any revival must keep both.
+- The page consumed it through `useApi('/api/stats/network')`; the hook itself
+  survives (`hooks/useApi.js` — the leaderboard still uses it).
 
 ## Internationalization (i18n) — 33 languages (v3.16.0+)
 
