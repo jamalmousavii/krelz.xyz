@@ -458,7 +458,7 @@ historical; see `CHANGELOG.md` `[3.38.0]` for the full removal record.
 
 ### UI
 
-- `/support` (v3.39.0): list + new-ticket form + thread with replies/close; `🎫 Support` link in the Navbar (desktop, dropdown, mobile) for everyone, `🛡️ Admin` only when `role === 'admin'`.
+- `/support` (v3.39.0): list + new-ticket form + thread with replies/close; `🎫 Support` entry in the Navbar avatar dropdown + mobile menu for everyone (desktop top-bar link removed in v3.39.1; quick-nav chip on dashboard pages), `🛡️ Admin` only when `role === 'admin'`.
 - `/admin` (v3.39.0): 7 tabs — dashboard (6 cards), users (manage drawer: role, ban/unban, ±USD, ±tokens with mandatory reason, grant plan), miners (remove/restore), tasks, tickets (search/filter + thread reply/close/reopen), payments (deposits + withdrawals), purchases. Strings i18n'd (`admin.*`, `support.*` — 33 × 408 keys).
 - `/profile`: read-only **Transactions** card merging `/api/payments/history` deposits + withdrawals (newest first, status badges, link to `/settings`).
 
