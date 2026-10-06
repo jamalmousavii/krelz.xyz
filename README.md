@@ -177,7 +177,7 @@ krelz.xyz/
 │   │   ├── support.js         # Support tickets: list/new/thread (v3.39.0)
 │   │   └── admin.js           # Admin panel: 7 tabs + management actions (v3.39.0)
 │   ├── components/
-│   │   ├── Navbar.js          # Nav (Miner, ⭐ Plans, Leaderboard, 🎫 Support, 🛡️ Admin) + auth + lang dropdown
+│   │   ├── Navbar.js          # Nav (Miner, ⭐ Plans, Leaderboard; 🎫 Support in avatar dropdown + mobile menu, 🛡️ Admin) + auth + lang dropdown
 │   │   ├── EarningsBreakdown.js # 5-way miner earnings breakdown (profile, /miners, /miner)
 │   │   ├── PlansContent.js    # Pricing cards shared by inline section + modal (v3.30.0)
 │   │   ├── PlansModal.js      # Pricing overlay for /#plans deep links + Navbar (v3.30.0)

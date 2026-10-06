@@ -60,7 +60,7 @@ const de = {
     freeNote: 'Gratis-Plan: 2.000.000 Tokens pro Tag für alle — ohne Karte.',
     pricingSub: 'Bezahlt mit Krypto. Pläne laufen 30 Tage; Token-Pakete verfallen nie.',
     loginToBuy: 'Zuerst anmelden zum Kaufen (Login oben).',
-    version: 'v3.39.0',
+    version: 'v3.39.1',
   },
   footer: {
     sentence: '© 2026 Krelz Network — Dezentrale LLM-Inferenzplattform, Version {version}. Alle Rechte vorbehalten.',

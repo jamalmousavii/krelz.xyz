@@ -91,7 +91,7 @@ frontend/
 │   ├── support.js         # Support tickets: list/new/thread (v3.39.0)
 │   └── admin.js           # Admin panel: 7 tabs + management actions (v3.39.0)
 ├── components/
-│   ├── Navbar.js          # Nav + auth dropdown + LanguageSwitcher (+ 🎫 Support, 🛡️ Admin v3.39.0)
+│   ├── Navbar.js          # Nav + auth dropdown + LanguageSwitcher (🎫 Support: avatar dropdown + mobile menu + dashboard chips; top bar removed v3.39.1)
 │   ├── EarningsBreakdown.js # 5-way earnings breakdown (profile, /miners, /miner; v3.29.0)
 │   ├── PlansContent.js    # Pricing cards: shared by homepage section + modal (v3.30.0)
 │   ├── PlansModal.js      # Pricing overlay for /#plans + Navbar event (v3.30.0)

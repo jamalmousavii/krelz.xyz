@@ -187,7 +187,6 @@ export default function Navbar() {
           <Link href="/miner" className="text-gray-600 hover:text-sky-700 transition">{t('nav.miner')}</Link>
           <Link href="/#plans" onClick={() => window.dispatchEvent(new CustomEvent('krelz:show-plans'))} className="text-gray-600 hover:text-sky-700 transition">⭐ {t('nav.plans')}</Link>
           <Link href="/leaderboard" className="text-gray-600 hover:text-sky-700 transition">🏆</Link>
-          <Link href="/support" className="text-gray-600 hover:text-sky-700 transition">🎫 {t('nav.support')}</Link>
           {user?.role === 'admin' && (
             <Link href="/admin" className="text-gray-600 hover:text-sky-700 transition">🛡️ {t('nav.admin')}</Link>
           )}

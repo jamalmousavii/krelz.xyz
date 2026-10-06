@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.39.1] - 2026-10-05
+
+Navigation fix for the support entry points.
+
+### Changed
+- **`🎫 Support` removed from the desktop top bar** — it now lives in the logged-in avatar dropdown (Dashboard menu) and the mobile menu, where it stays reachable on every page.
+- **Quick-nav chips unified** — `/miners` and `/settings` gained the `🎫 Support` chip (profile already had it), so all four dashboard pages show the same row: 📊 Dashboard · ⛏️ Miners · 🎫 Support · ⚙️ Settings.
+
 ## [3.39.0] - 2026-10-05
 
 Support tickets, a full admin panel with audited management actions, and the profile transactions card.

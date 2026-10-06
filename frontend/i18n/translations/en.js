@@ -60,7 +60,7 @@ const en = {
     freeNote: 'Free plan: 2,000,000 tokens/day for everyone — no card needed.',
     pricingSub: 'Paid with crypto. Plans last 30 days; token bundles never expire.',
     loginToBuy: 'Sign in first to buy (Login at the top).',
-    version: 'v3.39.0',
+    version: 'v3.39.1',
   },
   footer: {
     sentence: '© 2026 Krelz Network — Decentralized LLM inference platform, version {version}. All rights reserved.',
