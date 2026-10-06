@@ -1,0 +1,15 @@
+[Unit]
+Description=Krelz localhost.run SSH reverse tunnel (Iran v4 bypass)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# NOTE: no -N — localhost.run prints the assigned https://<random>.lhr.life
+# URL only with a shell session. URL changes on every reconnect (free tier);
+# nginx serves *.lhr.life so any subdomain works.
+ExecStart=/usr/bin/ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o ConnectTimeout=15 -R 80:127.0.0.1:80 nokey@localhost.run
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
