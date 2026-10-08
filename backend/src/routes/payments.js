@@ -32,6 +32,11 @@ router.post('/deposit/create', authenticate, async (req, res) => {
     if (amount < minUsd) {
       return res.status(400).json({ error: `Minimum deposit is $${minUsd} USD` });
     }
+    // Cap single invoice to bound provider fees and fat-finger mistakes.
+    const MAX_DEPOSIT_USD = 10000;
+    if (amount > MAX_DEPOSIT_USD) {
+      return res.status(400).json({ error: `Maximum deposit is $${MAX_DEPOSIT_USD} USD per invoice` });
+    }
 
     // Optional coin pre-select (customer can still change on NP page)
     const coin = req.body.coin ? String(req.body.coin).toUpperCase() : undefined;
@@ -43,7 +48,9 @@ router.post('/deposit/create', authenticate, async (req, res) => {
     // and is generated up front; if the insert fails we abort before any live
     // invoice exists (an invoice with no local row = IPN credits nothing), and
     // if invoice creation fails the row is marked 'failed' instead of lingering.
-    const orderId = `krelz-${userId}-${Date.now()}`;
+    // randomUUID suffix avoids same-ms double-click collisions on UNIQUE(order_id).
+    const { randomUUID } = require('crypto');
+    const orderId = `krelz-${userId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
     await pool.query(
       `INSERT INTO coin_deposits (user_id, coin, amount, order_id, status)
        VALUES ($1, 'USD', $2, $3, 'pending')`,
@@ -212,7 +219,7 @@ router.post('/withdraw', authenticate, async (req, res) => {
     const userId = req.user.id;
     // Accept USD amount + TRC20 address; coin forced to USDT for payout
     const amount = parseFloat(req.body.amount);
-    const toAddress = req.body.toAddress;
+    const toAddress = typeof req.body.toAddress === 'string' ? req.body.toAddress.trim() : '';
 
     if (!amount || !toAddress) {
       return res.status(400).json({ error: 'amount and toAddress required' });
@@ -220,6 +227,14 @@ router.post('/withdraw', authenticate, async (req, res) => {
 
     if (amount < 5) {
       return res.status(400).json({ error: 'Minimum withdrawal is $5' });
+    }
+    const MAX_WITHDRAW_USD = 10000;
+    if (!(amount <= MAX_WITHDRAW_USD)) {
+      return res.status(400).json({ error: `Maximum withdrawal is $${MAX_WITHDRAW_USD} USD` });
+    }
+    // TRC20 base58: T + 33 chars (no 0,O,I,l). Rejects typos before provider fee burns.
+    if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(toAddress)) {
+      return res.status(400).json({ error: 'Invalid TRC20 address (expected T + 33 base58 chars)' });
     }
 
     // Fee paid by sender
@@ -337,14 +352,17 @@ router.post('/withdraw', authenticate, async (req, res) => {
       ).catch((refundErr) => logger.error({ err: refundErr, userId, totalDeduction }, 'REFUND FAILED — manual intervention required'));
       await pool.query("UPDATE coin_withdrawals SET status = 'failed' WHERE id = $1", [withdrawalId]).catch(() => {});
       await pool.query("UPDATE transactions SET status = 'refunded' WHERE id = $1", [ledgerId]).catch(() => {});
-      return res.status(500).json({ error: payoutResult.error || 'Payout failed — you have been refunded' });
+      return res.status(500).json({ error: 'Payout failed — you have been refunded' });
     }
 
     invalidateCache('/api/payments/balance');
 
     if (!payoutResult.success) {
+      // Never forward provider error bodies to the client — log full detail,
+      // return a generic message (refund already settled above).
+      logger.error({ withdrawalId, err: payoutResult.error }, 'Payout failed — refunded');
       return res.status(500).json({
-        error: `Payout failed${payoutResult.error ? `: ${payoutResult.error}` : ''} — you have been refunded`,
+        error: 'Payout failed — you have been refunded',
       });
     }
 

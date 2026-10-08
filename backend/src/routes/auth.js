@@ -7,9 +7,12 @@ const pool = require('../database/pool');
 const { OAuth2Client } = require('google-auth-library');
 const { validate, registerRules, loginRules, googleAuthRules } = require('../middleware/validate');
 const { isEmailConfigured, sendPasswordResetEmail } = require('../services/email');
-const { invalidateTokenVersion } = require('../middleware/auth');
+const { authenticate, invalidateTokenVersion } = require('../middleware/auth');
 const { logger } = require('../logger');
 
+if (!process.env.GOOGLE_CLIENT_ID) {
+  logger.warn('GOOGLE_CLIENT_ID is not set — Google login will return 503 until configured');
+}
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -21,6 +24,12 @@ if (!JWT_SECRET) {
 router.post('/register', registerRules, validate, async (req, res) => {
   try {
     const { email, password } = req.body;
+
+    // Defense-in-depth: validator already enforces this, but never create a
+    // weak hash if validation is ever bypassed.
+    if (!password || password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters with uppercase, lowercase and number' });
+    }
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
@@ -49,10 +58,12 @@ router.post('/register', registerRules, validate, async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    // Never expose token_version to the client — it is a server-side session nonce.
+    const { token_version: _tv, password: _pw, ...safeUser } = result.rows[0];
     res.status(201).json({
       success: true,
       token,
-      user: result.rows[0]
+      user: safeUser
     });
 
   } catch (err) {
@@ -109,6 +120,9 @@ router.post('/login', loginRules, validate, async (req, res) => {
 // POST /api/auth/google
 router.post('/google', googleAuthRules, validate, async (req, res) => {
   try {
+    if (!process.env.GOOGLE_CLIENT_ID) {
+      return res.status(503).json({ error: 'Google login is not configured' });
+    }
     const { credential } = req.body;
 
     const ticket = await googleClient.verifyIdToken({
@@ -125,7 +139,7 @@ router.post('/google', googleAuthRules, validate, async (req, res) => {
       return res.status(401).json({ error: 'Google account email is not verified' });
     }
 
-    const SAFE_COLS = 'id, email, name, avatar, role, token_version';
+    const SAFE_COLS = 'id, email, name, avatar, role, token_version, banned';
     let userRow;
     const found = await pool.query(
       `SELECT ${SAFE_COLS} FROM users WHERE google_id = $1 OR email = $2`,
@@ -176,13 +190,19 @@ router.post('/google', googleAuthRules, validate, async (req, res) => {
 
     const user = userRow;
 
+    // Banned accounts cannot mint a new session via Google either (login already blocks).
+    if (user.banned) {
+      return res.status(403).json({ error: 'Account banned.' });
+    }
+
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role, token_version: user.token_version || 0 },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
 
-    res.json({ success: true, token, user });
+    const { token_version: _gtv, banned: _banned, ...safeGoogleUser } = user;
+    res.json({ success: true, token, user: safeGoogleUser });
 
   } catch (err) {
     logger.error({ err }, 'Google auth error');
@@ -191,16 +211,11 @@ router.post('/google', googleAuthRules, validate, async (req, res) => {
 });
 
 // POST /api/auth/set-password — set password for Google users
-router.post('/set-password', async (req, res) => {
+// Uses authenticate so stale (post-rotation) and banned tokens are rejected
+// before any mutation — manual jwt.verify alone bypassed token_version/banned.
+router.post('/set-password', authenticate, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Access denied. No token provided.' });
-    }
-
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
-    const userId = decoded.id;
+    const userId = req.user.id;
 
     const { password } = req.body;
 
@@ -257,16 +272,11 @@ router.post('/set-password', async (req, res) => {
 });
 
 // POST /api/auth/change-password — change password for email users
-router.post('/change-password', async (req, res) => {
+// Uses authenticate so stale (post-rotation) and banned tokens are rejected
+// before any mutation — manual jwt.verify alone bypassed token_version/banned.
+router.post('/change-password', authenticate, async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Access denied. No token provided.' });
-    }
-
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
-    const userId = decoded.id;
+    const userId = req.user.id;
 
     const { current_password, new_password } = req.body;
 
@@ -357,11 +367,14 @@ router.post('/forgot-password', async (req, res) => {
 
     const userId = userResult.rows[0].id;
     const resetToken = crypto.randomBytes(32).toString('hex');
+    // L1: store only sha256(token) — a DB leak must not yield account takeover.
+    // Hex digest is 64 chars, same length as the raw token column.
+    const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
     const expiry = new Date(Date.now() + 3600000); // 1 hour
 
     await pool.query(
       'UPDATE users SET reset_token = $1, reset_token_expiry = $2 WHERE id = $3',
-      [resetToken, expiry, userId]
+      [resetTokenHash, expiry, userId]
     );
 
     // The token is delivered by email only. Returning it in the response body
@@ -374,7 +387,7 @@ router.post('/forgot-password', async (req, res) => {
         // fall through: respond generically so the endpoint stays enumeration-safe
       }
     } else {
-      logger.error({ email }, 'RESEND_API_KEY missing — password reset email was NOT sent');
+      logger.warn('RESEND_API_KEY missing — password reset email was NOT sent');
       if (isDev) {
         // Dev-only escape hatch: surface the token locally when no SMTP/Resend is wired up.
         return res.json({
@@ -416,11 +429,20 @@ router.post('/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'Password must contain at least one number' });
     }
 
-    // Find user with valid token
-    const userResult = await pool.query(
+    // Find user with valid token — compare sha256 hash (see forgot-password).
+    // Accepts legacy plaintext rows too (hash length 64 vs raw 64 collides, so
+    // try hash first, then raw for rows written before this fix).
+    const tokenHash = crypto.createHash('sha256').update(String(token)).digest('hex');
+    let userResult = await pool.query(
       'SELECT id FROM users WHERE reset_token = $1 AND reset_token_expiry > NOW()',
-      [token]
+      [tokenHash]
     );
+    if (userResult.rows.length === 0) {
+      userResult = await pool.query(
+        'SELECT id FROM users WHERE reset_token = $1 AND reset_token_expiry > NOW()',
+        [token]
+      );
+    }
 
     if (userResult.rows.length === 0) {
       return res.status(400).json({ error: 'Invalid or expired reset token' });

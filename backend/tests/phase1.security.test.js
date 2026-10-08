@@ -234,10 +234,11 @@ describe('H2: withdrawal transactionality (v3.31.0)', () => {
 
   function withdrawReq(userId) {
     const token = sign({ id: userId, role: 'user', token_version: 0 });
+    // Valid TRC20: T + 33 base58 chars (34 total)
     return request(app)
       .post('/api/payments/withdraw')
       .set('Authorization', `Bearer ${token}`)
-      .send({ amount: 10, toAddress: 'TXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' });
+      .send({ amount: 10, toAddress: 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' });
   }
 
   it('rolls back (no payout call) when the balance is insufficient', async () => {

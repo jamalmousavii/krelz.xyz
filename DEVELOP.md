@@ -51,11 +51,11 @@ node src/server.js
 ### 5. Tests & Quality Gates
 
 ```bash
-# Backend — jest: 224 tests + 3 skipped / 22 suites (integration.money skips without DATABASE_URL)
+# Backend — jest: 225 tests + 3 skipped / 22 suites (integration.money skips without DATABASE_URL)
 cd backend
 npm test   # = node --experimental-vm-modules ./node_modules/jest/bin/jest.js (plain `npx jest` breaks attachments.test.js)
 
-# Money integration suite against a throwaway PostgreSQL (227 tests / 23 suites):
+# Money integration suite against a throwaway PostgreSQL (228 tests / 23 suites):
 docker run -d --name krelz-it-pg -e POSTGRES_USER=krelz -e POSTGRES_PASSWORD=krelz \
   -e POSTGRES_DB=krelz_it -p 5433:5432 postgres:16-alpine
 DATABASE_URL='postgresql://krelz:krelz@localhost:5433/krelz_it' npm test

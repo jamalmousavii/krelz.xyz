@@ -102,6 +102,9 @@ app.use(helmet({
 
 app.use(compression());
 app.use(httpLogger);
+// trust proxy 1 is safe here: server binds 127.0.0.1 only (see listen below)
+// and nginx overwrites X-Real-IP/X-Forwarded-For with $remote_addr, so req.ip
+// is the verified visitor IP, not a spoofable client header.
 app.set('trust proxy', 1);
 // B2: capture the exact bytes NowPayments signed (verify → called before
 // JSON.parse) so IPN signature checks don't depend on re-serialisation.
@@ -131,6 +134,9 @@ const authLimiter = makeLimiter({
 });
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
+app.use('/api/auth/google', authLimiter);
+app.use('/api/auth/set-password', authLimiter);
+app.use('/api/auth/change-password', authLimiter);
 
 // Password reset endpoints are account-takeover vectors: keep them as tight as login.
 const resetLimiter = makeLimiter({
@@ -141,6 +147,39 @@ const resetLimiter = makeLimiter({
 });
 app.use('/api/auth/forgot-password', resetLimiter);
 app.use('/api/auth/reset-password', resetLimiter);
+
+// Money endpoints: invoice/withdraw bursts must not become fee-burn or spam vectors.
+const moneyLimiter = makeLimiter({
+  name: 'money',
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many payment requests, try again later.' },
+});
+app.use('/api/payments/deposit/create', moneyLimiter);
+app.use('/api/payments/withdraw', moneyLimiter);
+app.use('/api/plans', moneyLimiter);
+
+// Miner setup/unregister: low-frequency ops, tight budget. Heartbeat is NOT
+// limited here (30s per miner by design + token auth).
+const setupLimiter = makeLimiter({
+  name: 'setup',
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many miner setup requests, try again later.' },
+});
+app.use('/api/miners/setup', setupLimiter);
+app.use('/api/miners/unregister', setupLimiter);
+app.use('/api/miners/register', setupLimiter);
+
+// Webhook: skipped by globalLimiter (payment-critical), but still needs a
+// generous ceiling so invalid-signature floods cannot saturate the DB.
+const webhookLimiter = makeLimiter({
+  name: 'webhook',
+  windowMs: 1 * 60 * 1000,
+  max: 60,
+  message: { error: 'Too many webhook requests.' },
+});
+app.use('/api/payments/deposit/webhook', webhookLimiter);
 
 const chatLimiter = makeLimiter({
   name: 'chat',

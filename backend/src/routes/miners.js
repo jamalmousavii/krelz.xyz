@@ -110,8 +110,17 @@ router.put('/mine/model', authenticate, async (req, res) => {
     const userId = req.user.id;
     const { model, miner_id } = req.body;
 
-    if (!model) {
+    if (!model || typeof model !== 'string') {
       return res.status(400).json({ error: 'Model is required' });
+    }
+    if (model.length > 100) {
+      return res.status(400).json({ error: 'Model name too long' });
+    }
+    // Allowlist: unknown tags fall back server-side, but never persist garbage.
+    const MODELS = require('../models');
+    const known = MODELS.some((m) => m.id === model);
+    if (!known) {
+      return res.status(400).json({ error: 'Unknown model' });
     }
 
     let result;
@@ -284,11 +293,19 @@ router.post('/setup', async (req, res) => {
   try {
     const { email, miner_token, gpu_model, ram, cpu, models, machine_id, name } = req.body;
 
-    if (!miner_token) {
+    if (!miner_token || typeof miner_token !== 'string') {
       return res.status(400).json({ error: 'Miner token is required' });
     }
+    // Bound unbounded setup fields (install script sends free-form lscpu/free strings).
+    const safeStr = (v, max) => (typeof v === 'string' ? v.slice(0, max) : v);
+    const safeGpu = safeStr(gpu_model, 100);
+    const safeRam = safeStr(ram, 50);
+    const safeCpu = safeStr(cpu, 200);
+    const safeMachine = safeStr(machine_id, 100);
+    const safeName = safeStr(name, 100);
+    const safeModels = Array.isArray(models) ? models.filter((m) => typeof m === 'string').map((m) => m.slice(0, 100)).slice(0, 32) : ['llama3.1:8b'];
 
-    const modelsJson = JSON.stringify(models || ['llama3.1:8b']);
+    const modelsJson = JSON.stringify(safeModels);
 
     // 1) Per-miner token: binds directly to its row (revives if removed).
     const minerResult = await pool.query(
@@ -306,7 +323,7 @@ router.post('/setup', async (req, res) => {
                 status = 'online', token_used_at = COALESCE(token_used_at, CURRENT_TIMESTAMP),
                 last_seen = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
          WHERE id = $7 RETURNING *`,
-        [gpu_model, ram, cpu, modelsJson, machine_id || null, (name || '').trim() || null, minerId]
+        [safeGpu, safeRam, safeCpu, modelsJson, safeMachine || null, (safeName || '').trim() || null, minerId]
       );
       invalidateCache('/api/miners');
       invalidateCache('/api/stats');
@@ -331,7 +348,7 @@ router.post('/setup', async (req, res) => {
           const result = await pool.query(
             `UPDATE miners SET gpu_model = $1, ram = $2, cpu = $3, models = $4, status = 'online', last_seen = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
              WHERE id = $5 RETURNING *`,
-            [gpu_model, ram, cpu, modelsJson, owned.rows[0].id]
+            [safeGpu, safeRam, safeCpu, modelsJson, owned.rows[0].id]
           );
           return res.json({ success: true, miner: result.rows[0] });
         }

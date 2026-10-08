@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.39.2] - 2026-10-08
+
+Security hardening + validation patch (backward-compatible, additive only).
+
+### Security
+- **`set/change-password` now use `authenticate`** — stale (post-rotation) and banned tokens are rejected before any mutation (was manual `jwt.verify` bypassing `token_version`/`banned`).
+- **Google login blocks banned accounts** — `403 Account banned` like password login; `token_version` no longer exposed in `register`/`google` responses.
+- **Reset tokens stored as `sha256`** — DB leak no longer yields takeover; `reset-password` accepts new hashes with legacy-plaintext fallback.
+- **`pino` redact** — `password/*, reset_token, miner_token, credential, Authorization, cookie` are `[Redacted]` in logs; `RESEND` missing now `warn` (not `error` with PII email).
+- **Rate limits closed** — `authLimiter` on `google/set/change-password`, `moneyLimiter (20/15m)` on `deposit/create|withdraw|plans`, `setupLimiter (20/15m)` on `setup|unregister|register`, `webhookLimiter (60/1m)` on IPN (heartbeat intentionally unlimited, 30s token-auth).
+- **`GOOGLE_CLIENT_ID` guard** — warns at boot, `503` on `/google` when unset.
+
+### Correctness
+- **Register password unified** — `min 8 + upper/lower/digit` in validator + route defense-in-depth (was `min 6` only in validator, no route check).
+- **Withdraw hardening** — TRC20 `T+33 base58` validation, `$5 min / $10k max`, provider error bodies no longer forwarded (generic refund message, full detail logged).
+- **Deposit caps** — `$10k max` per invoice; `order_id` gains `randomUUID` suffix to avoid same-ms `UNIQUE` collisions.
+- **Miner setup bounds** — `gpu/ram/cpu/machine/name/models` length-capped; `PUT /mine/model` allowlisted against `models.js` (`400 Unknown model`).
+
+### Testing
+- Backend validator tests updated for strong passwords + weak-password case.
+
 ## [3.39.1] - 2026-10-05
 
 Navigation fix for the support entry points.

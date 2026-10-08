@@ -23,13 +23,18 @@ describe('register validation', () => {
 
   it('accepts role=miner and role=user', async () => {
     for (const role of ['user', 'miner']) {
-      const res = await request(app).post('/x').send({ email: 'a@b.co', password: 'secret1', role });
+      const res = await request(app).post('/x').send({ email: 'a@b.co', password: 'Secret123', role });
       expect(res.status).toBe(200);
     }
   });
 
   it('rejects a too-short password', async () => {
     const res = await request(app).post('/x').send({ email: 'a@b.co', password: '123' });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a weak password without uppercase/number', async () => {
+    const res = await request(app).post('/x').send({ email: 'a@b.co', password: 'weakpass' });
     expect(res.status).toBe(400);
   });
 });

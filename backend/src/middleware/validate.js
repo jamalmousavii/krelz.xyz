@@ -15,7 +15,10 @@ function validate(req, res, next) {
 // Auth validators
 const registerRules = [
   body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+  body('password').matches(/[A-Z]/).withMessage('Password must contain at least one uppercase letter'),
+  body('password').matches(/[a-z]/).withMessage('Password must contain at least one lowercase letter'),
+  body('password').matches(/[0-9]/).withMessage('Password must contain at least one number'),
   // Role is never client-controlled: self-registration can only ever be 'user'.
   body('role').optional({ values: 'falsy' }).isIn(['user', 'miner']).withMessage('Invalid role'),
 ];

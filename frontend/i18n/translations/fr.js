@@ -60,7 +60,7 @@ const fr = {
     freeNote: 'Offre gratuite : 2 000 000 de jetons par jour pour tous — sans carte bancaire.',
     pricingSub: 'Payez en crypto. Les offres durent 30 jours ; les packs de jetons n\'expirent jamais.',
     loginToBuy: 'Connectez-vous d\'abord pour acheter (connexion en haut).',
-    version: 'v3.39.1',
+    version: 'v3.39.2',
   },
   footer: {
     sentence: '© 2026 Krelz Network — plateforme d\'inférence LLM décentralisée, version {version}. Tous droits réservés.',
