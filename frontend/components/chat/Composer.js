@@ -1,4 +1,5 @@
 import { memo, useEffect } from 'react';
+import { CATEGORY_ICONS, CATEGORY_I18N_KEY, groupModels, minerCount } from '../../utils/models';
 
 // Shared composer for both homepage states: ChatGPT-style card with an
 // auto-growing textarea on top and a tools row underneath (model picker,
@@ -6,7 +7,8 @@ import { memo, useEffect } from 'react';
 // dropdown direction. Extracted from pages/index.js in Phase 6 as a
 // module-level component (F7: an inline component type would remount the
 // hidden file input on every keystroke and drop the selection).
-const CATEGORY_ICONS = { chat: '💬', code: '💻', vision: '👁️', embedding: '🔗' };
+// v3.40.0: models arrive pre-sorted (busiest first) and render grouped by
+// category with sticky headers; zero-miner rows stay disabled.
 
 function Composer({
   variant = 'chat',
@@ -42,34 +44,42 @@ function Composer({
       </button>
       {dropdownOpen && (
         <div className={`absolute ${variant === 'chat' ? 'bottom-full mb-2' : 'top-full mt-2'} left-0 w-[min(20rem,85vw)] bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden z-50 max-h-[min(300px,40dvh)] overflow-y-auto`}>
-          {models.map((model) => {
-            const isSelected = selectedModel === model.id;
-            const hasMiners = model.miners_online > 0;
-            const canSelect = hasMiners;
-            return (
-              <button
-                key={model.id}
-                onClick={() => { if (canSelect) { setSelectedModel(model.id); setDropdownOpen(false); } }}
-                disabled={!canSelect}
-                className={`w-full text-left px-4 py-3 flex items-center justify-between transition text-sm border-b border-gray-100 last:border-0 ${
-                  isSelected ? 'bg-sky-50 text-sky-800' : canSelect ? 'hover:bg-gray-50 text-gray-700' : 'opacity-40 cursor-not-allowed text-gray-400'
-                }`}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span>{CATEGORY_ICONS[model.category]}</span>
-                  <span className="truncate font-medium">{model.name}</span>
-                  <span className="text-sky-600 text-xs">{model.size}</span>
-                </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  {hasMiners ? (
-                    <span className="text-emerald-600 text-xs">✅ {model.miners_online}</span>
-                  ) : (
-                    <span className="text-red-400 text-xs">⚠️ 0</span>
-                  )}
-                </div>
-              </button>
-            );
-          })}
+          {groupModels(models).map((group) => (
+            <div key={group.category}>
+              <div role="presentation" className="sticky top-0 bg-gray-50/95 backdrop-blur px-4 py-1.5 text-[11px] font-bold uppercase tracking-wide text-gray-500 border-b border-gray-100">
+                {CATEGORY_ICONS[group.category] || '📦'} {t(CATEGORY_I18N_KEY[group.category] || 'chat.catChat')}
+              </div>
+              {group.items.map((model) => {
+                const isSelected = selectedModel === model.id;
+                const hasMiners = minerCount(model) > 0;
+                const canSelect = hasMiners;
+                return (
+                  <button
+                    key={model.id}
+                    onClick={() => { if (canSelect) { setSelectedModel(model.id); setDropdownOpen(false); } }}
+                    disabled={!canSelect}
+                    aria-disabled={!canSelect}
+                    className={`w-full text-left px-4 py-3 flex items-center justify-between transition text-sm border-b border-gray-100 last:border-0 ${
+                      isSelected ? 'bg-sky-50 text-sky-800' : canSelect ? 'hover:bg-gray-50 text-gray-700' : 'opacity-40 cursor-not-allowed text-gray-400'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span>{CATEGORY_ICONS[model.category]}</span>
+                      <span className="truncate font-medium">{model.name}</span>
+                      <span className="text-sky-600 text-xs">{model.size}</span>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {hasMiners ? (
+                        <span className="text-emerald-600 text-xs">✅ {minerCount(model)}</span>
+                      ) : (
+                        <span className="text-red-400 text-xs">⚠️ 0</span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </div>
       )}
     </div>

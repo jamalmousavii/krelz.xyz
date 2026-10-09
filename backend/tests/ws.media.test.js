@@ -56,18 +56,52 @@ describe('findMinerForModel media gating (v3.20.0)', () => {
     expect(ws.findMinerForModel('llama3.1:8b')).not.toBeNull();
   });
 
-  it('prefers an exact model match that is also media-capable', () => {
+  it('never substitutes another model (v3.40.0 exact-model rule)', () => {
     const ws = makeServer([
       online({ id: 1, app_version: '3.20.0', current_model: 'other' }),
       online({ id: 2, app_version: '3.19.1', current_model: 'llama3.1:8b' }),
     ]);
-    // miner 2 matches the model but is too old → must fall through to miner 1
-    expect(ws.findMinerForModel('llama3.1:8b', true)).toEqual({ minerId: 1, model: 'other' });
+    // miner 2 matches the model but is too old, miner 1 is new but holds a
+    // different model → no substitution, caller gets MODEL_UNAVAILABLE.
+    expect(ws.findMinerForModel('llama3.1:8b', true)).toBeNull();
   });
 
   it('ignores offline miners even when new enough', () => {
     const ws = makeServer([online({ status: 'offline', app_version: '3.20.0' })]);
     expect(ws.findMinerForModel('llama3.1:8b', true)).toBeNull();
+  });
+});
+
+describe('findMinersForModel / counts (v3.40.0)', () => {
+  it('returns every exact-model miner in registration order', () => {
+    const ws = makeServer([
+      online({ id: 1, current_model: 'llama3.1:8b' }),
+      online({ id: 2, current_model: 'other' }),
+      online({ id: 3, current_model: 'llama3.1:8b' }),
+    ]);
+    expect(ws.findMinersForModel('llama3.1:8b', false)).toEqual([
+      { minerId: 1, model: 'llama3.1:8b' },
+      { minerId: 3, model: 'llama3.1:8b' },
+    ]);
+  });
+
+  it('counts usable miners with and without media gating', () => {
+    const ws = makeServer([
+      online({ id: 1, app_version: '3.20.0' }),
+      online({ id: 2, app_version: '3.19.1' }),
+      online({ id: 3, status: 'offline', app_version: '3.20.0' }),
+    ]);
+    expect(ws.countUsableMiners(false)).toBe(2);
+    expect(ws.countUsableMiners(true)).toBe(1);
+  });
+
+  it('reports online counts per model', () => {
+    const ws = makeServer([
+      online({ id: 1, app_version: '3.20.0', current_model: 'llama3.1:8b' }),
+      online({ id: 2, app_version: '3.20.0', current_model: 'llama3.1:8b' }),
+      online({ id: 3, app_version: '3.20.0', current_model: 'other' }),
+    ]);
+    expect(ws.onlineModelCounts(false)).toEqual({ 'llama3.1:8b': 2, other: 1 });
   });
 });
 

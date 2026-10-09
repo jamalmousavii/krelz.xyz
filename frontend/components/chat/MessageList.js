@@ -6,7 +6,7 @@ import UpgradeWall from './UpgradeWall';
 // indicator, scroll spacer. Extracted from pages/index.js in Phase 6 —
 // module-level + memo (defining this inside Home would create a new component
 // type each render and remount the whole subtree, F7).
-function MessageList({ messagesRef, chat, loading, lang, t, hasSubjectBar, purchasePlan, purchaseTokens, bundleAmount, setBundleAmount, purchaseError }) {
+function MessageList({ messagesRef, chat, loading, lang, t, hasSubjectBar, purchasePlan, purchaseTokens, bundleAmount, setBundleAmount, purchaseError, onRetryWaiting, onDismissFailed, onSwitchModel }) {
   const rtl = isRtl(lang);
   return (
     <div ref={messagesRef} className={`bg-white border border-gray-200/80 ${hasSubjectBar ? 'rounded-b-2xl' : 'rounded-2xl'} p-3 md:p-5 flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain mb-3 shadow-sm`}>
@@ -43,6 +43,51 @@ function MessageList({ messagesRef, chat, loading, lang, t, hasSubjectBar, purch
                 setBundleAmount={setBundleAmount}
                 purchaseError={purchaseError}
               />
+            ) : msg.waiting ? (
+              <div className="min-w-[220px]">
+                <div className="font-bold text-amber-700 mb-1">⏳ {t('chat.waitTitle')}</div>
+                <div className="text-gray-700 mb-2 whitespace-pre-wrap">{msg.content}</div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => onRetryWaiting && onRetryWaiting(i)}
+                    className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition flex-shrink-0"
+                  >
+                    🔄 {t('chat.waitRetry')}
+                  </button>
+                  <button
+                    onClick={() => onDismissFailed && onDismissFailed(i)}
+                    className="text-gray-400 hover:text-gray-600 px-2 py-1.5 text-xs transition flex-shrink-0"
+                  >
+                    {t('chat.waitDismiss')}
+                  </button>
+                </div>
+                {msg.waiting.auto && (
+                  <div className="text-[11px] text-gray-400 mt-1.5">{t('chat.waitAuto')}</div>
+                )}
+              </div>
+            ) : msg.model_switch ? (
+              <div className="min-w-[220px]">
+                <div className="font-bold text-sky-800 mb-1">🔀 {t('chat.noModelTitle')}</div>
+                <div className="text-gray-700 mb-2 whitespace-pre-wrap">{msg.content}</div>
+                <div className="flex flex-col gap-1.5">
+                  {(msg.model_switch.alternatives || []).map((alt) => (
+                    <button
+                      key={alt.id}
+                      onClick={() => onSwitchModel && onSwitchModel(i, alt.id)}
+                      className="flex items-center justify-between gap-2 bg-white border border-sky-200 hover:bg-sky-50 rounded-lg px-2.5 py-2 text-xs transition text-left"
+                    >
+                      <span className="font-bold text-gray-800 truncate">{alt.name}</span>
+                      <span className="text-emerald-600 flex-shrink-0">✅ {alt.miners_online}</span>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => onDismissFailed && onDismissFailed(i)}
+                  className="text-gray-400 hover:text-gray-600 px-1 py-1.5 text-xs transition mt-1"
+                >
+                  {t('chat.waitDismiss')}
+                </button>
+              </div>
             ) : msg.content ? <div className="break-words whitespace-pre-wrap">{msg.content}</div> : null}
           </div>
           {msg.role === 'assistant' && (

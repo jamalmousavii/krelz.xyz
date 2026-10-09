@@ -1,6 +1,6 @@
 # مستندات API — Krelz Network
 
-نسخه بک‌اند: `3.39.2` — پایه: `https://krelz.xyz` (نمونه: `https://krelz.xyz/api/chat`)
+نسخه بک‌اند: `3.40.0` — پایه: `https://krelz.xyz` (نمونه: `https://krelz.xyz/api/chat`)
 
 همه پاسخ‌ها JSON هستند. در حالت موفقیت معمولاً `success: true` برمی‌گردد و در حالت خطا `error` (رشته) یا `details` (لیست خطاهای اعتبارسنجی).
 
@@ -161,7 +161,9 @@
 |---------|--------|------|
 | 400 | `ATTACHMENT_UNSUPPORTED` | نوع فایل/مدل نامناسب (مثلاً تصویر با مدل بدون vision) |
 | 400 | `ATTACHMENT_TOO_LARGE` / `ATTACHMENT_INVALID` / `ATTACHMENT_EMPTY` / `ATTACHMENT_PARSE_FAILED` / `AUDIO_FORMAT` | سایز/فرمت/استخراج ناموفق |
-| 409 | `MEDIA_NO_MINER` | ماینرِ سازگار (نسخه ≥ 3.20.0) یا مدل محلی برای رسانه آنلاین نیست |
+| 409 | `MEDIA_NO_MINER` | ماینرِ سازگار (نسخه ≥ 3.20.0) برای رسانه آنلاین نیست (fallback محلی در v3.40.0 حذف شد) |
+| 409 | `MODEL_UNAVAILABLE` | ماینر آنلاین هست ولی مدل درخواستی را ندارد — `requested_model` + تا ۶ `alternatives` (اول هم‌دسته، بعد پرماینرترین)؛ بدون شارژ |
+| 503 | `MINER_OFFLINE` | هیچ ماینری آنلاین نیست — `retryable: true`؛ بدون شارژ (کلاینت auto-retry می‌کند) |
 
 تاریخچه: پیام‌های کاربر در `GET /api/chat/sessions/:id` فیلد `media` (JSONB از `tasks.media`) دارند.
 
@@ -404,7 +406,7 @@ IPN با پیشوند `tok-` → ادعای exactly-once `plan_purchases` → `c
 
 | مسیر | رفتار |
 |------|-------|
-| `GET /health` | readiness: بدون Postgres → `503` + `status: "degraded"`؛ Redis فقط گزارشی است |
+| `GET /health` | readiness: بدون Postgres → `503` + `status: "degraded"`؛ Redis فقط گزارشی است؛ `chatUsable = online_miners > 0` (فیلد `ollama` در v3.40.0 حذف شد) |
 | `GET /health/live` | liveness: همیشه `200` |
 
 ---

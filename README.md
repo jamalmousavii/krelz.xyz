@@ -17,7 +17,7 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Multi-Coin Payments (v3.18.0)** — USD wallet; Top Up via NowPayments (BTC, ETH, BNB, USDT, TRX, DOGE, XRP on checkout); withdraw USDT TRC-20 min $5
 - **Chat Source Badge (v3.18.4)** — each reply shows `⛏️ via miner` / `💻 local`
 - **Default Model (v3.18.4)** — chat defaults to `llama3.1:8b`
-- **Paid Inference (v3.24.0)** — GPU miner first, local Ollama second; every signed-in message is charged from the USD wallet (guest chat is free with a rate limit). No free cloud fallback.
+- **Paid Inference (v3.24.0, miner-only since v3.40.0)** — GPU miners serve everything (exact model, no substitution); no miners → `503 MINER_OFFLINE` waiting state, wrong model → `409 MODEL_UNAVAILABLE` with switch suggestions. Unserved messages are never charged. No free cloud fallback.
 - **Miner Free Credit (v3.25.0)** — an online/busy miner earns its host a free **$1/day** chat allowance; platform-funded (no wallet debit, no miner revenue share).
 - **Fullscreen Chat Frame (v3.19.1)** — chat fits the viewport exactly (no page scrolling at any resolution/zoom); input keeps focus while the model answers; the latest message is always in view, including after refresh
 - **Attachments & Voice (v3.20.0)** — 📎 send an image, PDF or text file (file text is read server-side so any model can answer; images go to vision models), 🎤 record a ≤60s voice note (client-side WAV encoder, `gemma4:12b`); gated per model with explicit errors — attachments are never silently dropped
@@ -237,7 +237,7 @@ krelz.xyz/
 |-------|-----------|
 | Frontend | Next.js 14, React 18, Tailwind CSS |
 | Backend | Node.js 20, Express, PostgreSQL, Redis |
-| LLM | Ollama, 16 models (Llama, Qwen, Gemma, DeepSeek, Phi, GPT-OSS, Mistral, BGE) |
+| LLM | Ollama (on miners), 16 models (Llama, Qwen, Gemma, DeepSeek, Phi, GPT-OSS, Mistral, BGE) — no server-side inference since v3.40.0 |
 | Auth | Google OAuth 2.0, JWT |
 | Payments | NowPayments — USD wallet, 7 coins at checkout, USDT TRC-20 withdraw |
 | Server | Ubuntu 24.04, Nginx, Let's Encrypt |

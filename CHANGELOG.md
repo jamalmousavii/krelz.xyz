@@ -1,5 +1,25 @@
 # Changelog
 
+## [3.40.0] - 2026-10-09
+
+Miner-only inference: the local Ollama fallback is gone, plus a smarter model picker.
+
+### Inference
+- **No more local replies** — every chat message is served by a GPU miner or not at all. No miners → `503 MINER_OFFLINE` (retryable waiting state, nothing is charged); all exact-model candidates failed → same. The old silent substitution of another model's output is removed.
+- **Exact-model rule** — the requested model is served as-is. Miners online but none holds it → `409 MODEL_UNAVAILABLE` with up to 6 `alternatives` (same category first, then by miner count).
+- **`/health`** — the `ollama` field and probe are gone; `chatUsable = online_miners > 0`. Monitors: watch `online_miners` + `status`.
+
+### Chat UI
+- **Waiting state** — `⏳ No miners online` bubble with auto-retry (3× every 10s, stops on thread switch) + manual Retry/Dismiss.
+- **Model-switch card** — `🔀` bubble with one-tap alternative buttons (resends the same message on the picked model).
+- **Picker overhaul** — models sorted busiest-first, grouped by Chat/Code/Vision/Embedding with sticky translated headers; zero-miner rows stay disabled; auto-switch to the busiest online model with a notice when the pick loses its miners; counts refresh every 30s without jumping mid-selection.
+
+### i18n
+- 12 new keys (`wait*`, `noModel*`, `switchedNotice`, `cat*`) in all 33 locales (420 keys).
+
+### Testing
+- Backend: **235 tests + 3 skipped / 23 suites** — new `miner.offline.test.js` (503/409 paths, no-charge assert, candidate failover, alternatives order) + exact-model `ws` tests. Frontend: **26 tests** — new `models.test.js` (sort/group/top-online).
+
 ## [3.39.2] - 2026-10-08
 
 Security hardening + validation patch (backward-compatible, additive only).

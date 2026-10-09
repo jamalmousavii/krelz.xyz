@@ -1,0 +1,163 @@
+// v3.40.0 miner-only inference — no local fallback.
+// Pattern: mock the DB pool + billing services, inject a fake wsServer, so
+// every path here is deterministic and offline (no Postgres, no miners).
+
+const express = require('express');
+const request = require('supertest');
+
+jest.mock('../src/database/pool', () => {
+  const state = {
+    statements: [],
+    queryImpl: async () => ({ rows: [] }),
+    connectImpl: async () => { throw new Error('connectImpl not scripted'); },
+  };
+  const push = (sql) => state.statements.push(String(sql).trim().replace(/\s+/g, ' '));
+  return {
+    __state: state,
+    query: (sql, params) => { push(sql); return state.queryImpl(sql, params, push); },
+    connect: () => state.connectImpl(push),
+  };
+});
+
+jest.mock('../src/services/freeAllowance', () => ({
+  getFreeStatus: jest.fn(async () => ({ limit: 2000000, used: 0, remaining: 1000000 })),
+  chargeFreeTokens: jest.fn(async () => ({ charged: true, remaining: 999990 })),
+}));
+
+jest.mock('../src/services/plans', () => {
+  const actual = jest.requireActual('../src/services/plans');
+  return { ...actual, getDailyCap: jest.fn(async () => 2000000) };
+});
+
+const pool = require('../src/database/pool');
+const chatRoutes = require('../src/routes/chat');
+
+function buildApp(wsServer) {
+  const app = express();
+  app.use(express.json());
+  app.set('wsServer', wsServer);
+  app.use('/api/chat', chatRoutes);
+  return app;
+}
+
+function fakeWs(over = {}) {
+  return {
+    findMinersForModel: jest.fn(() => []),
+    countUsableMiners: jest.fn(() => 0),
+    onlineModelCounts: jest.fn(() => ({})),
+    dispatchTask: jest.fn(),
+    ...over,
+  };
+}
+
+beforeEach(() => {
+  pool.__state.statements.length = 0;
+  pool.__state.queryImpl = async (sql) => {
+    if (String(sql).includes('INSERT INTO tasks')) return { rows: [{ id: 7 }] };
+    return { rows: [] };
+  };
+  pool.__state.connectImpl = async () => { throw new Error('connectImpl not scripted'); };
+});
+
+function postChat(app, body = {}) {
+  return request(app).post('/api/chat').send({ message: 'hello', ...body });
+}
+
+describe('MINER_OFFLINE — no miners online (v3.40.0)', () => {
+  it('503s with a retryable code instead of a local reply', async () => {
+    const ws = fakeWs();
+    const res = await postChat(buildApp(ws));
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe('MINER_OFFLINE');
+    expect(res.body.retryable).toBe(true);
+    expect(res.body.task_id).toBe(7);
+  });
+
+  it('never touches billing when nothing was served', async () => {
+    const ws = fakeWs();
+    await postChat(buildApp(ws));
+    const joined = pool.__state.statements.join('\n');
+    expect(joined).toMatch(/UPDATE tasks SET response/);
+    expect(joined).not.toMatch(/BEGIN/);
+    expect(joined).not.toMatch(/user_coin_balances/);
+    expect(joined).not.toMatch(/chargeFreeTokens|daily_tokens/);
+  });
+});
+
+describe('MODEL_UNAVAILABLE — miners online, model missing (v3.40.0)', () => {
+  it('409s with same-category alternatives first', async () => {
+    const ws = fakeWs({
+      countUsableMiners: jest.fn(() => 11),
+      onlineModelCounts: jest.fn(() => ({ 'qwen3-coder:30b': 9, 'llama3.2:3b': 2 })),
+    });
+    const res = await postChat(buildApp(ws), { model: 'llama3.1:8b' });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('MODEL_UNAVAILABLE');
+    expect(res.body.requested_model).toBe('llama3.1:8b');
+    // Same category (chat) wins over raw count: llama3.2:3b (2) before qwen3-coder (9).
+    expect(res.body.alternatives.map((a) => a.id)).toEqual(['llama3.2:3b', 'qwen3-coder:30b']);
+    expect(res.body.alternatives[0]).toMatchObject({ miners_online: 2, category: 'chat' });
+    expect(res.body.retryable).toBe(false);
+  });
+
+  it('never silently substitutes another model', async () => {
+    const ws = fakeWs({
+      findMinersForModel: jest.fn(() => []),
+      countUsableMiners: jest.fn(() => 3),
+      onlineModelCounts: jest.fn(() => ({ 'qwen3:32b': 3 })),
+    });
+    const res = await postChat(buildApp(ws), { model: 'deepseek-r1:70b' });
+    expect(res.status).toBe(409);
+    expect(ws.dispatchTask).not.toHaveBeenCalled();
+  });
+});
+
+describe('dispatch resilience (v3.40.0)', () => {
+  it('tries every exact-model candidate before giving up', async () => {
+    const ws = fakeWs({
+      findMinersForModel: jest.fn(() => [
+        { minerId: 1, model: 'llama3.1:8b' },
+        { minerId: 2, model: 'llama3.1:8b' },
+      ]),
+      countUsableMiners: jest.fn(() => 2),
+    });
+    ws.dispatchTask
+      .mockRejectedValueOnce(new Error('Miner disconnected'))
+      .mockResolvedValueOnce({ error: 'stale session' });
+    const res = await postChat(buildApp(ws), { model: 'llama3.1:8b' });
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe('MINER_OFFLINE');
+    expect(ws.dispatchTask).toHaveBeenCalledTimes(2);
+  });
+
+  it('serves from the second candidate when the first fails', async () => {
+    pool.__state.connectImpl = async () => ({
+      query: async () => ({ rows: [] }),
+      release: jest.fn(),
+    });
+    const ws = fakeWs({
+      findMinersForModel: jest.fn(() => [
+        { minerId: 1, model: 'llama3.1:8b' },
+        { minerId: 2, model: 'llama3.1:8b' },
+      ]),
+    });
+    ws.dispatchTask
+      .mockRejectedValueOnce(new Error('Miner disconnected'))
+      .mockResolvedValueOnce({ response: 'hi', tokens_used: 10 });
+    const res = await postChat(buildApp(ws), { model: 'llama3.1:8b' });
+    expect(res.status).toBe(200);
+    expect(res.body.source).toBe('miner');
+    expect(res.body.miner_id).toBe(2);
+  });
+});
+
+describe('buildAlternatives ordering (v3.40.0)', () => {
+  it('sorts same-category first, then by miner count', () => {
+    const alts = chatRoutes.__buildAlternatives('llama3.1:8b', {
+      'qwen3-coder:30b': 9,
+      'llama3.2:3b': 2,
+      'llama3.1:8b': 4, // requested model itself is excluded
+    });
+    expect(alts.map((a) => a.id)).toEqual(['llama3.2:3b', 'qwen3-coder:30b']);
+  });
+});

@@ -95,7 +95,7 @@ class WSServer {
           // B6: a vanished miner leaves its in-flight tasks hanging — they
           // would sit the full 180s dispatch timeout (+overhead) and blow
           // through nginx's 300s ceiling → user gets a 504. Reject them NOW:
-          // the chat route falls back to local Ollama immediately.
+          // the chat route answers MINER_OFFLINE (retryable) immediately.
           for (const [taskId, cb] of this.taskCallbacks) {
             if (cb.minerId === minerId) {
               clearTimeout(cb.timeout);
@@ -554,25 +554,48 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
     });
   }
 
-  // Find best available miner for a model (resource-aware).
+  // Find best available miner for a model (v3.40.0: EXACT match only).
+  // The chat route never substitutes another model's output anymore — a
+  // non-exact request gets MODEL_UNAVAILABLE with alternatives instead.
   // needsMedia: only miners running >= 3.20.0 (which understand `attachment`).
   findMinerForModel(model, needsMedia = false) {
-    const usable = (miner) =>
-      miner.status === 'online' && (!needsMedia || minerSupportsMedia(miner.app_version));
+    const all = this.findMinersForModel(model, needsMedia);
+    return all.length > 0 ? all[0] : null;
+  }
 
-    // Prefer exact model match on online miners
+  // All online miners holding the exact model, in registration order.
+  findMinersForModel(model, needsMedia = false) {
+    const out = [];
     for (const [minerId, miner] of this.miners) {
-      if (usable(miner) && miner.current_model === model) {
-        return { minerId, model: miner.current_model };
+      if (miner.status === 'online'
+        && (!needsMedia || minerSupportsMedia(miner.app_version))
+        && miner.current_model === model) {
+        out.push({ minerId, model: miner.current_model });
       }
     }
-    // Fallback: any online miner (use its model)
-    for (const [minerId, miner] of this.miners) {
-      if (usable(miner)) {
-        return { minerId, model: miner.current_model };
+    return out;
+  }
+
+  // Usable miners regardless of model — lets the chat route tell
+  // MINER_OFFLINE (nothing online) apart from MODEL_UNAVAILABLE.
+  countUsableMiners(needsMedia = false) {
+    let n = 0;
+    for (const [, miner] of this.miners) {
+      if (miner.status === 'online' && (!needsMedia || minerSupportsMedia(miner.app_version))) n++;
+    }
+    return n;
+  }
+
+  // Online miner counts per model — feeds MODEL_UNAVAILABLE alternatives.
+  onlineModelCounts(needsMedia = false) {
+    const counts = {};
+    for (const [, miner] of this.miners) {
+      if (miner.status === 'online' && (!needsMedia || minerSupportsMedia(miner.app_version))) {
+        const m = miner.current_model || 'llama3.1:8b';
+        counts[m] = (counts[m] || 0) + 1;
       }
     }
-    return null;
+    return counts;
   }
 
   cleanupMiners() {

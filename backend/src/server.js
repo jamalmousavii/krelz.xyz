@@ -253,21 +253,13 @@ app.get('/health', async (req, res) => {
     logger.error({ err: e }, 'Health check: Postgres unreachable');
   }
 
-  // B12: 'ok' while chat is actually unusable (Ollama down AND no miners
-  // online) lied to operators and dashboards. Probe both — Ollama with a
-  // 1s ceiling so health never hangs on it. Report degraded but keep HTTP
-  // 200 when Postgres is fine: pulling this box from rotation would take
-  // the whole API down, not just chat.
-  let ollamaStatus = 'unknown';
+  // v3.40.0 miner-only inference: chat is usable iff at least one miner is
+  // online. There is no local Ollama anymore, so nothing probes it — the
+  // `ollama` field is gone (monitors: watch `online_miners` + `status`).
+  // Report degraded but keep HTTP 200 when Postgres is fine: pulling this
+  // box from rotation would take the whole API down, not just chat.
   let onlineMiners = null;
   if (dbOk) {
-    try {
-      const axios = require('axios');
-      await axios.get(`${process.env.OLLAMA_URL || 'http://localhost:11434'}/api/tags`, { timeout: 1000 });
-      ollamaStatus = 'connected';
-    } catch (e) {
-      ollamaStatus = 'disconnected';
-    }
     try {
       const pool = require('./database/pool');
       const r = await pool.query("SELECT COUNT(*)::int AS n FROM miners WHERE status = 'online'");
@@ -277,7 +269,7 @@ app.get('/health', async (req, res) => {
     }
   }
 
-  const chatUsable = ollamaStatus === 'connected' || (onlineMiners !== null && onlineMiners > 0);
+  const chatUsable = onlineMiners !== null && onlineMiners > 0;
   res.status(dbOk ? 200 : 503).json({
     status: !dbOk ? 'degraded' : (chatUsable ? 'ok' : 'degraded'),
     version: require('../package.json').version,
@@ -286,7 +278,6 @@ app.get('/health', async (req, res) => {
     redis: cache.connected ? 'connected' : 'disconnected',
     postgres: dbStatus,
     db_latency_ms: dbLatencyMs,
-    ollama: ollamaStatus,
     online_miners: onlineMiners,
     sentry: !!process.env.SENTRY_DSN,
   });

@@ -51,11 +51,11 @@ node src/server.js
 ### 5. Tests & Quality Gates
 
 ```bash
-# Backend — jest: 225 tests + 3 skipped / 22 suites (integration.money skips without DATABASE_URL)
+# Backend — jest: 235 tests + 3 skipped / 23 suites (integration.money skips without DATABASE_URL)
 cd backend
 npm test   # = node --experimental-vm-modules ./node_modules/jest/bin/jest.js (plain `npx jest` breaks attachments.test.js)
 
-# Money integration suite against a throwaway PostgreSQL (228 tests / 23 suites):
+# Money integration suite against a throwaway PostgreSQL (238 tests / 24 suites):
 docker run -d --name krelz-it-pg -e POSTGRES_USER=krelz -e POSTGRES_PASSWORD=krelz \
   -e POSTGRES_DB=krelz_it -p 5433:5432 postgres:16-alpine
 DATABASE_URL='postgresql://krelz:krelz@localhost:5433/krelz_it' npm test
@@ -613,15 +613,13 @@ Interactive menu:
 **Option 1:** stops service, disables, removes files
 **Option 2:** Option 1 + removes Ollama binary + ~/.ollama/ models + ollama user
 
-## Smart Model Fallback (v3.10.0)
+## Smart Model Fallback (v3.10.0, retired in v3.40.0)
 
-When a chat request uses a model not installed on VPS Ollama, the backend auto-selects the closest available model:
-
-1. Fetch available models from `GET /api/tags`
-2. If exact model found → use it
-3. If not → find same family (e.g., `llama3.1:8b` → `llama3:8b`)
-4. If no family match → use first available model
-5. Log which model was actually used
+Retired: miner-only inference serves the exact requested model or fails
+explicitly — no miners → `503 MINER_OFFLINE` (retryable wait), model missing →
+`409 MODEL_UNAVAILABLE` with `alternatives`. The old local-Ollama substitution
+(`GET /api/tags` → family match → first available) and the server Ollama
+itself were removed in v3.40.0.
 
 ## Installer / Uninstaller Self-Cleanup (v3.10.0 install, v3.19.0 uninstall)
 

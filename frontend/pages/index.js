@@ -9,6 +9,11 @@ import MessageList from '../components/chat/MessageList';
 import Composer from '../components/chat/Composer';
 import { apiFetch, ApiError } from '../utils/api';
 import { audioBlobToWav16k } from '../lib/audio';
+import { sortModels, topOnlineModel, minerCount } from '../utils/models';
+
+const AUTO_RETRY_MAX = 3;
+const AUTO_RETRY_MS = 10000;
+const MODELS_REFRESH_MS = 30000;
 
 const MAX_RAW_BYTES = 1.5 * 1024 * 1024;   // pdf/text/audio budget (audio is WAVed after this check)
 const IMAGE_MAX_EDGE = 1280;               // client-side image compression target
@@ -92,6 +97,16 @@ export default function Home() {
   // once-per-day upsell banner after a wallet-paid message. Both carry the
   // plan catalog ({plans, token_bundle}) from the backend.
   const [upgradeNotice, setUpgradeNotice] = useState(null); // { plans, token_bundle } | null
+  // v3.40.0 — auto-switch notice when the selected model loses its miners.
+  const [modelNotice, setModelNotice] = useState('');
+  // Live mirrors for timers/intervals (F8-style: async work reads refs).
+  const chatRef = useRef([]);
+  chatRef.current = chat;
+  const selectedModelRef = useRef(selectedModel);
+  selectedModelRef.current = selectedModel;
+  const dropdownOpenRef = useRef(dropdownOpen);
+  dropdownOpenRef.current = dropdownOpen;
+  const retryTimersRef = useRef([]);
   const [purchaseError, setPurchaseError] = useState('');
   const [bundleAmount, setBundleAmount] = useState('5'); // whole dollars for the token bundle
 
@@ -151,6 +166,18 @@ export default function Home() {
     };
     window.addEventListener('krelz:auth-changed', onAuthChanged);
     return () => window.removeEventListener('krelz:auth-changed', onAuthChanged);
+  }, []);
+
+  // v3.40.0 — keep miner counts fresh so the dropdown sort stays truthful.
+  // Skipped while the picker is open (no reordering mid-selection) and
+  // always cleaned up on unmount, like the retry timers below.
+  useEffect(() => {
+    const id = setInterval(() => { if (!dropdownOpenRef.current) fetchModels(); }, MODELS_REFRESH_MS);
+    return () => {
+      clearInterval(id);
+      retryTimersRef.current.forEach((tm) => clearTimeout(tm));
+      retryTimersRef.current = [];
+    };
   }, []);
 
   // v3.30.0 — three triggers for the pricing modal: deep link with #plans on
@@ -341,11 +368,33 @@ export default function Home() {
     purchaseTokens();
   };
 
+  const clearRetryTimers = () => {
+    retryTimersRef.current.forEach((tm) => clearTimeout(tm));
+    retryTimersRef.current = [];
+  };
+
   const fetchModels = async () => {
     try {
       const res = await fetch('/api/models');
       const data = await res.json();
-      if (data.success) setModels(data.models);
+      if (!data.success) return;
+      // Busiest model first (shared util, stable for ties).
+      const sorted = sortModels(data.models);
+      setModels(sorted);
+      // v3.40.0 auto-switch: the selected model has no miners but others
+      // do — move to the busiest online one instead of 409ing every send.
+      // Offline rows are not selectable, so this never fights a manual pick.
+      const cur = selectedModelRef.current;
+      const curData = sorted.find((m) => m.id === cur);
+      if ((!curData || minerCount(curData) === 0)) {
+        const top = topOnlineModel(sorted);
+        if (top && top.id !== cur) {
+          setSelectedModel(top.id);
+          try {
+            setModelNotice(t('chat.switchedNotice').replace('{model}', top.name));
+          } catch (e) {}
+        }
+      }
     } catch (err) { console.error('Failed to load models'); }
   };
 
@@ -525,9 +574,99 @@ export default function Home() {
     if (mr && mr.state === 'recording') mr.stop();
   };
 
+  // v3.40.0 miner-only flow: failed sends live on as bubbles the user can
+  // retry or re-target, instead of vanishing into a generic error line.
+  const replaceBubble = (id, patch) =>
+    setChat((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+
+  const applyReplyBubble = (id, data) =>
+    replaceBubble(id, {
+      content: data.response,
+      source: data.source || null,
+      miner_id: data.miner_id || null,
+      payment_status: data.payment_status || null,
+      waiting: undefined,
+      model_switch: undefined,
+    });
+
+  const scheduleAutoRetry = (id) => {
+    const timer = setTimeout(() => attemptResend(id, true), AUTO_RETRY_MS);
+    retryTimersRef.current.push(timer);
+  };
+
+  const attemptResend = async (id, isAuto) => {
+    const msg = chatRef.current.find((m) => m.id === id);
+    if (!msg || !msg.waiting) return;
+    const attempts = msg.waiting.attempts || 0;
+    if (attempts >= AUTO_RETRY_MAX) {
+      replaceBubble(id, { waiting: { ...msg.waiting, auto: false } });
+      return;
+    }
+    // Auto-retries stop if the user moved threads (F8 spirit); manual
+    // retries always go through against the current session.
+    if (isAuto && msg.waiting.sessionId !== activeSessionRef.current) {
+      replaceBubble(id, { waiting: { ...msg.waiting, auto: false } });
+      return;
+    }
+    replaceBubble(id, { waiting: { ...msg.waiting, attempts: attempts + 1, auto: isAuto } });
+    try {
+      const data = await apiFetch('/api/chat', {
+        method: 'POST',
+        body: JSON.stringify({ ...msg.waiting.payload, session_id: activeSessionRef.current }),
+      });
+      if (data.success) {
+        applyReplyBubble(id, data);
+        if (data.session_id) fetchSessions(token);
+      } else if (data && data.code === 'MINER_OFFLINE') {
+        if (attempts + 1 < AUTO_RETRY_MAX) scheduleAutoRetry(id);
+        else replaceBubble(id, { waiting: { ...msg.waiting, attempts: attempts + 1, auto: false } });
+      } else {
+        replaceBubble(id, {
+          content: (data && data.error) || t('chat.errorResponse'),
+          waiting: undefined,
+        });
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 503 && err.data && err.data.code === 'MINER_OFFLINE') {
+        if (attempts + 1 < AUTO_RETRY_MAX) scheduleAutoRetry(id);
+        else replaceBubble(id, { waiting: { ...msg.waiting, attempts: attempts + 1, auto: false } });
+      } else if (err instanceof ApiError && err.data && err.data.error) {
+        replaceBubble(id, { content: err.data.error, waiting: undefined });
+      } else {
+        replaceBubble(id, { content: t('chat.errorConnection'), waiting: undefined });
+      }
+    }
+  };
+
+  const onRetryWaiting = (id) => {
+    const msg = chatRef.current.find((m) => m.id === id);
+    if (!msg || !msg.waiting) return;
+    replaceBubble(id, { waiting: { ...msg.waiting, attempts: 0, auto: false } });
+    attemptResend(id, false);
+  };
+
+  const onDismissFailed = (id) =>
+    setChat((prev) => prev.filter((m) => m.id !== id));
+
+  const onSwitchModel = (id, modelId) => {
+    const msg = chatRef.current.find((m) => m.id === id);
+    if (!msg || !msg.model_switch) return;
+    setSelectedModel(modelId);
+    const payload = { ...msg.model_switch.payload, model: modelId };
+    // Re-target as a waiting send so further 503s get the retry treatment.
+    replaceBubble(id, {
+      content: t('chat.waitDesc'),
+      model_switch: undefined,
+      waiting: { payload, sessionId: activeSessionRef.current, attempts: 0, auto: false },
+    });
+    attemptResend(id, false);
+  };
+
   const sendMessage = async () => {
     if (loading) return;
     if (!message.trim() && !attachment) return;
+    // A fresh send cancels pending auto-retries (their thread may be stale).
+    clearRetryTimers();
 
     // Capability gates — never send an attachment the model cannot answer.
     if (attachment) {
@@ -538,6 +677,7 @@ export default function Home() {
 
     const userMessage = message;
     const sentAttachment = attachment;
+    const sentModel = selectedModel;
     setMessage('');
     setAttachment(null);
     setAttachError('');
@@ -617,6 +757,38 @@ export default function Home() {
             plans: wall.plans || [],
             token_bundle: wall.token_bundle || null,
             free: wall.free,
+          },
+        }]);
+      } else if (err instanceof ApiError && err.status === 503 && err.data && err.data.code === 'MINER_OFFLINE') {
+        // v3.40.0: no miners online — waiting bubble with auto-retry.
+        const failId = `w${Date.now()}${Math.floor(Math.random() * 1e6)}`;
+        const payload = {
+          message: userMessage,
+          model: sentModel,
+          ...(sentAttachment ? { attachment: sentAttachment } : {}),
+        };
+        setChat(prev => [...prev, {
+          id: failId,
+          role: 'assistant',
+          content: (err.data && err.data.error) || t('chat.waitDesc'),
+          waiting: { payload, sessionId: sessionAtSend, attempts: 0, auto: true },
+        }]);
+        scheduleAutoRetry(failId);
+      } else if (err instanceof ApiError && err.status === 409 && err.data && err.data.code === 'MODEL_UNAVAILABLE') {
+        // v3.40.0: exact-model rule — offer a switch, never substitute silently.
+        const failId = `s${Date.now()}${Math.floor(Math.random() * 1e6)}`;
+        setChat(prev => [...prev, {
+          id: failId,
+          role: 'assistant',
+          content: (err.data && err.data.error) || t('chat.noModelDesc').replace('{model}', sentModel),
+          model_switch: {
+            requested: (err.data && err.data.requested_model) || sentModel,
+            alternatives: (err.data && err.data.alternatives) || [],
+            payload: {
+              message: userMessage,
+              model: sentModel,
+              ...(sentAttachment ? { attachment: sentAttachment } : {}),
+            },
           },
         }]);
       } else if (err instanceof ApiError && err.data && err.data.error) {
@@ -776,7 +948,20 @@ export default function Home() {
             bundleAmount={bundleAmount}
             setBundleAmount={setBundleAmount}
             purchaseError={purchaseError}
+            onRetryWaiting={onRetryWaiting}
+            onDismissFailed={onDismissFailed}
+            onSwitchModel={onSwitchModel}
           />
+
+          {/* v3.40.0 — auto-switch notice when the model lost its miners */}
+          {modelNotice && (
+            <div className="flex items-center gap-2 mb-2 bg-sky-50 border border-sky-200 text-sky-800 rounded-xl px-3 py-2 text-xs md:text-sm">
+              <span className="flex-1">🔀 {modelNotice}</span>
+              <button onClick={() => setModelNotice('')} aria-label="dismiss" className="text-sky-500 hover:text-sky-700 px-1.5 font-bold flex-shrink-0">
+                ✕
+              </button>
+            </div>
+          )}
 
           {/* v3.28.0 — plan upsell after a wallet-paid message (once/day) */}
           {upgradeNotice && (

@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../database/pool');
-const axios = require('axios');
 const { invalidateCache } = require('../cache');
 const { authenticate, strictIfHeader } = require('../middleware/auth');
 const { validate, chatRules } = require('../middleware/validate');
@@ -24,7 +23,6 @@ const { getFreeStatus, chargeFreeTokens } = require('../services/freeAllowance')
 const { getDailyCap, FREE_DAILY_TOKENS, TOKEN_BUNDLE, listPlans, getActivePlan } = require('../services/plans');
 const { chargeTokenPot, getTokenBalance } = require('../services/tokenBundles');
 
-const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
 // Single source of truth for the default model (was split between
 // 'llama3:8b' — which exists in no catalog — and 'llama3.1:8b').
 const DEFAULT_MODEL = 'llama3.1:8b';
@@ -38,6 +36,24 @@ const getModelPricing = (modelId) => {
   const found = MODELS.find(m => m.id === modelId);
   return found ? { inputPrice: found.inputPrice, outputPrice: found.outputPrice } : { inputPrice: 0.088, outputPrice: 0.176 };
 };
+
+// MODEL_UNAVAILABLE alternatives (v3.40.0): catalog models that have online
+// miners right now, same category as the request first, then by miner count
+// desc. Shape mirrors GET /api/models so the client can render directly.
+function buildAlternatives(requestedModel, counts) {
+  const requested = MODELS.find(m => m.id === requestedModel);
+  const reqCat = requested ? requested.category : null;
+  return MODELS
+    .filter(m => (counts[m.id] || 0) > 0 && m.id !== requestedModel)
+    .map(m => ({
+      id: m.id, name: m.name, size: m.size, ram: m.ram,
+      category: m.category, vision: m.vision, audio: m.audio,
+      miners_online: counts[m.id],
+    }))
+    .sort((a, b) =>
+      (((b.category === reqCat) ? 1 : 0) - ((a.category === reqCat) ? 1 : 0))
+      || (b.miners_online - a.miners_online));
+}
 
 // ======== SESSION CRUD ========
 
@@ -319,18 +335,23 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
     }
 
     const wsServer = req.app.get('wsServer');
-    // Media (image/audio) may only go to a miner new enough to understand the
-    // `attachment` field on task messages (v3.20.0+).
-    const minerResult = wsServer ? wsServer.findMinerForModel(requestedModel, !!media) : null;
-    const minerId = minerResult ? minerResult.minerId : null;
-    const minerModel = minerResult && minerResult.model ? minerResult.model : requestedModel;
+    // v3.40.0 miner-only inference (exact-model rule): the user asked for THIS
+    // model. Media (image/audio) may only go to a miner new enough to
+    // understand the `attachment` field on task messages (v3.20.0+).
+    // There is no local fallback anymore — an unservable request gets an
+    // explicit, actionable error (MINER_OFFLINE / MODEL_UNAVAILABLE) instead
+    // of a silently substituted reply. All three early returns below happen
+    // BEFORE billing, so an unserved message never consumes allowance or
+    // wallet.
+    const needsMedia = !!media;
+    const candidates = wsServer ? wsServer.findMinersForModel(requestedModel, needsMedia) : [];
 
-    // Create task
+    // Create task (miner_id is claimed below once a candidate takes it)
     const taskResult = await pool.query(
       `INSERT INTO tasks (user_id, miner_id, prompt, model, status, session_id, media, prepared_prompt)
        VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7)
        RETURNING id`,
-      [userId, minerId, message, requestedModel, sessionId, dbAttachment,
+      [userId, null, message, requestedModel, sessionId, dbAttachment,
        effectiveMessage !== message ? effectiveMessage : null]
     );
 
@@ -338,123 +359,91 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
     let response, tokensUsed, cost;
     let lastMinerError = null;
     let servedByMiner = false;
+    let minerId = null;
 
-    // Try WebSocket dispatch first — use miner's available model
-    if (wsServer && minerId && minerModel) {
+    const failTask = async (note) => {
+      await pool.query(
+        "UPDATE tasks SET response = $1, status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $2",
+        [note, taskId]
+      );
+    };
+
+    if (candidates.length === 0) {
+      const usableCount = wsServer ? wsServer.countUsableMiners(needsMedia) : 0;
+      if (usableCount === 0) {
+        // No miners online at all — the client shows a waiting state and
+        // auto-retries (retryable: true).
+        await failTask('No miners online');
+        return res.status(503).json({
+          error: 'No GPU miners are online right now. Your message is kept — please wait for a miner to connect and retry.',
+          code: 'MINER_OFFLINE',
+          task_id: taskId,
+          retryable: true,
+        });
+      }
+      // Miners are online, but none holds the requested model — suggest a
+      // switch instead of silently serving another model's output.
+      const counts = wsServer.onlineModelCounts(needsMedia);
+      const alternatives = buildAlternatives(requestedModel, counts).slice(0, 6);
+      await failTask('No miner holds the requested model');
+      return res.status(409).json({
+        error: `No online miner serves ${requestedModel} right now. Switch to one of these models or wait.`,
+        code: 'MODEL_UNAVAILABLE',
+        requested_model: requestedModel,
+        alternatives,
+        task_id: taskId,
+        retryable: false,
+      });
+    }
+
+    // Try each exact-model candidate in turn — one may have dropped between
+    // lookup and dispatch (stale Map entry) or time out mid-task.
+    for (const cand of candidates) {
       try {
-        await pool.query("UPDATE tasks SET status = 'processing', miner_id = $1 WHERE id = $2", [minerId, taskId]);
+        await pool.query("UPDATE tasks SET status = 'processing', miner_id = $1 WHERE id = $2", [cand.minerId, taskId]);
 
-        logger.debug({ taskId, minerId, minerModel, requestedModel: model, media: !!media }, 'Dispatching task to miner');
-        const result = await wsServer.dispatchTask(minerId, taskId, effectiveMessage, minerModel, media);
+        logger.debug({ taskId, minerId: cand.minerId, model: cand.model, media: needsMedia }, 'Dispatching task to miner');
+        const result = await wsServer.dispatchTask(cand.minerId, taskId, effectiveMessage, cand.model, media);
 
         if (result.error) {
-          logger.warn({ taskId, minerId, err: result.error }, 'Miner task failed, falling back');
+          logger.warn({ taskId, minerId: cand.minerId, err: result.error }, 'Miner task failed, trying next miner');
           lastMinerError = result.error;
-        } else {
-          const reported = Number(result.tokens_used);
-          if (!Number.isFinite(reported) || reported < 0 || reported > MAX_TASK_TOKENS) {
-            // Out-of-bounds report: reject the miner result (falls through to
-            // the local fallback) — never charge the user or pay the miner.
-            logger.warn({ taskId, minerId, tokens_used: result.tokens_used }, 'Rejecting miner result: tokens_used out of bounds');
-            lastMinerError = 'tokens_used out of bounds';
-          } else {
-            response = result.response;
-            tokensUsed = reported;
-            servedByMiner = true;
-            const pricing = getModelPricing(model || DEFAULT_MODEL);
-            cost = (tokensUsed * pricing.outputPrice) / 1000000;
-          }
+          continue;
         }
+        const reported = Number(result.tokens_used);
+        if (!Number.isFinite(reported) || reported < 0 || reported > MAX_TASK_TOKENS) {
+          // Out-of-bounds report: reject the miner result and try the next
+          // candidate — never charge the user or pay the miner for it.
+          logger.warn({ taskId, minerId: cand.minerId, tokens_used: result.tokens_used }, 'Rejecting miner result: tokens_used out of bounds');
+          lastMinerError = 'tokens_used out of bounds';
+          continue;
+        }
+        response = result.response;
+        tokensUsed = reported;
+        servedByMiner = true;
+        minerId = cand.minerId;
+        const pricing = getModelPricing(requestedModel);
+        cost = (tokensUsed * pricing.outputPrice) / 1000000;
+        break;
 
       } catch (wsError) {
-        logger.warn({ taskId, err: wsError.message }, 'WebSocket dispatch failed, falling back');
+        logger.warn({ taskId, err: wsError.message }, 'WebSocket dispatch failed, trying next miner');
         lastMinerError = wsError.message;
       }
     }
 
-    // Fallback: local Ollama
     if (!response) {
-      try {
-        let ollamaModel = model || DEFAULT_MODEL;
-
-        // Smart fallback: check available models
-        try {
-        // B5: a hung Ollama /api/tags probe had NO timeout — it could stall
-        // the whole chat request indefinitely. Fail fast to the fallback.
-        const tagsRes = await axios.get(`${OLLAMA_URL}/api/tags`, { timeout: 2000 });
-          const available = (tagsRes.data.models || []).map(m => m.name);
-          if (available.length === 0) {
-            throw new Error('No local Ollama models');
-          }
-          if (!available.includes(ollamaModel)) {
-            if (media) {
-              // Never substitute a random local model for a media request —
-              // an image fed to a non-vision model returns garbage.
-              throw new Error('Media model not available locally');
-            }
-            const family = ollamaModel.split(':')[0];
-            const exactMatch = available.find(m => m.startsWith(family + ':') || m === family);
-            ollamaModel = exactMatch || available.find(m => m.includes('8b')) || available[0];
-            logger.warn({ requested: model, using: ollamaModel }, 'Requested model not available locally');
-          }
-        } catch (tagErr) {
-          // No models / can't list → skip to cloud providers
-          throw new Error('Ollama unavailable');
-        }
-
-        // Media goes through /api/chat with images[] — Ollama auto-detects
-        // audio (WAV RIFF) in the same slot. Text stays on /api/generate.
-        const ollamaResponse = media
-          ? await axios.post(`${OLLAMA_URL}/api/chat`, {
-              model: ollamaModel,
-              messages: [{ role: 'user', content: effectiveMessage, images: [media.data] }],
-              stream: false
-            }, { timeout: 120000 })
-          : await axios.post(`${OLLAMA_URL}/api/generate`, {
-              model: ollamaModel,
-              prompt: effectiveMessage,
-              stream: false,
-              // CPU inference on the VPS: cap output so one long reply can't
-              // pin all cores for minutes.
-              options: { num_predict: 768 }
-            }, { timeout: 120000 });
-
-        response = media
-          ? (ollamaResponse.data.message && ollamaResponse.data.message.content)
-          : ollamaResponse.data.response;
-        tokensUsed = Math.min(Math.max(Number(ollamaResponse.data.eval_count) || 0, 0), MAX_TASK_TOKENS);
-        const pricing = getModelPricing(model || DEFAULT_MODEL);
-        cost = (tokensUsed * pricing.outputPrice) / 1000000;
-
-      } catch (ollamaError) {
-        logger.warn({ err: ollamaError.message, model }, 'Local Ollama unavailable');
-
-        if (media) {
-          // Attachment was valid but no capable source existed — fail with a
-          // stable code and keep the failure visible in history instead of
-          // retrying forever or dropping the attachment.
-          await pool.query(
-            "UPDATE tasks SET response = 'No capable source for attachment', status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $1",
-            [taskId]
-          );
-          return res.status(409).json({
-            error: `No online miner or local model can handle this ${media.type === 'image' ? 'image' : 'voice note'} right now. Try again shortly or switch model.`,
-            code: 'MEDIA_NO_MINER',
-            task_id: taskId,
-          });
-        }
-        await pool.query(
-          "UPDATE tasks SET response = 'No inference source available', status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $1",
-          [taskId]
-        );
-        const detail = lastMinerError
-          ? ` (miner: ${sanitizeMinerDetail(lastMinerError)})`
-          : '';
-        return res.status(503).json({
-          error: `No inference source available. No miners are online and the local model is unreachable. Please try again later.${detail}`,
-          task_id: taskId
-        });
-      }
+      // Every exact-model candidate failed — retryable, like offline.
+      await failTask('All miners failed for this task');
+      const detail = lastMinerError
+        ? ` (miner: ${sanitizeMinerDetail(lastMinerError)})`
+        : '';
+      return res.status(503).json({
+        error: `Miners failed to answer right now. Your message is kept — please retry shortly.${detail}`,
+        code: 'MINER_OFFLINE',
+        task_id: taskId,
+        retryable: true,
+      });
     }
 
     // Update task with result
@@ -561,8 +550,7 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
                   [debit, userId, paymentCoin]
                 );
 
-                // Only a miner that actually served the task earns — a local-Ollama
-                // fallback must never credit earnings to the miner of record.
+                // Only a miner that actually served the task earns.
                 // Flat 90% for every payer (Free/Plus/Pro/Max alike).
                 if (minerId && servedByMiner) {
                   await creditMinerEarning(client, debit * MINER_REVENUE_SHARE, 'wallet');
@@ -598,7 +586,7 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
       coin: paymentCoin,
       payment_status: paymentStatus,
       miner_id: servedByMiner ? minerId : null,
-      source: servedByMiner ? 'miner' : 'local',
+      source: 'miner',
       miner_credit_remaining: minerCreditRemaining,
       free_tokens_remaining: freeRemaining,
       ...(tokenBalanceRemaining !== null ? { token_balance_remaining: tokenBalanceRemaining } : {}),
@@ -646,5 +634,6 @@ router.MINER_REVENUE_SHARE = MINER_REVENUE_SHARE;
 // Test hook: the 503 detail sanitiser is module-private; expose it the same
 // way stats.js exposes its aggregate reset.
 router.__sanitizeMinerDetail = sanitizeMinerDetail;
+router.__buildAlternatives = buildAlternatives;
 
 module.exports = router;
