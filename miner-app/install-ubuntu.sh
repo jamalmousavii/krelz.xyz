@@ -426,9 +426,29 @@ if [ -z "$USER_EMAIL" ]; then
 fi
 
 if [ -z "$MINER_TOKEN" ]; then
-  # H4: silent input — the token must not echo to the terminal or scrollback.
-  read -rsp "  Miner Token: " MINER_TOKEN
-  echo ""
+  # Token prompt is VISIBLE input (user decision): paste/type shows on screen
+  # so paste mistakes are obvious. Do NOT paste on shared terminals or while
+  # recording — a leaked token can be rotated from the profile (+ Add Miner).
+  if [ ! -t 0 ]; then
+    echo -e "  ${RED}No terminal for the token prompt. Re-run with --token kz_... or --token-file <file>${NC}"
+    exit 1
+  fi
+  echo -e "  Paste your token below (input is visible). Get it from https://krelz.xyz/profile"
+  for ATTEMPT in 1 2 3; do
+    read -rp "  Miner Token: " MINER_TOKEN
+    # Strip whitespace/CR + bracketed-paste markers some terminals inject.
+    MINER_TOKEN=$(printf '%s' "$MINER_TOKEN" | tr -d ' \t\r\n' | sed -e 's/\x1b\[200~//g' -e 's/\x1b\[201~//g')
+    if [[ "$MINER_TOKEN" =~ ^kz_[0-9a-f]{32,64}$ ]]; then
+      echo -e "  ${GREEN}✓ ${#MINER_TOKEN} chars received${NC}"
+      break
+    fi
+    echo -e "  ${YELLOW}Invalid token (expected kz_ + 32-64 hex chars). Try again.${NC}"
+    MINER_TOKEN=""
+    if [ "$ATTEMPT" -eq 3 ]; then
+      echo -e "  ${RED}Too many invalid attempts. Grab a fresh token from https://krelz.xyz/profile and re-run.${NC}"
+      exit 1
+    fi
+  done
 fi
 
 # --- Miner name (shown in dashboard) ---

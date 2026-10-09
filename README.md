@@ -67,6 +67,12 @@ The install script automatically sets up:
 - Selected AI models (16 available)
 - Krelz Miner (CLI mode, systemd service)
 
+> **Token prompt:** when the installer asks for your miner token, the input is
+> **visible** (what you paste/type shows on screen) with a char-count
+> confirmation — if paste seems to "do nothing", you're likely on the old
+> script; re-download it. Avoid pasting on shared terminals or recordings
+> (a leaked token can be rotated from Profile → Miner Settings).
+
 Requires **~15 GB free disk** (checked before the model download; bypass with
 `KRELZ_SKIP_DISK_CHECK=1`). Every script passes `shellcheck` (enforced in CI).
 
