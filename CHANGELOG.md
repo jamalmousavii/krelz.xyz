@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.41.2] - 2026-10-10
+
+Fix: reboot-proof miner presence. Restarts dropped WS sockets without the
+close handler, so DB rows stayed `online` forever (stale dashboard +
+`online_miners: 1` with nobody connected). Boot now resets
+`online`/`busy` rows to `offline`; live miners re-auth within seconds.
+
 ## [3.41.1] - 2026-10-10
 
 Fix: `GET /api/models` miner counts now come from the live WS multi-model

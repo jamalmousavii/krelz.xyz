@@ -317,6 +317,19 @@ server.listen(PORT, '127.0.0.1', () => {
   logger.info({ port: PORT }, 'Krelz Backend started');
   logger.info({ redis: getCacheStats().connected ? 'connected' : 'disconnected' }, 'Cache status');
 
+  // v3.41.1: a restart drops every WS socket without running the close
+  // handler, so DB rows stay 'online'/'busy' forever (stale dashboard,
+  // lying /health online_miners). Reset them — live miners re-auth within
+  // seconds and flip right back to online via auth/heartbeat.
+  try {
+    const pool = require('./database/pool');
+    pool.query("UPDATE miners SET status = 'offline' WHERE status IN ('online', 'busy')")
+      .then((r) => logger.info({ reset: r.rowCount }, 'Boot: stale miner statuses reset to offline'))
+      .catch((err) => logger.error({ err }, 'Boot: miner status reset failed'));
+  } catch (err) {
+    logger.error({ err }, 'Boot: miner status reset failed');
+  }
+
   // B4/B11: hourly payment reconciliation + old-media prune. Both jobs are
   // idempotent (exactly-once claims; NULL-ing stale media is repeat-safe), so
   // restarts and overlaps are harmless. First run waits 5 minutes after boot.
