@@ -147,8 +147,13 @@ Miner install/uninstall scripts and source code.
 miner-app/
 ├── install-ubuntu.sh      # Ubuntu/Debian installer
 ├── install-redhat.sh      # RedHat/Fedora installer
+├── install-macos.sh       # macOS installer (Homebrew + launchd, v3.42.0)
+├── install-windows.ps1    # Windows installer (winget + Task Scheduler, v3.42.0)
 ├── uninstall-ubuntu.sh    # Ubuntu/Debian uninstaller
 ├── uninstall-redhat.sh    # RedHat/Fedora uninstaller
+├── uninstall-macos.sh     # macOS uninstaller (v3.42.0)
+├── uninstall-windows.ps1  # Windows uninstaller (v3.42.0)
+├── com.krelz.miner.plist  # launchd template (v3.42.0; @NODE@/@WORKDIR@ like the systemd unit)
 ├── assets/                # Electron icon.png + tray-icon.png (v3.36.0)
 └── src/                   # Miner source
     ├── main.js            # Electron desktop app

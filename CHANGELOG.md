@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.42.0] - 2026-10-11
+
+macOS + Windows miners.
+
+### New platforms
+- **`install-macos.sh` / `uninstall-macos.sh`** — Homebrew (node@20, ollama, jq) + Xcode CLT check, AVX2 gate for old Intel Macs, `launchd` agent (`com.krelz.miner.plist` template, same @NODE@/@WORKDIR@ pattern as the systemd unit), manager menu on re-run. Handles stock bash 3.2 via Homebrew-bash re-exec.
+- **`install-windows.ps1` / `uninstall-windows.ps1`** — winget (Node LTS, Ollama, Git), Task Scheduler (at-logon + restart-on-failure), user-only config ACL instead of `chmod 600`, same token validation + manager menu.
+- GPU power tiers now recognise Apple Silicon (M1→4 … M4→7) for weighted routing.
+
+### Docs & CI
+- `/miner` page + README cover all four OSes (Gatekeeper/SmartScreen/ExecutionPolicy notes). New `miner-platforms` CI job: macOS (`bash -n` incl. stock bash 3.2 + manager smoke) and Windows (built-in .NET PowerShell parser).
+
 ## [3.41.3] - 2026-10-10
 
 Per-miner lifetime earnings. `GET /api/miners/mine/:id/earnings`

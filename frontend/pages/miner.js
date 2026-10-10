@@ -45,8 +45,12 @@ export default function Miner() {
 
   const ubuntuCmd = 'wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-ubuntu.sh && bash install-ubuntu.sh';
   const redhatCmd = 'wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-redhat.sh && bash install-redhat.sh';
+  const macosCmd = 'curl -fsSL https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-macos.sh -o install-macos.sh && bash install-macos.sh';
+  const windowsCmd = 'Invoke-WebRequest -Uri https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-windows.ps1 -OutFile install-windows.ps1';
+  const windowsUninstall = 'Invoke-WebRequest -Uri https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/uninstall-windows.ps1 -OutFile uninstall-windows.ps1';
   const ubuntuUninstall = 'wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/uninstall-ubuntu.sh && bash uninstall-ubuntu.sh';
   const redhatUninstall = 'wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/uninstall-redhat.sh && bash uninstall-redhat.sh';
+  const macosUninstall = 'curl -fsSL https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/uninstall-macos.sh -o uninstall-macos.sh && bash uninstall-macos.sh';
 
   const categories = [...new Set(models.map(m => m.category))];
 
@@ -93,6 +97,26 @@ export default function Miner() {
                 <code>{redhatCmd}</code>
               </div>
             </div>
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-lg">🍎</span>
+                <span className="text-gray-800 font-bold text-sm md:text-base">{t('miner.macos')}</span>
+              </div>
+              <div className="bg-sky-50 border border-sky-100 rounded-lg px-3 md:px-4 py-2 md:py-3 font-mono text-xs md:text-sm text-emerald-700 overflow-x-auto">
+                <code>{macosCmd}</code>
+              </div>
+              <p className="text-gray-400 text-xs mt-1">{t('miner.macosNote')}</p>
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-lg">🪟</span>
+                <span className="text-gray-800 font-bold text-sm md:text-base">{t('miner.windows')}</span>
+              </div>
+              <div className="bg-sky-50 border border-sky-100 rounded-lg px-3 md:px-4 py-2 md:py-3 font-mono text-xs md:text-sm text-emerald-700 overflow-x-auto">
+                <code>{windowsCmd}</code>
+              </div>
+              <p className="text-gray-400 text-xs mt-1">{t('miner.windowsNote')}</p>
+            </div>
           </div>
 
           {/* Connect */}
@@ -125,6 +149,18 @@ export default function Miner() {
                 <div className="text-gray-800 font-bold text-sm mb-1">🎩 {t('miner.uninstallRedhat')}</div>
                 <div className="bg-sky-50 border border-sky-100 rounded-lg px-3 py-2 font-mono text-xs text-emerald-700 overflow-x-auto">
                   <code>{redhatUninstall}</code>
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-800 font-bold text-sm mb-1">🍎 {t('miner.uninstallMacos')}</div>
+                <div className="bg-sky-50 border border-sky-100 rounded-lg px-3 py-2 font-mono text-xs text-emerald-700 overflow-x-auto">
+                  <code>{macosUninstall}</code>
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-800 font-bold text-sm mb-1">🪟 {t('miner.uninstallWindows')}</div>
+                <div className="bg-sky-50 border border-sky-100 rounded-lg px-3 py-2 font-mono text-xs text-emerald-700 overflow-x-auto">
+                  <code>{windowsUninstall}</code>
                 </div>
               </div>
             </div>

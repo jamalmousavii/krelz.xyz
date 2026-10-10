@@ -86,3 +86,44 @@ jobs:
           set -e
           for f in $(find miner-app/src -name '*.js'); do node --check "$f"; done
           echo "miner-app sources parse"
+
+  miner-platforms:
+    name: Miner installers (macOS + Windows)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      # macOS: the stock bash 3.2 must still parse the scripts (the re-exec
+      # guard runs later); then exercise the manager menu against a fake HOME.
+      - name: Validate macOS scripts
+        if: matrix.os == 'macos-latest'
+        run: |
+          set -e
+          bash -n miner-app/install-macos.sh
+          bash -n miner-app/uninstall-macos.sh
+          /bin/bash -n miner-app/install-macos.sh
+          mkdir -p "$RUNNER_TEMP/fakehome/krelz-miner/miner-app"
+          printf '{"models":"llama3.1:8b","default_model":"llama3.1:8b","miner_token":"kz_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","name":"t"}' \
+            > "$RUNNER_TEMP/fakehome/krelz-miner/miner-app/config.json"
+          printf '0\n' | HOME="$RUNNER_TEMP/fakehome" bash miner-app/install-macos.sh | grep -q "Krelz Miner Manager"
+          echo "macos scripts OK"
+      # Windows: no shellcheck/pssa needed — the .NET parser is built in.
+      - name: Validate PowerShell scripts
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $files = @('miner-app/install-windows.ps1', 'miner-app/uninstall-windows.ps1')
+          $failed = $false
+          foreach ($f in $files) {
+            $tokens = $null; $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($f, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "$f : $($_.Message)" }
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+          Write-Host "ps1 parse clean"

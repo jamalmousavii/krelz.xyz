@@ -19,8 +19,8 @@ const HISTORY_APP_VERSION = { major: 3, minor: 41 }; // miners at/above this und
 // new sessions.
 const GPU_TIERS = [
   [/h100|h800/i, 10], [/a100/i, 9], [/rtx\s*4090|a6000|a40/i, 8],
-  [/rtx\s*4080|rtx\s*3090/i, 7], [/rtx\s*4070|rtx\s*3080|v100/i, 6],
-  [/rtx\s*3070|rtx\s*4060\s*ti/i, 5], [/rtx\s*4060|rtx\s*3060/i, 4],
+  [/rtx\s*4080|rtx\s*3090|apple\s*m4/i, 7], [/rtx\s*4070|rtx\s*3080|v100|apple\s*m3/i, 6],
+  [/rtx\s*3070|rtx\s*4060\s*ti|apple\s*m2/i, 5], [/rtx\s*4060|rtx\s*3060|apple\s*m1/i, 4],
   [/tesla\s*t4|rtx\s*3050|rtx\s*2080|rtx\s*2070/i, 3],
   [/gtx\s*16|rtx\s*2060|quadro/i, 2],
 ];
@@ -840,3 +840,5 @@ const hbModels = Array.isArray(msg.models)
 }
 
 module.exports = WSServer;
+module.exports.computeWeight = computeWeight;
+module.exports.minerSupportsHistory = minerSupportsHistory;

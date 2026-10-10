@@ -246,3 +246,75 @@ describe('installer script contracts', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// macOS + Windows installers (v3.42.0) — same contract family, platform
+// native: launchd plist / Task Scheduler, Homebrew / winget, manager menu.
+// ---------------------------------------------------------------------------
+const macos = read('miner-app/install-macos.sh');
+const macosUn = read('miner-app/uninstall-macos.sh');
+const winps1 = read('miner-app/install-windows.ps1');
+const winunps1 = read('miner-app/uninstall-windows.ps1');
+
+describe('macOS installer contracts (v3.42.0)', () => {
+  it('requires bash 4+ with a Homebrew re-exec (stock macOS ships 3.2)', () => {
+    expect(macos).toMatch(/BASH_VERSINFO\[0\].*-lt 4/);
+    expect(macos).toMatch(/\/opt\/homebrew\/bin\/bash/);
+    expect(macos).toMatch(/\/usr\/local\/bin\/bash/);
+  });
+
+  it('uses Homebrew (no apt/dnf/systemd) and a launchd plist template', () => {
+    expect(macos).toContain('brew install');
+    expect(macos).not.toContain('apt-get');
+    expect(macos).not.toContain('systemctl enable');
+    expect(macos).toContain('UNIT_TEMPLATE=');
+    expect(macos).toContain('com.krelz.miner.plist');
+    expect(macos).toContain('launchctl load');
+    const plist = read('miner-app/com.krelz.miner.plist');
+    expect(plist).toContain('@NODE@');
+    expect(plist).toContain('@WORKDIR@');
+    expect(plist).toContain('KeepAlive');
+  });
+
+  it('rejects pre-AVX2 Intel Macs and keeps token/config hygiene', () => {
+    expect(macos).toMatch(/AVX2/);
+    expect(macos).toContain('chmod 600');
+    expect(macos).toContain('--token-file');
+    expect(macos).toMatch(/read -r -p "  Miner Token: "/); // visible input (option B)
+    expect(macos).not.toMatch(/read -rsp "  Miner Token: "/);
+  });
+
+  it('manager menu and uninstaller mirror the Linux contract', () => {
+    expect(macos).toContain('Krelz Miner Manager');
+    expect(macos).toContain('--fresh');
+    expect(macosUn).toContain('Krelz Miner Uninstaller (macOS)');
+    expect(macosUn).toContain('launchctl unload');
+    expect(macosUn).toMatch(/miner_token/);
+  });
+});
+
+describe('Windows installer contracts (v3.42.0)', () => {
+  it('uses winget + Task Scheduler (no third-party service wrapper)', () => {
+    expect(winps1).toContain('winget install');
+    expect(winps1).toContain('Ollama.Ollama');
+    expect(winps1).toContain('OpenJS.NodeJS.LTS');
+    expect(winps1).toContain('Register-ScheduledTask');
+    expect(winps1).toContain('New-ScheduledTaskTrigger');
+    expect(winps1).not.toContain('systemctl');
+  });
+
+  it('keeps token/config hygiene and PowerShell-safe JSON', () => {
+    expect(winps1).toMatch(/\^kz_\[0-9a-f\]\{32,64\}\$/); // same token format gate
+    expect(winps1).toContain('ConvertTo-Json');
+    expect(winps1).toContain('icacls'); // user-only ACL instead of chmod 600
+    expect(winps1).toContain('[string]$TokenFile');
+  });
+
+  it('manager menu and uninstaller mirror the Linux contract', () => {
+    expect(winps1).toContain('Krelz Miner Manager');
+    expect(winps1).toContain('[switch]$Fresh');
+    expect(winunps1).toContain('Krelz Miner Uninstaller (Windows)');
+    expect(winunps1).toContain('Unregister-ScheduledTask');
+    expect(winunps1).toContain('miner_token');
+  });
+});

@@ -1,4 +1,16 @@
 const WSServer = require('../src/ws');
+const { computeWeight } = require('../src/ws');
+
+describe('computeWeight GPU tiers (v3.42.0)', () => {
+  it('tiers NVIDIA GPUs and Apple Silicon, defaults unknown to 1', () => {
+    expect(computeWeight('NVIDIA GeForce RTX 4090')).toBe(8);
+    expect(computeWeight('Apple M4')).toBe(7);
+    expect(computeWeight('Apple M1 Pro')).toBe(4);
+    expect(computeWeight('')).toBe(1);
+    expect(computeWeight(null)).toBe(1);
+    expect(computeWeight('Some Mystery iGPU 3000')).toBe(1);
+  });
+});
 
 // findMinerForModel / minerSupportsMedia are plain logic on the miner map —
 // build a bare instance so no HTTP server or socket is needed.

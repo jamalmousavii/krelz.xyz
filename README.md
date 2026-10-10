@@ -29,7 +29,7 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Installer Manager (v3.41.0)** — re-running the installer on an installed box opens a management menu (add/remove/repair models, token/name, update, restart) instead of reinstalling
 - **Resource Monitoring** — CPU, RAM, GPU VRAM, Disk usage tracking
 - **Auth System** — Google OAuth + email/password, password reset
-- **Uninstall Scripts** — Clean removal for Ubuntu/Debian and RedHat/Fedora; unregisters from your dashboard (v3.22.0) — earnings stay in the Miner History section on `/miners`
+- **Uninstall Scripts** — Clean removal for Ubuntu/Debian, RedHat/Fedora, macOS and Windows; unregisters from your dashboard (v3.22.0) — earnings stay in the Miner History section on `/miners`
 - **Mobile-Friendly UI (v3.23.0)** — usable on any phone: keyboard never covers the chat input (iOS visual-viewport fix), no focus zoom, touch targets ≥40px, full-screen mobile menu, overlay session drawer, safe-area insets for notched devices
 - **Smart Model Fallback** — Auto-selects closest available model when exact model not found
 - **Install Self-Cleanup (v3.10.0)** — Install scripts auto-delete after successful installation
@@ -62,6 +62,21 @@ wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/in
 
 ```bash
 wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-redhat.sh && bash install-redhat.sh
+```
+
+### macOS (Apple Silicon / Intel with AVX2)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-macos.sh -o install-macos.sh && bash install-macos.sh
+```
+
+Needs Homebrew. First run: right-click → Open (unsigned build). Re-running opens the Manager menu (add/remove/repair models, token/name, update, restart).
+
+### Windows 10 / 11
+
+```powershell
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-windows.ps1 -OutFile install-windows.ps1
+powershell -ExecutionPolicy Bypass -File .\install-windows.ps1
 ```
 
 The install script automatically sets up:
@@ -97,6 +112,15 @@ wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/un
 
 # RedHat/Fedora
 wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/uninstall-redhat.sh && bash uninstall-redhat.sh
+
+# macOS
+curl -fsSL https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/uninstall-macos.sh -o uninstall-macos.sh && bash uninstall-macos.sh
+```
+
+```powershell
+# Windows
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/uninstall-windows.ps1 -OutFile uninstall-windows.ps1
+powershell -ExecutionPolicy Bypass -File .\uninstall-windows.ps1
 ```
 
 Choose to remove miner only or everything (miner + Ollama + models).
