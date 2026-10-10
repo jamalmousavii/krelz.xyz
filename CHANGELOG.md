@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.41.1] - 2026-10-10
+
+Fix: `GET /api/models` miner counts now come from the live WS multi-model
+roster (one miner counts in every bucket it serves) instead of `GROUP BY
+current_model` — the picker, auto-switch and `MODEL_UNAVAILABLE` alternatives
+finally see all 16 models on a single multi-model miner. DB grouping remains
+as fallback without WS.
+
 ## [3.41.0] - 2026-10-10
 
 Multi-model miners, smart routing (sticky + weighted), conversation context.
