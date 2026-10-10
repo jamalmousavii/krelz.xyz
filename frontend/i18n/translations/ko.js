@@ -60,7 +60,7 @@ const ko = {
     freeNote: 'Free plan: 2,000,000 tokens/day for everyone — no card needed.',
     pricingSub: 'Paid with crypto. Plans last 30 days; token bundles never expire.',
     loginToBuy: 'Sign in first to buy (Login at the top).',
-    version: 'v3.40.0',
+    version: 'v3.41.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — 탈중앙화 LLM 추론 플랫폼, 버전 {version}. 모든 권리 보유.',
@@ -203,6 +203,8 @@ const ko = {
     cpu: 'CPU',
     currentModel: '현재 모델',
     switchModel: '모델 전환',
+    minerModels: 'Installed models',
+    modelDownRepair: 'Down — re-run the installer and pick Repair model',
     uptime: '가동 시간',
     totalTasks: '총 작업',
     earnings: '수익',

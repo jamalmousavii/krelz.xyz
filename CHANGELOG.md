@@ -1,5 +1,28 @@
 # Changelog
 
+## [3.41.0] - 2026-10-10
+
+Multi-model miners, smart routing (sticky + weighted), conversation context.
+
+### Miners serve every installed model
+- Miners report all installed models at auth + heartbeat (`models[]`, verified against `ollama list`); dispatch matches on the list, not just `current_model`. Old binaries fall back to single-model.
+- Per-model health without probing: 3 consecutive task errors take a model out of rotation for that miner (success resets); the `/miners` panel shows green active / red down badges with a repair hint.
+- `GET /api/miners/mine` gains `installed_models` + `models_down`; `GET /api/models` counts group by served models.
+
+### Routing: sticky session + weighted round-robin
+- New sessions go to miners by smooth WRR weighted with a GPU-tier power score (`gpu_model` from setup); a session sticks to its miner for style/context continuity; past 2 in-flight tasks it spills to the next pick; dead sticky miners reassign automatically.
+- Guests (no session) get pure WRR per message.
+
+### Conversation context
+- Sliding window (last 10 turns / ~6k tokens, 16k hard cap, truncation logged) rides every dispatch as `history` (e2e-encrypted like attachments); only `app_version >= 3.41` miners receive it; snapshot stored in new `tasks.history` column.
+- **Billing lock: history never inflates cost** — user charge and miner earning stay output-only (regression-tested).
+
+### Installer management mode
+- Re-running the installer on an installed box opens a manager menu (both Ubuntu + RedHat): add/remove/repair models, change token/name, update app, restart service, full reinstall. `--fresh` forces the install flow. Config merges preserve token/name/default.
+
+### Testing
+- Backend: `ws` suites for multi-model matching, down-marking, history gating, sticky/spillover/WRR distribution, reassignment; `miner.offline` history window + billing-lock test. Frontend: `models.test.js` unchanged-green; installer menu smoke-tested (bash -n + fake-HOME runs).
+
 ## [3.40.0] - 2026-10-09
 
 Miner-only inference: the local Ollama fallback is gone, plus a smarter model picker.

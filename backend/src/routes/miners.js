@@ -84,12 +84,42 @@ router.get('/mine', authenticate, async (req, res) => {
       [userId]
     );
 
+    // Live multi-model roster (v3.41.0): installed models reported over WS
+    // plus per-model down-marking. Falls back to the install-time `models`
+    // column when the miner is offline / on an old binary.
+    let liveModels = {};
+    try {
+      const wsServer = req.app.get('wsServer');
+      if (wsServer && typeof wsServer.liveModels === 'function') {
+        liveModels = wsServer.liveModels();
+      }
+    } catch (e) {}
+    const parseModels = (v) => {
+      if (Array.isArray(v)) return v;
+      if (typeof v === 'string') {
+        try {
+          const parsed = JSON.parse(v);
+          if (Array.isArray(parsed)) return parsed;
+        } catch (e) {}
+        return v.split(',').map((m) => m.trim()).filter(Boolean);
+      }
+      return [];
+    };
     // Return rows with miner_token null when already used (single-use display)
-    const miners = result.rows.map(r => ({
-      ...r,
-      miner_token: r.token_used_at ? null : r.miner_token,
-      visible_token: undefined
-    }));
+    const miners = result.rows.map(r => {
+      const live = liveModels[r.id];
+      const installed = live
+        ? live.map((m) => m.id)
+        : parseModels(r.models);
+      const down = live ? live.filter((m) => m.down).map((m) => m.id) : [];
+      return {
+        ...r,
+        miner_token: r.token_used_at ? null : r.miner_token,
+        visible_token: undefined,
+        installed_models: installed,
+        models_down: down,
+      };
+    });
 
     res.json({
       success: true,

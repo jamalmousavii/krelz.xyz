@@ -60,7 +60,7 @@ const fr = {
     freeNote: 'Offre gratuite : 2 000 000 de jetons par jour pour tous — sans carte bancaire.',
     pricingSub: 'Payez en crypto. Les offres durent 30 jours ; les packs de jetons n\'expirent jamais.',
     loginToBuy: 'Connectez-vous d\'abord pour acheter (connexion en haut).',
-    version: 'v3.40.0',
+    version: 'v3.41.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — plateforme d\'inférence LLM décentralisée, version {version}. Tous droits réservés.',
@@ -203,6 +203,8 @@ const fr = {
     cpu: 'CPU',
     currentModel: 'Modèle actuel',
     switchModel: 'Changer de modèle',
+    minerModels: 'Installed models',
+    modelDownRepair: 'Down — re-run the installer and pick Repair model',
     uptime: 'Temps de fonctionnement',
     totalTasks: 'Total des tâches',
     earnings: 'Gains',

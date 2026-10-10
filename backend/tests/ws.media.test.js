@@ -6,7 +6,14 @@ function makeServer(miners) {
   const ws = Object.create(WSServer.prototype);
   ws.miners = new Map();
   ws.taskCallbacks = new Map();
-  miners.forEach((m, i) => ws.miners.set(m.id || i + 1, m));
+  ws.affinity = new Map();
+  ws.wrr = new Map();
+  miners.forEach((m, i) => ws.miners.set(m.id || i + 1, {
+    models: [],
+    modelHealth: {},
+    weight: 1,
+    ...m,
+  }));
   return ws;
 }
 
@@ -102,6 +109,84 @@ describe('findMinersForModel / counts (v3.40.0)', () => {
       online({ id: 3, app_version: '3.20.0', current_model: 'other' }),
     ]);
     expect(ws.onlineModelCounts(false)).toEqual({ 'llama3.1:8b': 2, other: 1 });
+  });
+});
+
+describe('multi-model matching (v3.41.0)', () => {
+  it('matches any installed model, not just current_model', () => {
+    const ws = makeServer([online({ id: 1, models: ['llama3.1:8b', 'qwen3:32b'], current_model: 'llama3.1:8b' })]);
+    expect(ws.findMinersForModel('qwen3:32b', false)).toEqual([{ minerId: 1, model: 'qwen3:32b' }]);
+  });
+
+  it('skips down-marked models after 3 consecutive failures, recovers on success', () => {
+    const ws = makeServer([online({ id: 1, models: ['llama3.1:8b'] })]);
+    ws.recordModelResult(1, 'llama3.1:8b', false);
+    ws.recordModelResult(1, 'llama3.1:8b', false);
+    expect(ws.findMinersForModel('llama3.1:8b', false)).toHaveLength(1);
+    ws.recordModelResult(1, 'llama3.1:8b', false);
+    expect(ws.findMinersForModel('llama3.1:8b', false)).toHaveLength(0);
+    ws.recordModelResult(1, 'llama3.1:8b', true);
+    expect(ws.findMinersForModel('llama3.1:8b', false)).toHaveLength(1);
+  });
+
+  it('counts a multi-model miner once per served bucket', () => {
+    const ws = makeServer([online({ id: 1, models: ['a', 'b'] })]);
+    expect(ws.onlineModelCounts(false)).toEqual({ a: 1, b: 1 });
+  });
+});
+
+describe('history gating (v3.41.0)', () => {
+  it('requires >= 3.41 miners only when history is non-empty', () => {
+    const ws = makeServer([online({ id: 1, app_version: '3.40.0', models: ['llama3.1:8b'] })]);
+    expect(ws.findMinersForModel('llama3.1:8b', false, false)).toHaveLength(1);
+    expect(ws.findMinersForModel('llama3.1:8b', false, true)).toHaveLength(0);
+    const ws2 = makeServer([online({ id: 1, app_version: '3.41.0', models: ['llama3.1:8b'] })]);
+    expect(ws2.findMinersForModel('llama3.1:8b', false, true)).toHaveLength(1);
+  });
+});
+
+describe('sticky + weighted routing (v3.41.0)', () => {
+  const two = () => makeServer([
+    online({ id: 1, weight: 1, models: ['llama3.1:8b'] }),
+    online({ id: 2, weight: 1, models: ['llama3.1:8b'] }),
+  ]);
+
+  it('sticks a session to its miner', () => {
+    const ws = two();
+    const first = ws.pickCandidate({ model: 'llama3.1:8b', sessionKey: 's:9' });
+    const second = ws.pickCandidate({ model: 'llama3.1:8b', sessionKey: 's:9' });
+    expect(second.minerId).toBe(first.minerId);
+  });
+
+  it('spills over past 2 in-flight tasks', () => {
+    const ws = two();
+    const first = ws.pickCandidate({ model: 'llama3.1:8b', sessionKey: 's:9' });
+    expect(first.minerId).toBe(1);
+    ws.taskCallbacks.set(11, { minerId: 1 });
+    ws.taskCallbacks.set(12, { minerId: 1 });
+    const spilled = ws.pickCandidate({ model: 'llama3.1:8b', sessionKey: 's:9' });
+    expect(spilled.minerId).toBe(2);
+  });
+
+  it('splits new sessions ~proportionally to weight', () => {
+    const ws = makeServer([
+      online({ id: 1, weight: 3, models: ['llama3.1:8b'] }),
+      online({ id: 2, weight: 1, models: ['llama3.1:8b'] }),
+    ]);
+    const picks = [1, 2, 3, 4].map((i) =>
+      ws.pickCandidate({ model: 'llama3.1:8b', sessionKey: `s:${i}` }).minerId
+    );
+    expect(picks.filter((id) => id === 1)).toHaveLength(3);
+    expect(picks.filter((id) => id === 2)).toHaveLength(1);
+  });
+
+  it('reassigns when the sticky miner disappears', () => {
+    const ws = two();
+    const first = ws.pickCandidate({ model: 'llama3.1:8b', sessionKey: 's:9' });
+    expect(first.minerId).toBe(1);
+    ws.miners.get(1).status = 'offline';
+    const again = ws.pickCandidate({ model: 'llama3.1:8b', sessionKey: 's:9' });
+    expect(again.minerId).toBe(2);
   });
 });
 

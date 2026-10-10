@@ -11,7 +11,7 @@
 
 set -e
 
-KRELZ_VERSION="3.40.0"
+KRELZ_VERSION="3.41.0"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -148,21 +148,25 @@ echo -e "${GREEN}  Krelz Network Miner Installer (RedHat/Fedora) v${KRELZ_VERSIO
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
-# Parse --email, --token and --name flags
+# Parse --email, --token / --token-file, --name and --fresh flags
 USER_EMAIL=""
 MINER_TOKEN=""
 MINER_NAME=""
+KRELZ_FRESH="0"
 while [[ $# -gt 0 ]]; do
   case $1 in
     --email) USER_EMAIL="$2"; shift 2 ;;
     --token) MINER_TOKEN="$2"; shift 2 ;;
     --token-file) MINER_TOKEN=$(tr -d '\r\n' < "$2" 2>/dev/null); shift 2 ;;
     --name) MINER_NAME="$2"; shift 2 ;;
+    --fresh) KRELZ_FRESH="1"; shift ;;
     *) shift ;;
   esac
 done
 
 if [ "$EUID" -eq 0 ]; then SUDO=""; else SUDO="sudo"; fi
+INSTALL_DIR="$HOME/krelz-miner"
+EXISTING_CONFIG="$INSTALL_DIR/miner-app/config.json"
 
 if command -v dnf &> /dev/null; then PKG_MGR="dnf"
 elif command -v yum &> /dev/null; then PKG_MGR="yum"
@@ -177,6 +181,146 @@ if [ -n "$SUDO" ]; then
     echo -e "${RED}  ✗ sudo authentication failed${NC}"
     exit 1
   fi
+fi
+
+# --- Management mode (v3.41.0) ---
+# Re-running the installer on a box that already has one opens this menu
+# instead of redoing the full install: add/remove/repair models, rotate
+# identity, update the miner app, or service controls. Fresh installs and
+# --fresh runs skip it entirely.
+manage_config_models() { # $1 = add|remove, $2 = space-separated models
+  local op="$1" list="$2" cfg="$EXISTING_CONFIG"
+  node -e '
+    const fs = require("fs");
+    const [cfg, op, raw] = [process.argv[1], process.argv[2], process.argv[3] || ""];
+    let c = {};
+    try { c = JSON.parse(fs.readFileSync(cfg, "utf8")); } catch (e) { console.error("no config"); process.exit(1); }
+    const cur = String(c.models || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const arg = raw.split(" ").map((s) => s.trim()).filter(Boolean);
+    let next = cur;
+    if (op === "add") next = [...new Set([...cur, ...arg])];
+    if (op === "remove") next = cur.filter((m) => !arg.includes(m));
+    if (next.length === 0) { console.error("refusing to empty the model list"); process.exit(1); }
+    c.models = next.join(",");
+    if (!next.includes(c.default_model)) c.default_model = next[0];
+    fs.writeFileSync(cfg, JSON.stringify(c, null, 2) + "\n");
+    console.log(next.join(" "));
+  ' "$cfg" "$op" "$list"
+}
+
+manage_restart_miner() {
+  run_with_spinner "Restarting miner..." bash -c "$SUDO systemctl restart krelz-miner"
+  $SUDO systemctl is-active --quiet krelz-miner \
+    && echo -e "  ${GREEN}✓ krelz-miner active${NC}" \
+    || echo -e "  ${RED}✗ krelz-miner not active — check: sudo journalctl -u krelz-miner -n 30${NC}"
+}
+
+manage_ensure_ollama() {
+  if ! curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+    echo -e "  ${YELLOW}  Starting Ollama...${NC}"
+    $SUDO systemctl start ollama 2>/dev/null || nohup ollama serve > /dev/null 2>&1 &
+    sleep 3
+  fi
+}
+
+manage_add_models() {
+  echo ""
+  echo -e "  ${CYAN}Installed models (Ollama):${NC}"
+  ollama list 2>/dev/null | tail -n +2 | awk '{print "   - " $1}' || true
+  echo ""
+  echo -e "  ${CYAN}Available:${NC} $(printf '%s ' "${!MODEL_SIZES[@]}" | tr ' ' '\n' | sort | tr '\n' ' ')"
+  echo ""
+  read -r -p "  Model names to add (space-separated): " ADD
+  [ -z "$ADD" ] && { echo -e "  ${YELLOW}Nothing to add.${NC}"; return; }
+  manage_ensure_ollama
+  for MODEL in $ADD; do
+    [ -z "${MODEL_SIZES[$MODEL]:-}" ] && echo -e "  ${YELLOW}  ⚠ $MODEL is not in the catalog — pulling anyway${NC}"
+    ollama pull "$MODEL" || echo -e "  ${YELLOW}  ⚠ pull failed for $MODEL${NC}"
+  done
+  MERGED=$(manage_config_models add "$ADD") || return
+  echo -e "  ${GREEN}✓ Now serving: $MERGED${NC}"
+  manage_restart_miner
+}
+
+manage_remove_model() {
+  read -r -p "  Model name to remove: " RM
+  [ -z "$RM" ] && return
+  ollama rm "$RM" 2>/dev/null || echo -e "  ${YELLOW}  ⚠ $RM was not pulled locally${NC}"
+  MERGED=$(manage_config_models remove "$RM") || return
+  echo -e "  ${GREEN}✓ Now serving: $MERGED${NC}"
+  manage_restart_miner
+}
+
+manage_repair_model() {
+  read -r -p "  Model name to re-pull: " RP
+  [ -z "$RP" ] && return
+  manage_ensure_ollama
+  ollama rm "$RP" 2>/dev/null || true
+  ollama pull "$RP" && echo -e "  ${GREEN}✓ $RP repaired${NC}" || echo -e "  ${RED}  ✗ pull failed for $RP${NC}"
+  manage_restart_miner
+}
+
+manage_identity() {
+  local NT=""
+  read -r -p "  New miner token (empty = keep): " NT
+  if [ -n "$NT" ]; then
+    NT=$(printf '%s' "$NT" | tr -d ' \t\r\n')
+    [[ "$NT" =~ ^kz_[0-9a-f]{32,64}$ ]] || { echo -e "  ${RED}  ✗ Invalid token format${NC}"; return; }
+    node -e 'const fs=require("fs");const f=process.argv[1];const c=JSON.parse(fs.readFileSync(f,"utf8"));c.miner_token=process.argv[2];fs.writeFileSync(f,JSON.stringify(c,null,2)+"\n");' "$EXISTING_CONFIG" "$NT"
+    chmod 600 "$EXISTING_CONFIG"
+    echo -e "  ${GREEN}✓ Token updated${NC}"
+  fi
+  read -r -p "  New miner name (empty = keep): " NN
+  if [ -n "$NN" ]; then
+    node -e 'const fs=require("fs");const f=process.argv[1];const c=JSON.parse(fs.readFileSync(f,"utf8"));c.name=process.argv[2].slice(0,100);fs.writeFileSync(f,JSON.stringify(c,null,2)+"\n");' "$EXISTING_CONFIG" "$NN"
+    echo -e "  ${GREEN}✓ Name updated${NC}"
+  fi
+  manage_restart_miner
+}
+
+manage_update_app() {
+  run_with_spinner "Updating repository..." bash -c "cd '$INSTALL_DIR' && git pull"
+  run_with_spinner "Installing npm dependencies..." bash -c "cd '$INSTALL_DIR/miner-app' && npm ci --omit=dev"
+  manage_restart_miner
+}
+
+manage_menu() {
+  echo ""
+  echo -e "${GREEN}========================================${NC}"
+  echo -e "${GREEN}  Krelz Miner Manager v${KRELZ_VERSION} (existing install found)${NC}"
+  echo -e "${GREEN}========================================${NC}"
+  echo ""
+  echo -e "  ${GREEN}1${NC}) ➕ Add models"
+  echo -e "  ${GREEN}2${NC}) ➖ Remove a model"
+  echo -e "  ${GREEN}3${NC}) 🔧 Repair (re-pull) a model"
+  echo -e "  ${GREEN}4${NC}) 🔑 Change token / name"
+  echo -e "  ${GREEN}5${NC}) ⬆️  Update miner app"
+  echo -e "  ${GREEN}6${NC}) 🔄 Restart miner service"
+  echo -e "  ${GREEN}7${NC}) 🆕 Full reinstall (fresh)"
+  echo -e "  ${GREEN}0${NC}) Exit"
+  echo ""
+  while true; do
+    read -r -p "  Choice [0-7]: " MC
+    case "$MC" in
+      1) manage_add_models ;;
+      2) manage_remove_model ;;
+      3) manage_repair_model ;;
+      4) manage_identity ;;
+      5) manage_update_app ;;
+      6) manage_restart_miner ;;
+      7) echo -e "  ${YELLOW}Restarting as a fresh install...${NC}"; return 1 ;;
+      0|q|"") exit 0 ;;
+      *) echo -e "  ${YELLOW}Unknown choice.${NC}" ;;
+    esac
+    echo ""
+  done
+}
+
+if [ -f "$EXISTING_CONFIG" ] && [ "$KRELZ_FRESH" != "1" ]; then
+  if manage_menu; then
+    exit 0
+  fi
+  # Choice 7 (full reinstall) falls through to the fresh flow below.
 fi
 
 # --- Step 1: Prerequisites ---
@@ -401,7 +545,6 @@ fi
 # --- Step 5: Install Miner ---
 step_start 5 "Installing Krelz Miner..."
 STEP_START=$(date +%s)
-INSTALL_DIR="$HOME/krelz-miner"
 if [ -d "$INSTALL_DIR" ]; then
   run_with_spinner "Updating repository..." bash -c "cd '$INSTALL_DIR' && git pull"
 else

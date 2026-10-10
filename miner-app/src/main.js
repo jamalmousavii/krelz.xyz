@@ -83,8 +83,13 @@ app.whenReady().then(() => {
 
   wsClient = new MinerWebSocket(
     config.miner_token || process.env.WALLET_ADDRESS || '',
-    async (prompt, model, media) => {
+    async (prompt, model, media, history) => {
       ollamaService.setModel(model);
+      // v3.41.0: tasks with conversation context go through /api/chat with
+      // the window; plain single-prompt tasks keep the legacy paths.
+      if (history && history.length > 0) {
+        return ollamaService.chatWithHistory(prompt, model, media, history);
+      }
       if (media) {
         return ollamaService.chat(prompt, model, media);
       }
@@ -92,6 +97,13 @@ app.whenReady().then(() => {
       return result;
     }
   );
+  try {
+    const wanted = String(config.models || config.default_model || 'llama3.1:8b')
+      .split(',')
+      .map((m) => m.trim())
+      .filter(Boolean);
+    wsClient.setModels(wanted);
+  } catch (e) {}
 
   createWindow();
   createTray();

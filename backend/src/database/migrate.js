@@ -338,6 +338,15 @@ const migrate = async () => {
       END $$;
     `);
     console.log('✅ Column tasks.media + miners.app_version added');
+    // tasks.history (v3.41.0): snapshot of the conversation window sent with
+    // the dispatch ([{role, content}...], capped). NULL/empty = single prompt.
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS history JSONB;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    console.log('✅ Column tasks.history added');
 
     // === Miner history (v3.22.0) ===
     // miners.last_seen: last time the miner actually talked to us (auth /

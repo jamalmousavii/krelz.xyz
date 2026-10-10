@@ -8,6 +8,37 @@ const { logger } = require('./logger');
 const TOKEN_RE = /^kz_[0-9a-f]{32,64}$/;
 const AUTH_FAIL_LIMIT = 10;
 const AUTH_FAIL_WINDOW = 5 * 60 * 1000;
+// v3.41.0 multi-model routing tunables.
+const MODEL_DOWN_AFTER_FAILS = 3; // consecutive task errors before a model is skipped for that miner
+const SPILL_CAP = 2; // in-flight tasks before a sticky session spills to the next miner
+const HISTORY_APP_VERSION = { major: 3, minor: 41 }; // miners at/above this understand `history`
+
+// Power weight from free-form setup strings (gpu_model like
+// "NVIDIA GeForce RTX 4090", ram like "16GB"). Unknown → 1. Used by the
+// smooth weighted round-robin so stronger miners get proportionally more
+// new sessions.
+const GPU_TIERS = [
+  [/h100|h800/i, 10], [/a100/i, 9], [/rtx\s*4090|a6000|a40/i, 8],
+  [/rtx\s*4080|rtx\s*3090/i, 7], [/rtx\s*4070|rtx\s*3080|v100/i, 6],
+  [/rtx\s*3070|rtx\s*4060\s*ti/i, 5], [/rtx\s*4060|rtx\s*3060/i, 4],
+  [/tesla\s*t4|rtx\s*3050|rtx\s*2080|rtx\s*2070/i, 3],
+  [/gtx\s*16|rtx\s*2060|quadro/i, 2],
+];
+function computeWeight(gpuModel) {
+  if (typeof gpuModel !== 'string' || !gpuModel.trim()) return 1;
+  for (const [re, tier] of GPU_TIERS) {
+    if (re.test(gpuModel)) return tier;
+  }
+  return 1;
+}
+
+// History protocol gate (same scheme as minerSupportsMedia).
+function minerSupportsHistory(version) {
+  if (!version) return false;
+  const [maj = 0, min = 0] = String(version).replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+  return maj > HISTORY_APP_VERSION.major
+    || (maj === HISTORY_APP_VERSION.major && min >= HISTORY_APP_VERSION.minor);
+}
 
 // v3.20.0 added the `attachment` field on task messages (images/voice notes).
 // Older miner binaries destructure only {task_id, prompt, model} and would
@@ -58,6 +89,9 @@ class WSServer {
     this.taskQueue = new Map();
     this.taskCallbacks = new Map();
     this.taskIdCounter = 1;
+    // v3.41.0 routing state: session affinity + smooth-WRR cursors.
+    this.affinity = new Map(); // sessionKey -> minerId
+    this.wrr = new Map(); // routing key -> { minerId: currentWeight }
     // Per-IP failed WS auth attempts (rate limit)
     this.authFails = new Map();
 
@@ -182,6 +216,12 @@ class WSServer {
     const appVersion = typeof msg.app_version === 'string' && msg.app_version
       ? msg.app_version.slice(0, 32)
       : null;
+    // v3.41.0: miners report every installed model (verified against
+    // `ollama list` client-side). Old binaries send nothing → single-model
+    // fallback to current_model below.
+    const reportedModels = Array.isArray(msg.models)
+      ? msg.models.filter((m) => typeof m === 'string').map((m) => m.slice(0, 100)).slice(0, 32)
+      : [];
 
     if (this.authRateLimited(ws)) return;
 
@@ -204,13 +244,14 @@ class WSServer {
 
     let result;
     let minerId;
+    let authGpuModel = null;
 
     // If miner_token provided, find user's miner via token
     // v3.13.0 token-first model: each server-miner has its own unique token,
     // and the token IS the miner identity (unlimited miners per user).
     if (miner_token) {
       const minerRow = await pool.query(
-        'SELECT id, status FROM miners WHERE miner_token = $1',
+        'SELECT id, status, gpu_model, ram FROM miners WHERE miner_token = $1',
         [miner_token]
       );
       if (minerRow.rows.length > 0) {
@@ -219,6 +260,7 @@ class WSServer {
           return;
         }
         minerId = minerRow.rows[0].id;
+        authGpuModel = minerRow.rows[0].gpu_model || null;
         // v3.14.0: first successful auth marks token as used (hide from profile)
         await pool.query(
           "UPDATE miners SET status = 'online', token_used_at = COALESCE(token_used_at, CURRENT_TIMESTAMP), last_seen = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
@@ -270,6 +312,7 @@ class WSServer {
       existing.lastHeartbeat = Date.now();
       existing.status = 'online';
       if (appVersion) existing.app_version = appVersion;
+      if (reportedModels.length > 0) existing.models = reportedModels;
       if (e2e && miner_token) {
         existing.e2eKey = deriveKey(miner_token);
       }
@@ -301,12 +344,17 @@ class WSServer {
         .catch((err) => logger.warn({ err, minerId }, 'Failed to persist miner app_version'));
     }
 
+    // v3.41.0: the live entry carries every installed model (dispatch
+    // matches on the list, not just current_model) plus a power weight and
+    // per-model failure counters for the down-marking below.
     this.miners.set(minerId, {
       id: minerId,
       ws,
       wallet_address: wallet_address || '',
       lastHeartbeat: Date.now(),
-      models: [],
+      models: reportedModels,
+      modelHealth: (existing && existing.modelHealth) || {},
+      weight: computeWeight(authGpuModel),
       status: 'online',
       current_model: (existing && existing.current_model) || null,
       app_version: appVersion || (existing && existing.app_version) || null,
@@ -320,6 +368,10 @@ class WSServer {
       "UPDATE miners SET status = 'online', token_used_at = COALESCE(token_used_at, CURRENT_TIMESTAMP), last_seen = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
       [minerId]
     );
+    if (reportedModels.length > 0) {
+      await pool.query('UPDATE miners SET models = $1::jsonb WHERE id = $2', [JSON.stringify(reportedModels), minerId])
+        .catch((err) => logger.warn({ err, minerId }, 'Failed to persist miner models'));
+    }
     invalidateCache('/api/miners');
     invalidateCache('/api/models');
     invalidateCache('/api/stats');
@@ -339,10 +391,21 @@ class WSServer {
     }
 
 const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = msg;
+// v3.41.0: miners re-report every installed model each heartbeat (verified
+// against `ollama list` client-side). Old binaries omit it → keep Map state.
+const hbModels = Array.isArray(msg.models)
+  ? msg.models.filter((m) => typeof m === 'string').map((m) => m.slice(0, 100)).slice(0, 32)
+  : null;
 
     miner.lastHeartbeat = Date.now();
     miner.status = status || 'online';
     miner.current_model = current_model;
+    let modelsChanged = false;
+    if (hbModels && hbModels.length > 0) {
+      const before = [...(miner.models || [])].sort().join(',');
+      modelsChanged = hbModels.slice().sort().join(',') !== before;
+      if (modelsChanged) miner.models = hbModels;
+    }
 
     const statusValue = status || 'online';
 
@@ -364,6 +427,11 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
         [statusValue, miner.id, current_model,
          gpu_usage || 0, ram_usage || 0, cpu_usage || 0, disk_usage || 0, statusValue]
       );
+      // Persist the installed-models list only when it actually changed —
+      // not on every 30s heartbeat (write amplification).
+      if (modelsChanged) {
+        await client.query('UPDATE miners SET models = $1::jsonb WHERE id = $2', [JSON.stringify(hbModels), miner.id]);
+      }
       invalidateCache('/api/miners');
       invalidateCache('/api/models');
       invalidateCache('/api/stats');
@@ -516,7 +584,16 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
   // so the timeout must stay well above the 60s it used to be.
   // media (image/audio {type,name,mime,data} base64) rides as `attachment`,
   // encrypted the same way the prompt is when E2E is negotiated.
-  async dispatchTask(minerId, taskId, prompt, model, media = null, timeoutMs = 180000) {
+  // history (v3.41.0: [{role, content}...], sliding window built by the chat
+  // route) rides the same way — old miners simply never receive it because
+  // the router only picks history-capable miners when history is non-empty.
+  async dispatchTask(minerId, taskId, prompt, model, media = null, history = [], timeoutMs = 180000) {
+    // Back-compat: dispatchTask(id, task, prompt, model, media, timeoutMs) —
+    // history was inserted before timeoutMs in v3.41.0.
+    if (typeof history === 'number') {
+      timeoutMs = history;
+      history = [];
+    }
     return new Promise((resolve, reject) => {
       const miner = this.miners.get(minerId);
       if (!miner) {
@@ -528,7 +605,7 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
         this.taskCallbacks.delete(taskId);
         // M4: nobody will answer this dispatch — hand the row back to
         // 'pending' instead of leaving it stranded in 'processing' (the chat
-        // request falls back locally; the miner can re-claim via its
+        // request answers MINER_OFFLINE; the miner can re-claim via its
         // task_request poll if it comes back).
         pool.query("UPDATE tasks SET status = 'pending' WHERE id = $1 AND status = 'processing'", [taskId])
           .catch((err) => logger.error({ err, taskId }, 'Failed to reset timed-out task'));
@@ -550,8 +627,51 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
           ? encrypt(miner.e2eKey, JSON.stringify(media))
           : media;
       }
+      if (Array.isArray(history) && history.length > 0) {
+        payload.history = miner.e2eKey
+          ? encrypt(miner.e2eKey, JSON.stringify(history.slice(0, 32)))
+          : history.slice(0, 32);
+      }
       miner.ws.send(JSON.stringify(payload));
     });
+  }
+
+  // Effective installed list: reported models, or the single legacy
+  // current_model for old binaries that never send `models`.
+  effectiveModels(miner) {
+    if (Array.isArray(miner.models) && miner.models.length > 0) return miner.models;
+    return miner.current_model ? [miner.current_model] : [];
+  }
+
+  // Failure-driven health (v3.41.0): N consecutive task errors take a model
+  // out of rotation for that miner — no active probing, no GPU burned.
+  // A success resets the counter; the panel reads this via liveModels().
+  modelDown(miner, model) {
+    return ((miner.modelHealth || {})[model] || 0) >= MODEL_DOWN_AFTER_FAILS;
+  }
+
+  recordModelResult(minerId, model, ok) {
+    const miner = this.miners.get(minerId);
+    if (!miner) return;
+    miner.modelHealth = miner.modelHealth || {};
+    if (ok) {
+      if (miner.modelHealth[model]) delete miner.modelHealth[model];
+    } else {
+      miner.modelHealth[model] = (miner.modelHealth[model] || 0) + 1;
+      if (miner.modelHealth[model] === MODEL_DOWN_AFTER_FAILS) {
+        logger.warn({ minerId, model }, 'Model marked down for miner after consecutive failures');
+      }
+    }
+  }
+
+  // Single predicate for "can this miner serve this task right now".
+  minerServes(miner, model, needsMedia = false, needHistory = false) {
+    if (!miner || miner.status !== 'online') return false;
+    if (needsMedia && !minerSupportsMedia(miner.app_version)) return false;
+    if (needHistory && !minerSupportsHistory(miner.app_version)) return false;
+    if (!this.effectiveModels(miner).includes(model)) return false;
+    if (this.modelDown(miner, model)) return false;
+    return true;
   }
 
   // Find best available miner for a model (v3.40.0: EXACT match only).
@@ -564,13 +684,14 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
   }
 
   // All online miners holding the exact model, in registration order.
-  findMinersForModel(model, needsMedia = false) {
+  // v3.41.0: matches on the installed-models list (multi-model miners serve
+  // every pulled model at once), honours per-model down-marking, and can
+  // require history support when the task carries conversation context.
+  findMinersForModel(model, needsMedia = false, needHistory = false) {
     const out = [];
     for (const [minerId, miner] of this.miners) {
-      if (miner.status === 'online'
-        && (!needsMedia || minerSupportsMedia(miner.app_version))
-        && miner.current_model === model) {
-        out.push({ minerId, model: miner.current_model });
+      if (this.minerServes(miner, model, needsMedia, needHistory)) {
+        out.push({ minerId, model });
       }
     }
     return out;
@@ -587,15 +708,94 @@ const { status, gpu_usage, ram_usage, cpu_usage, disk_usage, current_model } = m
   }
 
   // Online miner counts per model — feeds MODEL_UNAVAILABLE alternatives.
-  onlineModelCounts(needsMedia = false) {
+  // v3.41.0: a multi-model miner counts once in every bucket it serves.
+  // historyCapable narrows to miners that understand the `history` field.
+  onlineModelCounts(needsMedia = false, historyCapable = false) {
     const counts = {};
     for (const [, miner] of this.miners) {
-      if (miner.status === 'online' && (!needsMedia || minerSupportsMedia(miner.app_version))) {
-        const m = miner.current_model || 'llama3.1:8b';
+      if (miner.status !== 'online') continue;
+      if (needsMedia && !minerSupportsMedia(miner.app_version)) continue;
+      if (historyCapable && !minerSupportsHistory(miner.app_version)) continue;
+      const models = this.effectiveModels(miner);
+      const list = models.length > 0 ? models : ['llama3.1:8b'];
+      for (const m of new Set(list)) {
+        if (this.modelDown(miner, m)) continue;
         counts[m] = (counts[m] || 0) + 1;
       }
     }
     return counts;
+  }
+
+  // In-flight dispatches per miner (spillover guard below).
+  inflightCount(minerId) {
+    let n = 0;
+    for (const [, cb] of this.taskCallbacks) {
+      if (cb.minerId === minerId) n++;
+    }
+    return n;
+  }
+
+  // Smooth weighted round-robin (nginx-style): stronger miners win new
+  // sessions proportionally more often. State is per routing key.
+  pickWeighted(candidates, key) {
+    if (candidates.length === 1) return candidates[0];
+    let state = this.wrr.get(key);
+    if (!state) {
+      state = {};
+      this.wrr.set(key, state);
+    }
+    let total = 0;
+    let best = null;
+    for (const cand of candidates) {
+      const miner = this.miners.get(cand.minerId);
+      const w = Math.max(1, Number((miner && miner.weight) || 1));
+      total += w;
+      const cur = (state[cand.minerId] || 0) + w;
+      state[cand.minerId] = cur;
+      if (!best || cur > state[best.minerId]) best = cand;
+    }
+    state[best.minerId] -= total;
+    return best;
+  }
+
+  // v3.41.0 routing: sticky session + weighted RR + spillover.
+  // - A known session sticks to its miner while that miner stays capable
+  //   (online + holds the model + media/history ok + not down-marked).
+  // - If the sticky miner has SPILL_CAP in-flight tasks, overflow goes to
+  //   the WRR pick instead of queueing behind it.
+  // - Unknown sessions (guests without session, first message) go straight
+  //   to WRR. `exclude` skips already-tried miners during failover.
+  pickCandidate({ model, needsMedia = false, needHistory = false, sessionKey = null, exclude = null }) {
+    const cands = this.findMinersForModel(model, needsMedia, needHistory)
+      .filter((c) => !(exclude && exclude.has(c.minerId)));
+    if (cands.length === 0) return null;
+    if (sessionKey) {
+      const mapped = this.affinity.get(sessionKey);
+      const sticky = mapped && cands.find((c) => c.minerId === mapped);
+      if (sticky && this.inflightCount(sticky.minerId) < SPILL_CAP) return sticky;
+    }
+    const pick = this.pickWeighted(cands, `${model}#${needsMedia ? 'm' : ''}${needHistory ? 'h' : ''}`);
+    if (sessionKey) {
+      this.affinity.set(sessionKey, pick.minerId);
+      if (this.affinity.size > 50000) {
+        const first = this.affinity.keys().next();
+        if (!first.done) this.affinity.delete(first.value);
+      }
+    }
+    return pick;
+  }
+
+  // Live per-miner model roster for the panel (installed + down-marked).
+  liveModels() {
+    const out = {};
+    for (const [minerId, miner] of this.miners) {
+      if (miner.status !== 'online') continue;
+      out[minerId] = this.effectiveModels(miner).map((m) => ({
+        id: m,
+        down: this.modelDown(miner, m),
+      }));
+    }
+    return out;
   }
 
   cleanupMiners() {

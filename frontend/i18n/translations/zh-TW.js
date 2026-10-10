@@ -60,7 +60,7 @@ const zhTW = {
     freeNote: 'Free plan: 2,000,000 tokens/day for everyone — no card needed.',
     pricingSub: 'Paid with crypto. Plans last 30 days; token bundles never expire.',
     loginToBuy: 'Sign in first to buy (Login at the top).',
-    version: 'v3.40.0',
+    version: 'v3.41.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — 去中心化 LLM 推理平台，版本 {version}。版權所有。',
@@ -203,6 +203,8 @@ const zhTW = {
     cpu: 'CPU',
     currentModel: '目前模型',
     switchModel: '切換模型',
+    minerModels: 'Installed models',
+    modelDownRepair: 'Down — re-run the installer and pick Repair model',
     uptime: '運行時間',
     totalTasks: '總任務數',
     earnings: '收益',

@@ -60,7 +60,7 @@ const bn = {
     freeNote: 'Free plan: 2,000,000 tokens/day for everyone — no card needed.',
     pricingSub: 'Paid with crypto. Plans last 30 days; token bundles never expire.',
     loginToBuy: 'Sign in first to buy (Login at the top).',
-    version: 'v3.40.0',
+    version: 'v3.41.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — ডিসেন্ট্রালাইজড LLM ইনফারেন্স প্ল্যাটফর্ম, সংস্করণ {version}। সর্বস্বত্ব সংরক্ষিত।',
@@ -203,6 +203,8 @@ const bn = {
     cpu: 'CPU',
     currentModel: 'বর্তমান মডেল',
     switchModel: 'মডেল পরিবর্তন করুন',
+    minerModels: 'Installed models',
+    modelDownRepair: 'Down — re-run the installer and pick Repair model',
     uptime: 'আপটাইম',
     totalTasks: 'মোট টাস্ক',
     earnings: 'আয়',

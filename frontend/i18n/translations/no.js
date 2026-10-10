@@ -60,7 +60,7 @@ const no = {
     freeNote: 'Free plan: 2,000,000 tokens/day for everyone — no card needed.',
     pricingSub: 'Paid with crypto. Plans last 30 days; token bundles never expire.',
     loginToBuy: 'Sign in first to buy (Login at the top).',
-    version: 'v3.40.0',
+    version: 'v3.41.0',
   },
   footer: {
     sentence: '© 2026 Krelz Network — Desentralisert LLM-inferanseplattform, versjon {version}. Alle rettigheter reservert.',
@@ -203,6 +203,8 @@ const no = {
     cpu: 'CPU',
     currentModel: 'Nåværende modell',
     switchModel: 'Bytt modell',
+    minerModels: 'Installed models',
+    modelDownRepair: 'Down — re-run the installer and pick Repair model',
     uptime: 'Oppetid',
     totalTasks: 'Totalt antall oppgaver',
     earnings: 'Inntekter',

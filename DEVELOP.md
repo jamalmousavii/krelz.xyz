@@ -51,11 +51,11 @@ node src/server.js
 ### 5. Tests & Quality Gates
 
 ```bash
-# Backend — jest: 235 tests + 3 skipped / 23 suites (integration.money skips without DATABASE_URL)
+# Backend — jest: run `npm test` for current counts (integration.money skips without DATABASE_URL)
 cd backend
 npm test   # = node --experimental-vm-modules ./node_modules/jest/bin/jest.js (plain `npx jest` breaks attachments.test.js)
 
-# Money integration suite against a throwaway PostgreSQL (238 tests / 24 suites):
+# Money integration suite against a throwaway PostgreSQL (adds integration.money):
 docker run -d --name krelz-it-pg -e POSTGRES_USER=krelz -e POSTGRES_PASSWORD=krelz \
   -e POSTGRES_DB=krelz_it -p 5433:5432 postgres:16-alpine
 DATABASE_URL='postgresql://krelz:krelz@localhost:5433/krelz_it' npm test
@@ -620,6 +620,19 @@ explicitly — no miners → `503 MINER_OFFLINE` (retryable wait), model missing
 `409 MODEL_UNAVAILABLE` with `alternatives`. The old local-Ollama substitution
 (`GET /api/tags` → family match → first available) and the server Ollama
 itself were removed in v3.40.0.
+
+## Miner Routing (v3.41.0)
+
+- Multi-model: miners report `models[]` at auth + heartbeat; dispatch matches
+  the list (legacy: `current_model` only). 3 consecutive task errors down-mark
+  a model for that miner (success resets).
+- Selection: sticky session → weighted round-robin (GPU-tier score) for new
+  sessions → spill past 2 in-flight tasks. Guests: pure WRR per message.
+- Context: last 10 turns / ~6k tokens (16k hard cap) sent as `history` to
+  `app_version >= 3.41` miners only; billing stays output-only.
+- Installer: re-running on an installed box opens the manager menu
+  (add/remove/repair models, token/name, update, restart). Smoke-test with a
+  fake HOME: `HOME=/tmp/fakehome bash miner-app/install-ubuntu.sh`.
 
 ## Installer / Uninstaller Self-Cleanup (v3.10.0 install, v3.19.0 uninstall)
 

@@ -41,13 +41,21 @@ function buildApp(wsServer) {
 }
 
 function fakeWs(over = {}) {
-  return {
+  // Default pickCandidate mirrors the old first-match order so legacy
+  // scenarios keep working; tests override per-case as needed.
+  const fake = {
     findMinersForModel: jest.fn(() => []),
     countUsableMiners: jest.fn(() => 0),
     onlineModelCounts: jest.fn(() => ({})),
     dispatchTask: jest.fn(),
+    recordModelResult: jest.fn(),
+    pickCandidate: jest.fn(({ exclude } = {}) => {
+      const list = fake.findMinersForModel();
+      return list.find((c) => !(exclude && exclude.has(c.minerId))) || null;
+    }),
     ...over,
   };
+  return fake;
 }
 
 beforeEach(() => {
@@ -148,6 +156,47 @@ describe('dispatch resilience (v3.40.0)', () => {
     expect(res.status).toBe(200);
     expect(res.body.source).toBe('miner');
     expect(res.body.miner_id).toBe(2);
+    // Health counters saw both outcomes.
+    expect(ws.recordModelResult).toHaveBeenCalledWith(1, 'llama3.1:8b', false);
+    expect(ws.recordModelResult).toHaveBeenCalledWith(2, 'llama3.1:8b', true);
+  });
+
+  it('history never inflates the charge (v3.41.0 billing lock)', async () => {
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign({ id: 1, role: 'user', token_version: 0 }, process.env.JWT_SECRET, {
+      algorithm: 'HS256',
+      expiresIn: '1h',
+    });
+    pool.__state.connectImpl = async () => ({
+      query: async () => ({ rows: [] }),
+      release: jest.fn(),
+    });
+    // Signed-in + session: one completed prior turn → history built...
+    pool.__state.queryImpl = async (sql) => {
+      if (String(sql).includes('token_version')) return { rows: [{ token_version: 0, banned: false }] };
+      if (String(sql).includes('FROM chat_sessions')) return { rows: [{ id: 5 }] };
+      if (String(sql).includes('INSERT INTO tasks')) return { rows: [{ id: 7 }] };
+      if (String(sql).includes('SELECT prompt, response FROM tasks')) {
+        return { rows: [{ prompt: 'old question', response: 'old answer' }] };
+      }
+      return { rows: [] };
+    };
+    const ws = fakeWs({
+      findMinersForModel: jest.fn(() => [{ minerId: 1, model: 'llama3.1:8b' }]),
+    });
+    ws.dispatchTask.mockResolvedValueOnce({ response: 'hi', tokens_used: 10 });
+    const res = await request(buildApp(ws))
+      .post('/api/chat')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ message: 'hello', model: 'llama3.1:8b', session_id: 5 });
+    expect(res.status).toBe(200);
+    // ...but cost is output-only: 10 tokens × llama3.1:8b output price.
+    expect(res.body.cost).toBeCloseTo((10 * 0.158) / 1000000, 12);
+    const [, , , , , histArg] = ws.dispatchTask.mock.calls[0];
+    expect(histArg).toEqual([
+      { role: 'user', content: 'old question' },
+      { role: 'assistant', content: 'old answer' },
+    ]);
   });
 });
 

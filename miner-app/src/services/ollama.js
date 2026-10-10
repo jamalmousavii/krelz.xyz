@@ -112,6 +112,29 @@ class OllamaService {
     }
   }
 
+  // v3.41.0: answer with conversation context. History entries are
+  // [{ role: 'user'|'assistant', content }] (already capped server-side);
+  // media still rides the `images` slot of the final user message.
+  async chatWithHistory(prompt, model, media, history) {
+    const messages = [...(Array.isArray(history) ? history : [])];
+    const last = { role: 'user', content: prompt };
+    if (media && media.data) last.images = [media.data];
+    messages.push(last);
+    try {
+      const response = await axios.post(`${this.url}/api/chat`, {
+        model: model || this.model,
+        messages,
+        stream: false,
+      }, { timeout: 170000 });
+      return {
+        response: (response.data.message && response.data.message.content) || '',
+        eval_count: response.data.eval_count || 0,
+      };
+    } catch (error) {
+      throw new Error('Ollama could not process the request');
+    }
+  }
+
   async getStatus() {
     try {
       const response = await axios.get(`${this.url}/api/tags`, { timeout: 5000 });

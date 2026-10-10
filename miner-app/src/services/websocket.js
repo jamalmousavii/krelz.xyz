@@ -17,6 +17,10 @@ class MinerWebSocket {
     this.heartbeatInterval = null;
     this.heartbeatMinerService = null;
     this.heartbeatDefaultModel = null;
+    // v3.41.0: every installed model (verified against `ollama list` by the
+    // entry point) — reported at auth + heartbeat so the server can route
+    // any of them to this miner.
+    this.installedModels = [];
     this.e2eEnabled = false;
     // M3: consecutive auth rejections — the server may reject a rotated or
     // revoked token forever; retrying silently writes DB rows every few
@@ -91,6 +95,15 @@ class MinerWebSocket {
     });
   }
 
+  setModels(models) {
+    if (Array.isArray(models)) {
+      this.installedModels = models
+        .filter((m) => typeof m === 'string')
+        .map((m) => m.slice(0, 100))
+        .slice(0, 32);
+    }
+  }
+
   authenticate() {
     // Send miner_token (primary) or wallet_address (legacy).
     // v3.13.0+: each server-miner has its own unique token, and the token
@@ -99,6 +112,8 @@ class MinerWebSocket {
     // v3.20.0: the server only routes media tasks (images/voice notes) to
     // miners that advertise a version new enough to handle `attachment`.
     authMsg.app_version = require('../../package.json').version;
+    // v3.41.0: advertise every installed model for multi-model routing.
+    if (this.installedModels.length > 0) authMsg.models = this.installedModels;
     if (this.walletAddress.startsWith('kz_')) {
       authMsg.miner_token = this.walletAddress;
       authMsg.e2e = 1;
@@ -193,7 +208,28 @@ class MinerWebSocket {
         media = typeof plainAttachment === 'string' ? JSON.parse(plainAttachment) : plainAttachment;
       }
 
-      const result = await this.onTask(plainPrompt, model, media);
+      // v3.41.0: optional conversation window — [{ role, content }...],
+      // encrypted as a JSON string when e2e is negotiated. Old entry points
+      // ignore the 4th onTask argument (backward compatible).
+      let history = [];
+      if (msg.history) {
+        let plainHistory = msg.history;
+        if (typeof msg.history === 'string' && isEncrypted(msg.history)) {
+          if (!this.walletAddress.startsWith('kz_')) {
+            throw new Error('Encrypted history but no e2e key');
+          }
+          plainHistory = decrypt(deriveKey(this.walletAddress), msg.history);
+        }
+        const parsed = typeof plainHistory === 'string' ? JSON.parse(plainHistory) : plainHistory;
+        if (Array.isArray(parsed)) {
+          history = parsed
+            .filter((h) => h && typeof h.content === 'string')
+            .map((h) => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: h.content.slice(0, 65536) }))
+            .slice(-32);
+        }
+      }
+
+      const result = await this.onTask(plainPrompt, model, media, history);
 
       if (!result || !result.response) {
         throw new Error('Empty response from model');
@@ -230,6 +266,9 @@ class MinerWebSocket {
       disk_usage: stats.disk_usage || 0,
       current_model: stats.current_model
     };
+    // v3.41.0: re-report installed models so added/removed models take
+    // effect without reconnecting.
+    if (this.installedModels.length > 0) payload.models = this.installedModels;
     console.log(`💓 Sending heartbeat (model: ${stats.current_model || '?'}, ws: ${this.ws ? this.ws.readyState : 'none'})`);
     this.send(payload);
   }

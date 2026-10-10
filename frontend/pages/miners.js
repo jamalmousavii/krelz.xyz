@@ -403,6 +403,24 @@ export default function Miners() {
                       {MODELS_LIST.map(md => (<option key={md.id} value={md.id}>{CATEGORY_ICONS[md.category]} {md.name} ({md.size})</option>))}
                     </select>
                   </div>
+                  {(m.installed_models && m.installed_models.length > 0) && (
+                    <div className="text-sm">
+                      <span className="text-gray-500">{t('profile.minerModels')}</span>
+                      <div className="flex flex-wrap gap-1.5 mt-1.5">
+                        {m.installed_models.map((mid) => {
+                          const down = (m.models_down || []).includes(mid);
+                          return (
+                            <span key={mid} title={down ? t('profile.modelDownRepair') : mid}
+                              className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
+                                down ? 'bg-red-50 text-red-600 border-red-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              }`}>
+                              {down ? '🔴' : '🟢'} {mid}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                   <div className="flex justify-between text-sm"><span className="text-gray-500">{t('profile.uptime')}</span><span className="text-gray-800">{parseFloat(m.uptime || 0).toFixed(1)}%</span></div>
                   <div className="flex justify-between text-sm"><span className="text-gray-500">{t('profile.totalTasks')}</span><span className="text-gray-800">{m.total_tasks || 0}</span></div>
                   <div className="flex justify-between text-sm"><span className="text-gray-500">{t('profile.earnings')}</span><span className="text-emerald-600 font-medium">{parseFloat(m.earnings || 0).toFixed(4)}</span></div>

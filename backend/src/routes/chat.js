@@ -37,6 +37,37 @@ const getModelPricing = (modelId) => {
   return found ? { inputPrice: found.inputPrice, outputPrice: found.outputPrice } : { inputPrice: 0.088, outputPrice: 0.176 };
 };
 
+// Conversation window (v3.41.0): the last turns sent with every dispatch so
+// miners can actually use context. Sliding window — newest first until the
+// soft token budget, hard cap above that. Estimate ~4 chars/token.
+const HISTORY_TURNS = 10;
+const HISTORY_TOKENS = 6000;
+const HISTORY_HARD_TOKENS = 16000;
+
+async function buildHistory(sessionId) {
+  if (!sessionId) return { history: [], truncated: false, tokens: 0 };
+  const rows = await pool.query(
+    `SELECT prompt, response FROM tasks
+      WHERE session_id = $1 AND status = 'completed'
+        AND response IS NOT NULL AND response <> ''
+      ORDER BY id DESC LIMIT $2`,
+    [sessionId, HISTORY_TURNS]
+  );
+  const history = [];
+  let tokens = 0;
+  let truncated = rows.rows.length === HISTORY_TURNS;
+  for (const row of rows.rows) { // newest first: most relevant wins the budget
+    const u = String(row.prompt || '');
+    const a = String(row.response || '');
+    const t = Math.ceil((u.length + a.length) / 4);
+    if (t > HISTORY_HARD_TOKENS) { truncated = true; continue; } // single giant pair (e.g. file dump) never fits
+    if (tokens + t > HISTORY_TOKENS) { truncated = true; break; }
+    tokens += t;
+    history.unshift({ role: 'user', content: u }, { role: 'assistant', content: a });
+  }
+  return { history, truncated, tokens };
+}
+
 // MODEL_UNAVAILABLE alternatives (v3.40.0): catalog models that have online
 // miners right now, same category as the request first, then by miner count
 // desc. Shape mirrors GET /api/models so the client can render directly.
@@ -344,15 +375,39 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
     // BEFORE billing, so an unserved message never consumes allowance or
     // wallet.
     const needsMedia = !!media;
-    const candidates = wsServer ? wsServer.findMinersForModel(requestedModel, needsMedia) : [];
 
-    // Create task (miner_id is claimed below once a candidate takes it)
+    // v3.41.0 conversation window: recent turns ride every dispatch so the
+    // miner answers with context. Guests and fresh sessions send none.
+    // Billing is OUTPUT-only (locked): history tokens never enter `cost` —
+    // neither the user charge nor the miner earning below.
+    let history = [];
+    let historyTruncated = false;
+    let historyTokens = 0;
+    try {
+      const built = await buildHistory(sessionId);
+      history = built.history;
+      historyTruncated = built.truncated;
+      historyTokens = built.tokens;
+    } catch (err) {
+      logger.error({ err }, 'History window failed (proceeding without context)');
+    }
+    const needHistory = history.length > 0;
+    // Sticky sessions: one session sticks to one miner (style + context
+    // continuity). Guests have no session → pure weighted round-robin.
+    const sessionKey = sessionId ? `s:${sessionId}` : null;
+
+    const hasCandidates = wsServer
+      && wsServer.findMinersForModel(requestedModel, needsMedia, needHistory).length > 0;
+
+    // Create task (miner_id is claimed below once a candidate takes it).
+    // The history snapshot is stored for audit/repro of what was dispatched.
     const taskResult = await pool.query(
-      `INSERT INTO tasks (user_id, miner_id, prompt, model, status, session_id, media, prepared_prompt)
-       VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7)
+      `INSERT INTO tasks (user_id, miner_id, prompt, model, status, session_id, media, prepared_prompt, history)
+       VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7, $8)
        RETURNING id`,
       [userId, null, message, requestedModel, sessionId, dbAttachment,
-       effectiveMessage !== message ? effectiveMessage : null]
+       effectiveMessage !== message ? effectiveMessage : null,
+       JSON.stringify(history)]
     );
 
     const taskId = taskResult.rows[0].id;
@@ -368,7 +423,7 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
       );
     };
 
-    if (candidates.length === 0) {
+    if (!hasCandidates) {
       const usableCount = wsServer ? wsServer.countUsableMiners(needsMedia) : 0;
       if (usableCount === 0) {
         // No miners online at all — the client shows a waiting state and
@@ -383,7 +438,7 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
       }
       // Miners are online, but none holds the requested model — suggest a
       // switch instead of silently serving another model's output.
-      const counts = wsServer.onlineModelCounts(needsMedia);
+      const counts = wsServer.onlineModelCounts(needsMedia, needHistory);
       const alternatives = buildAlternatives(requestedModel, counts).slice(0, 6);
       await failTask('No miner holds the requested model');
       return res.status(409).json({
@@ -396,17 +451,28 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
       });
     }
 
-    // Try each exact-model candidate in turn — one may have dropped between
-    // lookup and dispatch (stale Map entry) or time out mid-task.
-    for (const cand of candidates) {
+    // Sticky + weighted-RR selection with failover: each pick honours the
+    // session affinity (spilling past SPILL_CAP in-flight tasks), and every
+    // outcome feeds the per-model health counters.
+    const tried = new Set();
+    for (;;) {
+      const cand = wsServer.pickCandidate({
+        model: requestedModel, needsMedia, needHistory, sessionKey, exclude: tried,
+      });
+      if (!cand) break;
+      tried.add(cand.minerId);
       try {
         await pool.query("UPDATE tasks SET status = 'processing', miner_id = $1 WHERE id = $2", [cand.minerId, taskId]);
 
-        logger.debug({ taskId, minerId: cand.minerId, model: cand.model, media: needsMedia }, 'Dispatching task to miner');
-        const result = await wsServer.dispatchTask(cand.minerId, taskId, effectiveMessage, cand.model, media);
+        logger.debug({
+          taskId, minerId: cand.minerId, model: cand.model,
+          media: needsMedia, historyTurns: history.length / 2, historyTokens, historyTruncated,
+        }, 'Dispatching task to miner');
+        const result = await wsServer.dispatchTask(cand.minerId, taskId, effectiveMessage, cand.model, media, history);
 
         if (result.error) {
           logger.warn({ taskId, minerId: cand.minerId, err: result.error }, 'Miner task failed, trying next miner');
+          wsServer.recordModelResult(cand.minerId, requestedModel, false);
           lastMinerError = result.error;
           continue;
         }
@@ -415,6 +481,7 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
           // Out-of-bounds report: reject the miner result and try the next
           // candidate — never charge the user or pay the miner for it.
           logger.warn({ taskId, minerId: cand.minerId, tokens_used: result.tokens_used }, 'Rejecting miner result: tokens_used out of bounds');
+          wsServer.recordModelResult(cand.minerId, requestedModel, false);
           lastMinerError = 'tokens_used out of bounds';
           continue;
         }
@@ -422,12 +489,14 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
         tokensUsed = reported;
         servedByMiner = true;
         minerId = cand.minerId;
+        wsServer.recordModelResult(cand.minerId, requestedModel, true);
         const pricing = getModelPricing(requestedModel);
         cost = (tokensUsed * pricing.outputPrice) / 1000000;
         break;
 
       } catch (wsError) {
         logger.warn({ taskId, err: wsError.message }, 'WebSocket dispatch failed, trying next miner');
+        wsServer.recordModelResult(cand.minerId, requestedModel, false);
         lastMinerError = wsError.message;
       }
     }

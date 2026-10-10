@@ -25,6 +25,8 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Chat Sessions** — Persistent chat history with auto-generated subjects
 - **Profile Dashboard** — USD balance, logout, quick-nav; leaderboard rank card for miners (v3.21.0)
 - **Miner CLI Mode** — Headless CLI for servers (no Electron needed)
+- **Multi-Model Miners (v3.41.0)** — one miner serves every pulled model at once, with per-model health badges and sticky weighted routing
+- **Installer Manager (v3.41.0)** — re-running the installer on an installed box opens a management menu (add/remove/repair models, token/name, update, restart) instead of reinstalling
 - **Resource Monitoring** — CPU, RAM, GPU VRAM, Disk usage tracking
 - **Auth System** — Google OAuth + email/password, password reset
 - **Uninstall Scripts** — Clean removal for Ubuntu/Debian and RedHat/Fedora; unregisters from your dashboard (v3.22.0) — earnings stay in the Miner History section on `/miners`
