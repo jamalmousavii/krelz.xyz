@@ -36,6 +36,7 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Uninstall Self-Cleanup (v3.19.0)** — Uninstall scripts delete themselves after a successful removal (cancel or a failed step keeps the file so it can be rerun)
 - **Miner Earnings** — 90% of paid usage goes to miners
 - **Earnings Surfaces (v3.29.0)** — flat **90%** share shown everywhere: "Your Earnings" card on `/miner` (5 sources: 🎟️ token pot / 👛 wallet / ⭐ Plus / 🚀 Pro / 👑 Max), account-level breakdown on `/miners` and the profile (shared `EarningsBreakdown` component)
+- **Per-Miner Lifetime (v3.41.3)** — every server (active or uninstalled) expands to its lifetime tasks/earnings plus the same 5-way breakdown, so a removed server keeps its full story
 - **Pricing Everywhere (v3.29.0 + v3.30.0)** — public pricing section on the empty homepage (`/#plans`) plus a **pricing modal** that opens from the Navbar `⭐ Plans` link or a `/#plans` deep link in any homepage state, including mid-chat
 - **Multi-Miner Accounts** — unlimited miners per user, each with its own unique token; add/remove/rename from `/miners`, no cap
 - **Internationalization (v3.16.0)** — 33 languages with country flags; browser auto-detect; session-persisted user choice; RTL for FA/AR/HE/UR

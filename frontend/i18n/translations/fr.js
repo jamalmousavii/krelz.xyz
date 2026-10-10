@@ -60,7 +60,7 @@ const fr = {
     freeNote: 'Offre gratuite : 2 000 000 de jetons par jour pour tous — sans carte bancaire.',
     pricingSub: 'Payez en crypto. Les offres durent 30 jours ; les packs de jetons n\'expirent jamais.',
     loginToBuy: 'Connectez-vous d\'abord pour acheter (connexion en haut).',
-    version: 'v3.41.2',
+    version: 'v3.41.3',
   },
   footer: {
     sentence: '© 2026 Krelz Network — plateforme d\'inférence LLM décentralisée, version {version}. Tous droits réservés.',
@@ -179,6 +179,11 @@ const fr = {
     earningsDesc: 'Les messages payants proviennent du portefeuille de l\'utilisateur ou de son pack de jetons ; les messages gratuits ne paient rien. Ce que vous gagnez par source dépend de l\'offre du payeur.',
     earningsSourceHint: 'Votre part : 90 %',
     earningsNoMiner: 'Ajoutez un mineur pour commencer à gagner et voir vos chiffres réels ici.',
+    showDetails: 'Details',
+    hideDetails: 'Hide',
+    lifetimeLine: 'Lifetime: {tasks} tasks • {earnings} earned',
+    loadFail: 'Could not load details.',
+    legacyNote: 'Earnings before v3.28 are counted as wallet.',
     earningsLoginHint: 'Connectez-vous pour voir le détail de vos gains →',
   },
   profile: {

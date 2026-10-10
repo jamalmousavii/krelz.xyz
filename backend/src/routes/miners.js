@@ -475,6 +475,70 @@ router.get('/history', authenticate, async (req, res) => {
   }
 });
 
+// GET /api/miners/mine/:id/earnings — per-miner lifetime + 5-way earnings
+// breakdown (v3.41.3). Owner-only and includes `removed` miners so uninstalled
+// servers keep their full story ("this server earned X"). Unknown or
+// foreign ids answer 404 (same existence-hiding rule as the other routes).
+router.get('/mine/:id/earnings', authenticate, async (req, res) => {
+  try {
+    const minerId = parseInt(req.params.id, 10);
+    if (!minerId) {
+      return res.status(400).json({ error: 'Miner id is required' });
+    }
+
+    const m = await pool.query(
+      `SELECT id, user_id, name, status, total_tasks, earnings,
+              created_at, last_seen, uninstalled_at
+         FROM miners WHERE id = $1`,
+      [minerId]
+    );
+    // Ownership check doubles as the existence check: anything not ours is
+    // a 404, whether missing or belonging to someone else.
+    const row = m.rows[0];
+    if (!row || row.user_id !== req.user.id) {
+      return res.status(404).json({ error: 'Miner not found' });
+    }
+
+    // Same bucketing as GET /api/leaderboard/mine: tokens pot vs wallet vs
+    // payer plan. Pre-v3.28 rows land in wallet (backfilled as wallet/free).
+    const breakdown = { tokens: 0, wallet: 0, plus: 0, pro: 0, max: 0 };
+    const bd = await pool.query(
+      `SELECT source, plan_type, COALESCE(SUM(amount), 0) AS amount
+         FROM miner_coin_earnings
+        WHERE miner_id = $1 AND coin = 'USD'
+        GROUP BY source, plan_type`,
+      [minerId]
+    );
+    for (const r of bd.rows) {
+      const amount = parseFloat(r.amount) || 0;
+      if (r.source === 'tokens') {
+        breakdown.tokens += amount;
+      } else {
+        const key = ['plus', 'pro', 'max'].includes(r.plan_type) ? r.plan_type : 'wallet';
+        breakdown[key] += amount;
+      }
+    }
+
+    res.json({
+      success: true,
+      miner: {
+        id: row.id,
+        name: row.name,
+        status: row.status,
+        total_tasks: row.total_tasks,
+        earnings: row.earnings,
+        created_at: row.created_at,
+        last_seen: row.last_seen,
+        uninstalled_at: row.uninstalled_at,
+      },
+      breakdown,
+    });
+  } catch (err) {
+    logger.error({ err }, 'Miner earnings route failed');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // PUT /api/miners/:id/heartbeat — requires the miner's own token (v3.18.4)
 router.put('/:id/heartbeat', async (req, res) => {
   try {

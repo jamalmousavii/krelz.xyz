@@ -1,6 +1,6 @@
 # مستندات API — Krelz Network
 
-نسخه بک‌اند: `3.41.2` — پایه: `https://krelz.xyz` (نمونه: `https://krelz.xyz/api/chat`)
+نسخه بک‌اند: `3.41.3` — پایه: `https://krelz.xyz` (نمونه: `https://krelz.xyz/api/chat`)
 
 همه پاسخ‌ها JSON هستند. در حالت موفقیت معمولاً `success: true` برمی‌گردد و در حالت خطا `error` (رشته) یا `details` (لیست خطاهای اعتبارسنجی).
 
@@ -212,6 +212,7 @@
 | `PUT /api/miners/mine/:id` | تغییر نام |
 | `PUT /api/miners/mine/:id/token` | ساخت توکن جدید (نصب مجدد) |
 | `DELETE /api/miners/mine/:id` | حذف نرم — `uninstalled_at` ثبت، تاریخچه در History محفوظ می‌ماند |
+| `GET /api/miners/mine/:id/earnings` | درآمد طول‌عمر یک ماینر + تفکیک ۵‌طرفه (شامل `removed`ها؛ فقط مالک؛ ناموجود/غیرمالک → `404`) |
 
 ### `POST /api/token` (نیازمند JWT)
 

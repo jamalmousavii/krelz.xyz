@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.41.3] - 2026-10-10
+
+Per-miner lifetime earnings. `GET /api/miners/mine/:id/earnings`
+(owner-only, includes removed miners): lifetime tasks/earnings, install →
+last-seen/remove dates, and the 5-way breakdown (tokens/wallet/Plus/Pro/Max).
+History rows and active cards expand to the same drill-down; withdrawals stay
+account-level (not attributed per server).
+
 ## [3.41.2] - 2026-10-10
 
 Fix: reboot-proof miner presence. Restarts dropped WS sockets without the

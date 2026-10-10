@@ -60,7 +60,7 @@ const fa = {
     freeNote: 'پلن رایگان: ۲,۰۰۰,۰۰۰ توکن در روز برای همه — بدون نیاز به کارت.',
     pricingSub: 'پرداخت با ارز دیجیتال. پلن‌ها ۳۰ روزه‌اند؛ بستهٔ توکن هرگز منقضی نمی‌شود.',
     loginToBuy: 'برای خرید ابتدا وارد شوید (ورود در بالای صفحه).',
-    version: 'v3.41.2',
+    version: 'v3.41.3',
   },
   footer: {
     sentence: '© ۲۰۲۶ شبکه کرلز — پلتفرم استنتاج LLM غیرمتمرکز، نسخه {version}. تمامی حقوق محفوظ است.',
@@ -179,6 +179,11 @@ const fa = {
     earningsDesc: 'پیام‌های پولی از کیف‌پول یا بستهٔ توکن کاربر می‌آیند؛ پیام‌های رایگان درآمدی ندارند. مبلغ درآمد هر منبع به پلن خریدار بستگی دارد.',
     earningsSourceHint: 'سهم شما: ۹۰٪',
     earningsNoMiner: 'برای شروع درآمد و دیدن اعداد واقعی، یک ماینر اضافه کنید.',
+    showDetails: 'Details',
+    hideDetails: 'Hide',
+    lifetimeLine: 'Lifetime: {tasks} tasks • {earnings} earned',
+    loadFail: 'Could not load details.',
+    legacyNote: 'Earnings before v3.28 are counted as wallet.',
     earningsLoginHint: 'برای دیدن جزئیات درآمد وارد شوید ←',
   },
   profile: {

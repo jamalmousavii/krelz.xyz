@@ -60,7 +60,7 @@ const de = {
     freeNote: 'Gratis-Plan: 2.000.000 Tokens pro Tag für alle — ohne Karte.',
     pricingSub: 'Bezahlt mit Krypto. Pläne laufen 30 Tage; Token-Pakete verfallen nie.',
     loginToBuy: 'Zuerst anmelden zum Kaufen (Login oben).',
-    version: 'v3.41.2',
+    version: 'v3.41.3',
   },
   footer: {
     sentence: '© 2026 Krelz Network — Dezentrale LLM-Inferenzplattform, Version {version}. Alle Rechte vorbehalten.',
@@ -179,6 +179,11 @@ const de = {
     earningsDesc: 'Bezahlte Nachrichten kommen aus der Wallet oder dem Token-Paket des Nutzers; gratis Nachrichten zahlen nichts. Ihr Verdienst pro Quelle hängt vom Plan des Zahlers ab.',
     earningsSourceHint: 'Ihr Anteil: 90 %',
     earningsNoMiner: 'Fügen Sie einen Miner hinzu, um zu verdienen und hier Ihre echten Zahlen zu sehen.',
+    showDetails: 'Details',
+    hideDetails: 'Hide',
+    lifetimeLine: 'Lifetime: {tasks} tasks • {earnings} earned',
+    loadFail: 'Could not load details.',
+    legacyNote: 'Earnings before v3.28 are counted as wallet.',
     earningsLoginHint: 'Anmelden, um Ihre Einnahmen-Übersicht zu sehen →',
   },
   profile: {

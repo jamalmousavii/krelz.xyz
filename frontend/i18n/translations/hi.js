@@ -60,7 +60,7 @@ const hi = {
     freeNote: 'Free plan: 2,000,000 tokens/day for everyone — no card needed.',
     pricingSub: 'Paid with crypto. Plans last 30 days; token bundles never expire.',
     loginToBuy: 'Sign in first to buy (Login at the top).',
-    version: 'v3.41.2',
+    version: 'v3.41.3',
   },
   footer: {
     sentence: '© 2026 Krelz Network — विकेंद्रीकृत LLM इन्फरेंस प्लेटफ़ॉर्म, संस्करण {version}। सर्वाधिकार सुरक्षित।',
@@ -179,6 +179,11 @@ const hi = {
     earningsDesc: 'Paid messages come from the user\'s wallet or token bundle; free messages pay nothing. What you earn per source depends on the payer\'s plan.',
     earningsSourceHint: 'Your share: 90%',
     earningsNoMiner: 'Add a miner to start earning and see your real numbers here.',
+    showDetails: 'Details',
+    hideDetails: 'Hide',
+    lifetimeLine: 'Lifetime: {tasks} tasks • {earnings} earned',
+    loadFail: 'Could not load details.',
+    legacyNote: 'Earnings before v3.28 are counted as wallet.',
     earningsLoginHint: 'Sign in to see your earnings breakdown →',
   },
   profile: {

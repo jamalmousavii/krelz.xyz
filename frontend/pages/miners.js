@@ -58,6 +58,52 @@ export default function Miners() {
   const [copiedInstall, setCopiedInstall] = useState(null);
   const [history, setHistory] = useState(null);
   const [myRank, setMyRank] = useState(null); // v3.29.0 — account earnings breakdown
+  // v3.41.3 — per-miner lifetime drill-down (active + history rows share it).
+  const [expandedId, setExpandedId] = useState(null); // miner id | null
+  const [earnCache, setEarnCache] = useState({}); // id -> { miner, breakdown } | 'loading' | 'error'
+
+  const toggleEarnings = async (id) => {
+    if (expandedId === id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(id);
+    if (earnCache[id] && earnCache[id] !== 'error') return;
+    setEarnCache((prev) => ({ ...prev, [id]: 'loading' }));
+    try {
+      const data = await apiFetch(`/api/miners/mine/${id}/earnings`);
+      if (data.success) {
+        setEarnCache((prev) => ({ ...prev, [id]: { miner: data.miner, breakdown: data.breakdown } }));
+      } else {
+        setEarnCache((prev) => ({ ...prev, [id]: 'error' }));
+      }
+    } catch (err) {
+      setEarnCache((prev) => ({ ...prev, [id]: 'error' }));
+    }
+  };
+
+  const renderEarnPanel = (id) => {
+    const entry = earnCache[id];
+    if (entry === 'loading') {
+      return <div className="text-gray-400 text-xs mt-2">…</div>;
+    }
+    if (entry === 'error' || !entry) {
+      return <div className="text-red-400 text-xs mt-2">{t('miner.loadFail')}</div>;
+    }
+    return (
+      <div className="mt-2">
+        <div className="text-gray-500 text-xs mb-1.5">
+          {t('miner.lifetimeLine')
+            .replace('{tasks}', entry.miner.total_tasks || 0)
+            .replace('{earnings}', Number(entry.miner.earnings || 0).toFixed(4))}
+          {' • '}
+          {fmtDate(entry.miner.created_at)} → {fmtDate(entry.miner.uninstalled_at || entry.miner.last_seen)}
+        </div>
+        <EarningsBreakdown breakdown={entry.breakdown} />
+        <div className="text-gray-400 text-[11px] mt-1.5">{t('miner.legacyNote')}</div>
+      </div>
+    );
+  };
 
   const { ready, user } = useAuth();
 
@@ -423,7 +469,17 @@ export default function Miners() {
                   )}
                   <div className="flex justify-between text-sm"><span className="text-gray-500">{t('profile.uptime')}</span><span className="text-gray-800">{parseFloat(m.uptime || 0).toFixed(1)}%</span></div>
                   <div className="flex justify-between text-sm"><span className="text-gray-500">{t('profile.totalTasks')}</span><span className="text-gray-800">{m.total_tasks || 0}</span></div>
-                  <div className="flex justify-between text-sm"><span className="text-gray-500">{t('profile.earnings')}</span><span className="text-emerald-600 font-medium">{parseFloat(m.earnings || 0).toFixed(4)}</span></div>
+                  <div className="flex justify-between text-sm items-center">
+                    <span className="text-gray-500">{t('profile.earnings')}</span>
+                    <span className="flex items-center gap-2">
+                      <span className="text-emerald-600 font-medium">{parseFloat(m.earnings || 0).toFixed(4)}</span>
+                      <button onClick={() => toggleEarnings(m.id)}
+                        className="text-sky-600 hover:text-sky-700 text-xs font-bold transition" aria-expanded={expandedId === m.id}>
+                        {expandedId === m.id ? `▲ ${t('miner.hideDetails')}` : `▼ ${t('miner.showDetails')}`}
+                      </button>
+                    </span>
+                  </div>
+                  {expandedId === m.id && renderEarnPanel(m.id)}
 
                   {m.miner_token ? (
                     <div className="flex items-center gap-2 pt-1">
@@ -532,27 +588,33 @@ export default function Miners() {
             </div>
             <div className="space-y-2 mt-3">
               {history.miners.map(h => (
-                <div key={h.id} className="bg-sky-50 rounded-lg p-3 border border-sky-100 flex items-center gap-3">
-                  <div className="text-xl">{h.reason === 'uninstalled' ? '🗑️' : '🕐'}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-gray-800 font-bold text-sm truncate">{h.name || h.gpu_model || `#${h.id}`}</div>
-                    <div className="text-gray-400 text-xs">
-                      {h.gpu_model ? `${h.gpu_model} • ` : ''}
-                      {t('profile.historyRowMeta')
-                        .replace('{tasks}', h.total_tasks || 0)
-                        .replace('{earnings}', Number(h.earnings || 0).toFixed(4))}
+                <div key={h.id} className="bg-sky-50 rounded-lg p-3 border border-sky-100">
+                  <button onClick={() => toggleEarnings(h.id)}
+                    aria-expanded={expandedId === h.id}
+                    className="w-full flex items-center gap-3 text-left">
+                    <div className="text-xl">{h.reason === 'uninstalled' ? '🗑️' : '🕐'}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-gray-800 font-bold text-sm truncate">{h.name || h.gpu_model || `#${h.id}`}</div>
+                      <div className="text-gray-400 text-xs">
+                        {h.gpu_model ? `${h.gpu_model} • ` : ''}
+                        {t('profile.historyRowMeta')
+                          .replace('{tasks}', h.total_tasks || 0)
+                          .replace('{earnings}', Number(h.earnings || 0).toFixed(4))}
+                      </div>
+                      <div className="text-gray-400 text-xs">
+                        {t('profile.historyAddedLabel')} {fmtDate(h.created_at)}
+                        {' • '}
+                        {h.uninstalled_at || h.reason === 'uninstalled'
+                          ? `${t('profile.historyRemovedLabel')} ${fmtDate(h.uninstalled_at || h.last_seen || h.created_at)}`
+                          : `${t('profile.historyLastSeenLabel')} ${fmtDate(h.last_seen || h.created_at)}`}
+                      </div>
                     </div>
-                    <div className="text-gray-400 text-xs">
-                      {t('profile.historyAddedLabel')} {fmtDate(h.created_at)}
-                      {' • '}
-                      {h.uninstalled_at || h.reason === 'uninstalled'
-                        ? `${t('profile.historyRemovedLabel')} ${fmtDate(h.uninstalled_at || h.last_seen || h.created_at)}`
-                        : `${t('profile.historyLastSeenLabel')} ${fmtDate(h.last_seen || h.created_at)}`}
-                    </div>
-                  </div>
-                  <span className={`text-xs font-bold px-2 py-1 rounded-full flex-shrink-0 ${h.reason === 'uninstalled' ? 'bg-red-50 text-red-500' : 'bg-amber-50 text-amber-600'}`}>
-                    {h.reason === 'uninstalled' ? t('profile.reasonUninstalled') : t('profile.reasonStale')}
-                  </span>
+                    <span className={`text-xs font-bold px-2 py-1 rounded-full flex-shrink-0 ${h.reason === 'uninstalled' ? 'bg-red-50 text-red-500' : 'bg-amber-50 text-amber-600'}`}>
+                      {h.reason === 'uninstalled' ? t('profile.reasonUninstalled') : t('profile.reasonStale')}
+                    </span>
+                    <span className="text-sky-500 text-xs flex-shrink-0">{expandedId === h.id ? '▲' : '▼'}</span>
+                  </button>
+                  {expandedId === h.id && renderEarnPanel(h.id)}
                 </div>
               ))}
             </div>
