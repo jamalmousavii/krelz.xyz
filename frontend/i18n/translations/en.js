@@ -62,7 +62,7 @@ const en = {
     freeNote: 'Free plan: 2,000,000 tokens/day for everyone — no card needed.',
     pricingSub: 'Paid with crypto. Plans last 30 days; token bundles never expire.',
     loginToBuy: 'Sign in first to buy (Login at the top).',
-    version: 'v3.42.1',
+    version: 'v3.42.2',
   },
   footer: {
     sentence: '© 2026 Krelz Network — Decentralized LLM inference platform, version {version}. All rights reserved.',
@@ -141,7 +141,7 @@ const en = {
     installDesc: 'Run one command to install everything and start mining',
     ubuntu: 'Ubuntu / Debian',
     redhat: 'RedHat / Fedora',
-    macos: 'macOS (Apple Silicon / Intel)',
+    macos: 'macOS 13+ (Apple Silicon / Intel)',
     windows: 'Windows 10 / 11',
     macosNote: 'Needs Homebrew. Intel Macs require AVX2. Gatekeeper: right-click → Open on first run.',
     windowsNote: 'Run PowerShell as a normal user. If scripts are blocked: powershell -ExecutionPolicy Bypass -File .\\install-windows.ps1',

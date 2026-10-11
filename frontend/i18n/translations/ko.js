@@ -62,7 +62,7 @@ const ko = {
     freeNote: 'Free plan: 2,000,000 tokens/day for everyone — no card needed.',
     pricingSub: 'Paid with crypto. Plans last 30 days; token bundles never expire.',
     loginToBuy: 'Sign in first to buy (Login at the top).',
-    version: 'v3.42.1',
+    version: 'v3.42.2',
   },
   footer: {
     sentence: '© 2026 Krelz Network — 탈중앙화 LLM 추론 플랫폼, 버전 {version}. 모든 권리 보유.',
@@ -141,7 +141,7 @@ const ko = {
     installDesc: '한 번의 명령으로 모두 설치하고 마이닝을 시작하세요',
     ubuntu: 'Ubuntu / Debian',
     redhat: 'RedHat / Fedora',
-    macos: 'macOS (Apple Silicon / Intel)',
+    macos: 'macOS 13+ (Apple Silicon / Intel)',
     windows: 'Windows 10 / 11',
     macosNote: 'Needs Homebrew. Intel Macs require AVX2. Gatekeeper: right-click Open on first run.',
     windowsNote: 'Run PowerShell as a normal user. If scripts are blocked: powershell -ExecutionPolicy Bypass -File .\\install-windows.ps1',

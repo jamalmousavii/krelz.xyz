@@ -62,7 +62,7 @@ const de = {
     freeNote: 'Gratis-Plan: 2.000.000 Tokens pro Tag für alle — ohne Karte.',
     pricingSub: 'Bezahlt mit Krypto. Pläne laufen 30 Tage; Token-Pakete verfallen nie.',
     loginToBuy: 'Zuerst anmelden zum Kaufen (Login oben).',
-    version: 'v3.42.1',
+    version: 'v3.42.2',
   },
   footer: {
     sentence: '© 2026 Krelz Network — Dezentrale LLM-Inferenzplattform, Version {version}. Alle Rechte vorbehalten.',
@@ -141,7 +141,7 @@ const de = {
     installDesc: 'Führe einen Befehl aus, um alles zu installieren und mit dem Mining zu beginnen',
     ubuntu: 'Ubuntu / Debian',
     redhat: 'RedHat / Fedora',
-    macos: 'macOS (Apple Silicon / Intel)',
+    macos: 'macOS 13+ (Apple Silicon / Intel)',
     windows: 'Windows 10 / 11',
     macosNote: 'Needs Homebrew. Intel Macs require AVX2. Gatekeeper: right-click Open on first run.',
     windowsNote: 'Run PowerShell as a normal user. If scripts are blocked: powershell -ExecutionPolicy Bypass -File .\\install-windows.ps1',

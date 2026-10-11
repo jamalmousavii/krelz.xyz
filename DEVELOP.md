@@ -147,7 +147,7 @@ Miner install/uninstall scripts and source code.
 miner-app/
 ├── install-ubuntu.sh      # Ubuntu/Debian installer
 ├── install-redhat.sh      # RedHat/Fedora installer
-├── install-macos.sh       # macOS installer (Homebrew + launchd, v3.42.0)
+├── install-macos.sh       # macOS installer (Homebrew + launchd, v3.42.0; needs macOS 13+, fails fast below)
 ├── install-windows.ps1    # Windows installer (winget + Task Scheduler, v3.42.0)
 ├── uninstall-ubuntu.sh    # Ubuntu/Debian uninstaller
 ├── uninstall-redhat.sh    # RedHat/Fedora uninstaller

@@ -6,7 +6,7 @@
 # ============================================
 
 $ErrorActionPreference = "Stop"
-$KRELZ_VERSION = "3.42.1"
+$KRELZ_VERSION = "3.42.2"
 $INSTALL_DIR = "$HOME\krelz-miner"
 $TASK_NAME = "KrelzMiner"
 

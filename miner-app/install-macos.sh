@@ -7,11 +7,25 @@
 #   bash install-macos.sh --email user@email.com --token kz_xxx
 # Re-running on an installed box opens the Manager menu (add/remove/repair
 # models, token/name, update, restart) instead of reinstalling.
+# Minimum OS: macOS 13 (Ventura). Older releases (Big Sur and below) are not
+# supported — Homebrew, Node 20 and Ollama all need 13+, so the script fails
+# fast here instead of breaking mid-install.
 # ============================================
+
+MACOS_VER=$(sw_vers -productVersion 2>/dev/null || echo "0")
+MACOS_MAJOR=$(echo "$MACOS_VER" | cut -d. -f1)
+case "$MACOS_MAJOR" in
+  ''|*[!0-9]*) MACOS_MAJOR=0 ;;
+esac
+if [ "$MACOS_MAJOR" -lt 13 ]; then
+  echo "Krelz Miner needs macOS 13 (Ventura) or newer — this Mac is macOS $MACOS_VER."
+  echo "Use a newer Mac, Linux, or Windows instead."
+  exit 1
+fi
 
 set -e
 
-KRELZ_VERSION="3.42.1"
+KRELZ_VERSION="3.42.2"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'

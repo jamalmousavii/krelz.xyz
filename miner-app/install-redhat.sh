@@ -11,7 +11,7 @@
 
 set -e
 
-KRELZ_VERSION="3.42.1"
+KRELZ_VERSION="3.42.2"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'

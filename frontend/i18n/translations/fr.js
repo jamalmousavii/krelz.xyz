@@ -62,7 +62,7 @@ const fr = {
     freeNote: 'Offre gratuite : 2 000 000 de jetons par jour pour tous — sans carte bancaire.',
     pricingSub: 'Payez en crypto. Les offres durent 30 jours ; les packs de jetons n\'expirent jamais.',
     loginToBuy: 'Connectez-vous d\'abord pour acheter (connexion en haut).',
-    version: 'v3.42.1',
+    version: 'v3.42.2',
   },
   footer: {
     sentence: '© 2026 Krelz Network — plateforme d\'inférence LLM décentralisée, version {version}. Tous droits réservés.',
@@ -141,7 +141,7 @@ const fr = {
     installDesc: 'Exécutez une seule commande pour tout installer et commencer le minage',
     ubuntu: 'Ubuntu / Debian',
     redhat: 'RedHat / Fedora',
-    macos: 'macOS (Apple Silicon / Intel)',
+    macos: 'macOS 13+ (Apple Silicon / Intel)',
     windows: 'Windows 10 / 11',
     macosNote: 'Needs Homebrew. Intel Macs require AVX2. Gatekeeper: right-click Open on first run.',
     windowsNote: 'Run PowerShell as a normal user. If scripts are blocked: powershell -ExecutionPolicy Bypass -File .\\install-windows.ps1',

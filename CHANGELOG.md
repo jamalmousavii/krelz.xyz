@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.42.2] - 2026-10-11
+
+macOS floor: the installer now requires macOS 13 (Ventura) or newer and
+fails fast with a plain message on older releases (Big Sur and below are
+unsupported — Homebrew, Node 20 and Ollama all need 13+). Floor documented
+in README, the `/miner` page and DEVELOP.
+
 ## [3.42.1] - 2026-10-11
 
 Mobile fixes + free-quota notices.

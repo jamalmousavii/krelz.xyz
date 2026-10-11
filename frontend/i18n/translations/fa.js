@@ -62,7 +62,7 @@ const fa = {
     freeNote: 'پلن رایگان: ۲,۰۰۰,۰۰۰ توکن در روز برای همه — بدون نیاز به کارت.',
     pricingSub: 'پرداخت با ارز دیجیتال. پلن‌ها ۳۰ روزه‌اند؛ بستهٔ توکن هرگز منقضی نمی‌شود.',
     loginToBuy: 'برای خرید ابتدا وارد شوید (ورود در بالای صفحه).',
-    version: 'v3.42.1',
+    version: 'v3.42.2',
   },
   footer: {
     sentence: '© ۲۰۲۶ شبکه کرلز — پلتفرم استنتاج LLM غیرمتمرکز، نسخه {version}. تمامی حقوق محفوظ است.',
@@ -141,7 +141,7 @@ const fa = {
     installDesc: 'یک دستور اجرا کنید تا همه چیز نصب شود و شروع به ماینینگ کنید',
     ubuntu: 'Ubuntu / Debian',
     redhat: 'RedHat / Fedora',
-    macos: 'macOS (Apple Silicon / Intel)',
+    macos: 'macOS 13+ (Apple Silicon / Intel)',
     windows: 'Windows 10 / 11',
     macosNote: 'Needs Homebrew. Intel Macs require AVX2. Gatekeeper: right-click Open on first run.',
     windowsNote: 'Run PowerShell as a normal user. If scripts are blocked: powershell -ExecutionPolicy Bypass -File .\\install-windows.ps1',

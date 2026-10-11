@@ -64,11 +64,13 @@ wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/in
 wget https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-redhat.sh && bash install-redhat.sh
 ```
 
-### macOS (Apple Silicon / Intel with AVX2)
+### macOS 13+ (Apple Silicon / Intel with AVX2)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jamalmousavii/krelz.xyz/main/miner-app/install-macos.sh -o install-macos.sh && bash install-macos.sh
 ```
+
+Requires macOS 13 (Ventura) or newer — Big Sur and older are not supported.
 
 Needs Homebrew. First run: right-click → Open (unsigned build). Re-running opens the Manager menu (add/remove/repair models, token/name, update, restart).
 
