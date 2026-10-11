@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import Portal from './Portal';
 import { useLanguage } from '../i18n/LanguageContext';
 import LanguageSwitcher from './LanguageSwitcher';
 import GoogleLogin from './GoogleLogin';
@@ -360,9 +361,11 @@ export default function Navbar() {
         </button>
       </div>
 
-      {/* Mobile menu — full-screen overlay: not clipped by the fixed chat
-          frame, scrollable on its own, 44px close target, safe-area padded. */}
+      {/* Mobile menu — full-screen overlay, portaled to <body> so the chat
+          home's transformed frame can never trap or clip it (v3.42.1).
+          Scrollable on its own, 44px close target, safe-area padded. */}
       {menuOpen && (
+        <Portal>
         <div className="md:hidden fixed inset-0 z-[60] bg-white flex flex-col">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
             <Link href="/" onClick={closeMenu} className="text-xl font-bold text-gray-800">🚀 Krelz Network</Link>
@@ -479,6 +482,7 @@ export default function Navbar() {
             </div>
           </div>
         </div>
+        </Portal>
       )}
     </nav>
   );

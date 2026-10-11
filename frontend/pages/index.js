@@ -97,6 +97,7 @@ export default function Home() {
   // once-per-day upsell banner after a wallet-paid message. Both carry the
   // plan catalog ({plans, token_bundle}) from the backend.
   const [upgradeNotice, setUpgradeNotice] = useState(null); // { plans, token_bundle } | null
+  const [quotaNotice, setQuotaNotice] = useState(null); // v3.42.1: 'low' | 'exhausted' | null (once/day each)
   // v3.40.0 — auto-switch notice when the selected model loses its miners.
   const [modelNotice, setModelNotice] = useState('');
   // Live mirrors for timers/intervals (F8-style: async work reads refs).
@@ -728,6 +729,19 @@ export default function Home() {
             }
           } catch (e) {}
         }
+        // v3.42.1 — free-quota notices: low warning and exhausted info, each
+        // once per UTC day. Read-only flags from the backend, never inferred.
+        if (data.free_exhausted || data.free_low) {
+          try {
+            const today = new Date().toISOString().slice(0, 10);
+            const kind = data.free_exhausted ? 'exhausted' : 'low';
+            const key = data.free_exhausted ? 'krelz_free_done' : 'krelz_free_low';
+            if (localStorage.getItem(key) !== today) {
+              localStorage.setItem(key, today);
+              setQuotaNotice(kind);
+            }
+          } catch (e) {}
+        }
         if (data.session_id && !sessionAtSend) {
           setActiveSession(data.session_id);
           fetchSessions(token);
@@ -851,19 +865,33 @@ export default function Home() {
           <p className="text-gray-400 text-sm mt-6">{t('chat.startTyping')}</p>
 
           {/* v3.29.0 — public pricing inline (empty state only); v3.30.0 — cards
-              live in PlansContent and also open as a modal via #plans. */}
+              live in PlansContent and also open as a modal via #plans.
+              v3.42.1 — the inline section is desktop-only: inside the
+              non-scrolling chat frame it clips on phones, so mobile gets a
+              compact card that opens the (internally scrolling) modal. */}
           {catalog?.plans?.length > 0 && (
-            <section id="plans" className="w-full max-w-4xl mt-8 md:mt-10">
-              <PlansContent
-                catalog={catalog}
-                planHint={planHint}
-                purchaseError={purchaseError}
-                bundleAmount={bundleAmount}
-                setBundleAmount={setBundleAmount}
-                onBuyPlan={handlePlanBuy}
-                onBuyBundle={handleBundleBuy}
-              />
-            </section>
+            <>
+              <section id="plans" className="hidden md:block w-full max-w-4xl mt-8 md:mt-10">
+                <PlansContent
+                  catalog={catalog}
+                  planHint={planHint}
+                  purchaseError={purchaseError}
+                  bundleAmount={bundleAmount}
+                  setBundleAmount={setBundleAmount}
+                  onBuyPlan={handlePlanBuy}
+                  onBuyBundle={handleBundleBuy}
+                />
+              </section>
+              <div className="md:hidden w-full max-w-4xl mt-6">
+                <button
+                  onClick={() => setPlansOpen(true)}
+                  className="w-full flex items-center justify-between gap-2 bg-white border border-violet-200 rounded-2xl px-4 py-3.5 shadow-sm active:bg-violet-50 transition min-h-[56px]"
+                >
+                  <span className="text-sm font-bold text-gray-800">⭐ {t('home.pricingTitle')}</span>
+                  <span className="text-violet-600 text-xs font-bold">{t('home.pricingOpen')} →</span>
+                </button>
+              </div>
+            </>
           )}
         </main>
 
@@ -958,6 +986,25 @@ export default function Home() {
             <div className="flex items-center gap-2 mb-2 bg-sky-50 border border-sky-200 text-sky-800 rounded-xl px-3 py-2 text-xs md:text-sm">
               <span className="flex-1">🔀 {modelNotice}</span>
               <button onClick={() => setModelNotice('')} aria-label="dismiss" className="text-sky-500 hover:text-sky-700 px-1.5 font-bold flex-shrink-0">
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* v3.42.1 — free-quota notices (once/day each): low warning + exhausted info */}
+          {quotaNotice && (
+            <div className={`flex items-center gap-2 mb-2 rounded-xl px-3 py-2 text-xs md:text-sm ${
+              quotaNotice === 'exhausted'
+                ? 'bg-sky-50 border border-sky-200 text-sky-800'
+                : 'bg-amber-50 border border-amber-200 text-amber-800'
+            }`}>
+              <span className="flex-1">
+                {quotaNotice === 'exhausted'
+                  ? (isLoggedIn ? t('chat.freeExhausted') : t('chat.freeExhaustedGuest'))
+                  : t('chat.freeLow')}
+              </span>
+              <button onClick={() => setQuotaNotice(null)} aria-label="dismiss"
+                className={`px-1.5 font-bold flex-shrink-0 ${quotaNotice === 'exhausted' ? 'text-sky-500 hover:text-sky-700' : 'text-amber-500 hover:text-amber-700'}`}>
                 ✕
               </button>
             </div>

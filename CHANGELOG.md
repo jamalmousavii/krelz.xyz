@@ -1,5 +1,27 @@
 # Changelog
 
+## [3.42.1] - 2026-10-11
+
+Mobile fixes + free-quota notices.
+
+### Mobile menu (bug)
+- The chat home's transformed frame (`translateY` stacking context) trapped
+  `position: fixed` overlays, so the mobile menu rendered under the chat.
+  Menu + plans modal are now portaled to `document.body` (SSR-safe).
+
+### Plans on mobile
+- The inline pricing section (inside the non-scrolling chat frame) is now
+  desktop-only; phones get a compact card opening the internally-scrolling
+  modal, restyled as a bottom sheet with focus trap + initial focus.
+
+### Free-quota messages
+- New read-only flags on chat replies: `free_low` (≤10% left) and
+  `free_exhausted` (last unit spent) — billing untouched. Each shows a
+  once-a-day info banner (guest wording differs).
+
+### Testing
+- Backend `miner.offline` flag tests; frontend `portal.test.js`; i18n parity.
+
 ## [3.42.0] - 2026-10-11
 
 macOS + Windows miners.

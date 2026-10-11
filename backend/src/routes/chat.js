@@ -555,6 +555,10 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
     let freeRemaining = preFlightFree ? preFlightFree.remaining : null;
     let tokenBalanceRemaining = null;
     let upgradeNotice = false;
+    // v3.42.1 quota UX flags (read-only: billing untouched). The client shows
+    // a once-a-day low/exhausted notice off these — never inferred client-side.
+    let freeLow = false;
+    let freeExhausted = false;
 
     // Attribution for miner_coin_earnings on paid legs (lazy: only when a
     // miner actually earns). source = payment source, plan_type = the plan
@@ -584,6 +588,11 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
 
         if (freeCharge.charged) {
           paymentStatus = 'free';
+          if (freeRemaining <= 0) {
+            freeExhausted = true;
+          } else if (freeCap > 0 && freeRemaining <= freeCap * 0.1) {
+            freeLow = true;
+          }
         } else if (userId) {
           const creditCharge = await chargeMinerCredit(userId, cost, client);
           minerCreditRemaining = creditCharge.remaining;
@@ -658,6 +667,8 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
       source: 'miner',
       miner_credit_remaining: minerCreditRemaining,
       free_tokens_remaining: freeRemaining,
+      ...(freeLow ? { free_low: true } : {}),
+      ...(freeExhausted ? { free_exhausted: true } : {}),
       ...(tokenBalanceRemaining !== null ? { token_balance_remaining: tokenBalanceRemaining } : {}),
       ...(upgradeNotice ? {
         notice: 'upgrade_recommended',

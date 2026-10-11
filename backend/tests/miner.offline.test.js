@@ -200,6 +200,44 @@ describe('dispatch resilience (v3.40.0)', () => {
   });
 });
 
+describe('free quota flags (v3.42.1)', () => {
+  const freeAllowance = require('../src/services/freeAllowance');
+
+  function successSetup(remaining) {
+    pool.__state.connectImpl = async () => ({
+      query: async () => ({ rows: [] }),
+      release: jest.fn(),
+    });
+    freeAllowance.chargeFreeTokens.mockResolvedValueOnce({ charged: true, remaining });
+    const ws = fakeWs({
+      findMinersForModel: jest.fn(() => [{ minerId: 1, model: 'llama3.1:8b' }]),
+    });
+    ws.dispatchTask.mockResolvedValueOnce({ response: 'hi', tokens_used: 10 });
+    return ws;
+  }
+
+  it('flags free_exhausted when the charge drains the allowance', async () => {
+    const res = await postChat(buildApp(successSetup(0)), { model: 'llama3.1:8b' });
+    expect(res.status).toBe(200);
+    expect(res.body.free_exhausted).toBe(true);
+    expect(res.body.free_low).toBeUndefined();
+  });
+
+  it('flags free_low under 10% remaining', async () => {
+    const res = await postChat(buildApp(successSetup(100000)), { model: 'llama3.1:8b' });
+    expect(res.status).toBe(200);
+    expect(res.body.free_low).toBe(true);
+    expect(res.body.free_exhausted).toBeUndefined();
+  });
+
+  it('flags neither when allowance is healthy', async () => {
+    const res = await postChat(buildApp(successSetup(1500000)), { model: 'llama3.1:8b' });
+    expect(res.status).toBe(200);
+    expect(res.body.free_low).toBeUndefined();
+    expect(res.body.free_exhausted).toBeUndefined();
+  });
+});
+
 describe('buildAlternatives ordering (v3.40.0)', () => {
   it('sorts same-category first, then by miner count', () => {
     const alts = chatRoutes.__buildAlternatives('llama3.1:8b', {
