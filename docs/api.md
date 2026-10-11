@@ -1,6 +1,6 @@
 # مستندات API — Krelz Network
 
-نسخه بک‌اند: `3.42.2` — پایه: `https://krelz.xyz` (نمونه: `https://krelz.xyz/api/chat`)
+نسخه بک‌اند: `3.43.0` — پایه: `https://krelz.xyz` (نمونه: `https://krelz.xyz/api/chat`)
 
 همه پاسخ‌ها JSON هستند. در حالت موفقیت معمولاً `success: true` برمی‌گردد و در حالت خطا `error` (رشته) یا `details` (لیست خطاهای اعتبارسنجی).
 
@@ -345,6 +345,32 @@ IPN با پیشوند `tok-` → ادعای exactly-once `plan_purchases` → `c
 
 ---
 
+## Coder API برای ایجنت‌ها (v3.43.0 — سازگار OpenAI)
+
+احراز: `Authorization: Bearer sk_...` (کلید از Settings؛ فقط هش نگه داشته می‌شود).
+فقط دو مدل coder. مهمان ندارد. ریت‌لیمیت جدا: ۱۲۰ در دقیقه.
+
+| مسیر | توضیح |
+|------|-------|
+| `GET /v1/models` | لیست OpenAI (`{object:'list', data:[{id, object:'model'}]}`) |
+| `POST /v1/chat/completions` | ورودی `{model, messages[], max_tokens?, temperature?}`؛ خروجی استاندارد + `usage {prompt_tokens(تخمینی), completion_tokens, total_tokens}` |
+
+گیت مالکیت: pot/wallet/plan پولی لازم است — کاربر free خالی → `402 {code:"api_payment_required", plans, token_bundle}`. سقف = مالکیت (موجودی pot / سقف روزانه tier / موجودی wallet). billing همان زنجیره چت (فقط خروجی).
+
+نمونه:
+
+```bash
+curl https://krelz.xyz/v1/chat/completions \
+  -H "Authorization: Bearer sk_..." -H "Content-Type: application/json" \
+  -d '{"model":"qwen3-coder:30b","messages":[{"role":"user","content":"write fizzbuzz in python"}]}'
+```
+
+اتصال opencode (`opencode.json` + `export KRELZ_API_KEY=sk_...`): provider `krelz` با `npm: @ai-sdk/openai-compatible` و `baseURL: https://krelz.xyz/v1`؛ مدل‌ها `qwen3-coder:30b` (context 262144/output 32768) و `qwen2.5-coder:32b` (32768/8192).
+
+محدودیت فاز ۱: `stream:true` → `400 stream_not_supported`؛ `tools` → `400 tool_not_supported`.
+
+---
+
 ## مدل‌ها، رتبه‌بندی
 
 | مسیر | توضیح |
@@ -429,6 +455,7 @@ IPN با پیشوند `tok-` → ادعای exactly-once `plan_purchases` → `c
 | `400` | اعتبارسنجی ناموفق (`details` شامل فیلدهاست) |
 | `401` | توکن نامعتبر/نبودن توکن/توکنِ ماینر نامعتبر |
 | `402` | **دیوار ارتقا (v3.28.0)**: هیچ پوششی برای پیام بعدی — `code: "upgrade_required"` + `free`/`plans`/`token_bundle`/`signed_in` (سقف رایگان تمام‌شده + بدون اعتبار ماینر + کیف توکن خالی + کیف پول خالی) |
+| `402` | **گیت Coder API (v3.43.0)**: `code: "api_payment_required"` + `plans`/`token_bundle` (فقط `/v1`؛ plan رایگان خالی) |
 | `403` | دسترسی ادمین لازم است / CORS |
 | `404` | پیدا نشد |
 | `409` | تعارض (چند ماینر با توکن سطح حساب) |

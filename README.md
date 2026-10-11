@@ -127,6 +127,34 @@ powershell -ExecutionPolicy Bypass -File .\uninstall-windows.ps1
 
 Choose to remove miner only or everything (miner + Ollama + models).
 
+## Coder API for AI Agents (v3.43.0)
+
+OpenAI-compatible endpoints so coding agents (opencode, Continue, Aider…)
+use the two coder models on your balance:
+
+1. Settings → create an API key (`sk_...`, shown once).
+2. Key needs a token balance, wallet funds, or Plus/Pro/Max — free plan alone gets `402`.
+3. Paste into `opencode.json` (with `KRELZ_API_KEY` exported):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "krelz": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Krelz",
+      "options": { "baseURL": "https://krelz.xyz/v1", "apiKey": "{env:KRELZ_API_KEY}" },
+      "models": {
+        "qwen3-coder:30b": { "name": "Qwen3 Coder 30B", "limit": { "context": 262144, "output": 32768 } },
+        "qwen2.5-coder:32b": { "name": "Qwen2.5 Coder 32B", "limit": { "context": 32768, "output": 8192 } }
+      }
+    }
+  }
+}
+```
+
+`GET /v1/models` · `POST /v1/chat/completions` (non-streaming; `stream`/`tools` → honest `400`, phase 2). Full reference: `docs/api.md`.
+
 ## AI Models & Pricing
 
 | Model | Size | Input/1M | Output/1M | vs DeepSeek |

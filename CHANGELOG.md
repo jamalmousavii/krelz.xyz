@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.43.0] - 2026-10-12
+
+Coder API for AI agents (OpenAI-compatible).
+
+### API keys
+- `sk_...` keys in Settings (create once-shown secret, list, revoke max 10
+  active; sha256-only storage, `last_used_at`, banned owners rejected).
+
+### OpenAI-compatible `/v1` (2 coder models only)
+- `GET /v1/models` (OpenAI list shape) + `POST /v1/chat/completions`
+  (`{model, messages[], max_tokens?, temperature?}` → dispatch + shared
+  billing chain → OpenAI response + `usage`). `stream`/`tools` answer honest
+  `400` (`stream_not_supported` / `tool_not_supported`) — phase 2.
+- Ownership gate: token pot, wallet funds, or active Plus/Pro/Max plan
+  required — free plan alone gets `402 api_payment_required` + catalog.
+  Caps fall out of ownership (pot balance / tier daily cap / wallet).
+- Agent-friendly rate limit (120/min on `/v1/`); billing extracted verbatim
+  to `services/billing.js` shared by chat + v1 (suite-green, no behaviour
+  change); prompt tokens estimated (~4 chars) for `usage` (billing stays
+  output-only).
+
 ## [3.42.2] - 2026-10-11
 
 macOS floor: the installer now requires macOS 13 (Ventura) or newer and

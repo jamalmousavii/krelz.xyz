@@ -24,6 +24,8 @@ const modelRoutes = require('./routes/models');
 const adminRoutes = require('./routes/admin');
 const leaderboardRoutes = require('./routes/leaderboard');
 const ticketRoutes = require('./routes/tickets');
+const apiKeyRoutes = require('./routes/apikeys');
+const v1Routes = require('./routes/v1');
 
 const app = express();
 const server = http.createServer(app);
@@ -221,6 +223,19 @@ const ticketsLimiter = makeLimiter({
 });
 app.use('/api/tickets', ticketsLimiter);
 
+// Coder API (v1, agent loops): generous per-minute budget — an agentic
+// coding session makes dozens of calls. Spend is bounded by ownership
+// (pot/plan/wallet), not by this limiter.
+const apiLimiter = makeLimiter({
+  name: 'api',
+  windowMs: 1 * 60 * 1000,
+  max: 120,
+  message: { error: { message: 'Rate limit exceeded, retry shortly.', type: 'server_error', code: 'rate_limited' } },
+});
+app.use('/v1/', apiLimiter);
+
+app.use('/api/keys', apiKeyRoutes);
+app.use('/v1', v1Routes);
 app.use('/api/auth', authRoutes);
 // /api/miners responses are per-user (they contain miner_token) — never cache them.
 app.use('/api/miners', minerRoutes);

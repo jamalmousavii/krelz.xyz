@@ -25,7 +25,7 @@ fi
 
 set -e
 
-KRELZ_VERSION="3.42.2"
+KRELZ_VERSION="3.43.0"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'

@@ -639,6 +639,16 @@ itself were removed in v3.40.0.
   (add/remove/repair models, token/name, update, restart). Smoke-test with a
   fake HOME: `HOME=/tmp/fakehome bash miner-app/install-ubuntu.sh`.
 
+## Coder API (v3.43.0)
+
+- OpenAI-compatible `/v1` (2 coders): `GET /v1/models`, `POST /v1/chat/completions`.
+  Keys: `sk_...` via `/api/keys` (JWT dashboard), sha256-only storage.
+- Gate: pot/wallet/paid-plan or `402 api_payment_required`. Caps = ownership.
+  Rate limit 120/min on `/v1/` (agent loops). Billing = shared
+  `services/billing.js` settleMessage (chat + v1; output-only).
+- Manual e2e: mint key in Settings → `curl /v1/models` → `curl
+  /v1/chat/completions` → opencode with `qwen3-coder:30b` → check spend.
+
 ## Installer / Uninstaller Self-Cleanup (v3.10.0 install, v3.19.0 uninstall)
 
 Install scripts auto-delete themselves after successful installation:
