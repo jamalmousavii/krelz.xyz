@@ -1,5 +1,29 @@
 # Changelog
 
+## [3.44.0] - 2026-10-12
+
+Organization plans (shared bucket).
+
+### Model
+- New tables `orgs` + `org_members` (one active membership per user, no
+  member cap). Admins create orgs (name + leader email) and manage members;
+  leaders add registered users by email; users self-register first.
+- An org shares its leader's plan cap as ONE bucket (leader's
+  `daily_tokens` row, same row-locked pattern). Effective cap =
+  max(own, org) — paying members are never downgraded. Miner credit, token
+  pot and wallet stay per-user; per-member attribution comes from `tasks`.
+
+### API & UI
+- `/api/orgs` (mine/usage/members/transfer/leave) + `/api/admin/orgs`
+  (list/create/add/remove/disband, audited). Leader leaves → oldest member
+  promoted; last out disbands.
+- New `/org` page (bucket snapshot, member usage table) + 8th admin tab +
+  Navbar link; 33 locales.
+
+### Testing
+- `orgs.test.js`: cap resolution (shared/own/guest), permissions,
+  usage scoping, leader succession.
+
 ## [3.43.0] - 2026-10-12
 
 Coder API for AI agents (OpenAI-compatible).

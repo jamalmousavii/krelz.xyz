@@ -702,6 +702,34 @@ const migrate = async () => {
     `);
     console.log('✅ ستون banned اضافه شد');
 
+    // ---- v3.44.0: organization plans (shared daily bucket) ----
+    // An org shares its LEADER's plan cap: members drain one bucket (the
+    // leader's daily_tokens row). Per-member attribution comes from tasks
+    // (user_id, tokens_used, cost) — no separate tracking table. One active
+    // membership per user (v1). No member cap (locked decision).
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS orgs (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        leader_user_id INTEGER NOT NULL REFERENCES users(id),
+        status VARCHAR(16) NOT NULL DEFAULT 'active',
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS org_members (
+        org_id INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        role VARCHAR(16) NOT NULL DEFAULT 'member',
+        status VARCHAR(16) NOT NULL DEFAULT 'active',
+        joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (org_id, user_id)
+      )
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_org_members_user ON org_members(user_id)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_org_members_org ON org_members(org_id)');
+    console.log('✅ جدول orgs/org_members ایجاد شد');
+
     // ---- Schema version bookkeeping (baseline marker for future migrations) ----
     await client.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (

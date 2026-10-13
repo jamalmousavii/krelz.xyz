@@ -4,7 +4,7 @@ const router = express.Router();
 const pool = require('../database/pool');
 const { authenticateApiKey } = require('../middleware/apiKey');
 const MODELS = require('../models');
-const { getDailyCap, listPlans, TOKEN_BUNDLE } = require('../services/plans');
+const { listPlans, TOKEN_BUNDLE } = require('../services/plans');
 const { getTokenBalance } = require('../services/tokenBundles');
 const { settleMessage } = require('../services/billing');
 const { logger } = require('../logger');
@@ -53,6 +53,14 @@ async function checkApiCoverage(userId) {
       [userId]
     );
     if (plan.rows.length > 0 && PAID_PLANS.includes(plan.rows[0].plan_type)) return { covered: true };
+    // v3.44.0 org: a member rides the leader's paid plan.
+    const { getActiveOrg } = require('../services/org');
+    const { getActivePlan } = require('../services/plans');
+    const org = await getActiveOrg(userId);
+    if (org) {
+      const leaderPlan = await getActivePlan(org.leader_user_id);
+      if (leaderPlan && PAID_PLANS.includes(leaderPlan.plan_type)) return { covered: true };
+    }
   } catch (err) {
     logger.error({ err }, 'v1 coverage check failed (failing closed)');
     return { covered: false };
@@ -224,8 +232,11 @@ router.post('/chat/completions', async (req, res) => {
       `UPDATE tasks SET response = $1, tokens_used = $2, cost = $3, status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = $4`,
       [response, tokensUsed, cost, taskId]
     );
-    const freeCap = await getDailyCap(userId);
-    await settleMessage({ userId, guestKey: null, tokensUsed, cost, minerId, servedByMiner: true, freeCap, freeRemainingInit: null, paymentCoin: 'USD', taskId });
+    // v3.44.0 org: members settle against the shared bucket when the org
+    // plan wins (same max rule as chat).
+    const { resolveCap } = require('../services/org');
+    const resolved = await resolveCap(userId, null);
+    await settleMessage({ userId, guestKey: null, tokensUsed, cost, minerId, servedByMiner: true, freeCap: resolved.cap, freeRemainingInit: null, bucketUserId: resolved.bucketUserId, paymentCoin: 'USD', taskId });
 
     // prompt_tokens estimated (~4 chars/token); billing stays output-only.
     const promptTokens = Math.ceil(prompt.length / 4);

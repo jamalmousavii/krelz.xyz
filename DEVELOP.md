@@ -626,6 +626,16 @@ explicitly — no miners → `503 MINER_OFFLINE` (retryable wait), model missing
 (`GET /api/tags` → family match → first available) and the server Ollama
 itself were removed in v3.40.0.
 
+## Organization Plans (v3.44.0)
+
+- Tables `orgs` + `org_members` (one active membership per user, no cap).
+  The org shares the leader's plan cap as one `daily_tokens` bucket
+  (`services/org.js` resolveCap = max(own, org)); miner credit/pot/wallet
+  stay per-user; attribution aggregates `tasks` per member (30d).
+- Routes: `/api/orgs` (mine/usage/members/transfer/leave) + `/api/admin/orgs`
+  (create/add/remove/disband, audited). Leader leaves → oldest promoted.
+- UI: `/org` page + 8th admin tab + Navbar link.
+
 ## Miner Routing (v3.41.0)
 
 - Multi-model: miners report `models[]` at auth + heartbeat; dispatch matches

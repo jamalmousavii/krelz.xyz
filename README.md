@@ -204,6 +204,8 @@ Every message settles in one row-locked transaction, in order:
 
 **Miner earnings breakdown (v3.28.0)** — every earning row records its source and the payer's plan; the profile shows 5 buckets: 🎟️ Tokens / 👛 Wallet / ⭐ Plus / 🚀 Pro / 👑 Max (free legs pay miners nothing).
 
+**Organization plans (v3.44.0)** — a company/leader shares their plan cap as one bucket: admin creates the org, the leader adds registered users by email, everyone drains the shared allowance with per-member usage reporting on `/org`. No member cap; one active org per user.
+
 ## Project Structure
 
 ```

@@ -26,6 +26,7 @@ const leaderboardRoutes = require('./routes/leaderboard');
 const ticketRoutes = require('./routes/tickets');
 const apiKeyRoutes = require('./routes/apikeys');
 const v1Routes = require('./routes/v1');
+const orgRoutes = require('./routes/orgs');
 
 const app = express();
 const server = http.createServer(app);
@@ -235,6 +236,7 @@ const apiLimiter = makeLimiter({
 app.use('/v1/', apiLimiter);
 
 app.use('/api/keys', apiKeyRoutes);
+app.use('/api/orgs', orgRoutes);
 app.use('/v1', v1Routes);
 app.use('/api/auth', authRoutes);
 // /api/miners responses are per-user (they contain miner_token) — never cache them.

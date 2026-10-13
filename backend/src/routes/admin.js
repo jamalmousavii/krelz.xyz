@@ -504,4 +504,153 @@ router.get('/tasks', authenticate, requireAdmin, async (req, res) => {
   }
 });
 
+// ===========================================================================
+// Orgs (v3.44.0) — admin creates orgs (name + leader), manages members,
+// disbands. Every mutation writes admin_audit_log in the same transaction.
+// ===========================================================================
+
+// GET /api/admin/orgs — list orgs with members + leader email.
+router.get('/orgs', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT o.id, o.name, o.status, o.created_at, o.leader_user_id,
+              u.email AS leader_email
+         FROM orgs o LEFT JOIN users u ON u.id = o.leader_user_id
+        ORDER BY o.created_at DESC LIMIT ${MAX_LIST}`
+    );
+    const members = await pool.query(
+      `SELECT m.org_id, m.user_id, u.email, m.role, m.joined_at
+         FROM org_members m JOIN users u ON u.id = m.user_id
+        WHERE m.status = 'active' AND m.org_id = ANY($1)
+        ORDER BY m.joined_at ASC`,
+      [result.rows.map((r) => r.id)]
+    );
+    const byOrg = {};
+    for (const m of members.rows) {
+      (byOrg[m.org_id] = byOrg[m.org_id] || []).push(m);
+    }
+    res.json({
+      success: true,
+      orgs: result.rows.map((o) => ({ ...o, members: byOrg[o.id] || [] })),
+    });
+  } catch (err) {
+    fail(res, err, 'Admin route failed');
+  }
+});
+
+// POST /api/admin/orgs — { name, leader_email } — create org + leader row.
+router.post('/orgs', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const name = typeof req.body.name === 'string' ? req.body.name.trim().slice(0, 100) : '';
+    const email = typeof req.body.leader_email === 'string' ? req.body.leader_email.trim().toLowerCase() : '';
+    if (!name) return res.status(400).json({ error: 'Org name required (max 100 chars)' });
+    if (!email) return res.status(400).json({ error: 'Leader email required' });
+    const out = await withTransaction(async (client) => {
+      const leader = await client.query('SELECT id FROM users WHERE email = $1', [email]);
+      if (leader.rows.length === 0) throw Object.assign(new Error('No registered user with that email'), { status: 404 });
+      const lid = leader.rows[0].id;
+      const busy = await client.query(`SELECT org_id FROM org_members WHERE user_id = $1 AND status = 'active'`, [lid]);
+      if (busy.rows.length > 0) throw Object.assign(new Error('Leader already belongs to an active org'), { status: 400 });
+      const org = await client.query(
+        `INSERT INTO orgs (name, leader_user_id, status) VALUES ($1, $2, 'active') RETURNING id, name`,
+        [name, lid]
+      );
+      await client.query(
+        `INSERT INTO org_members (org_id, user_id, role, status) VALUES ($1, $2, 'leader', 'active')`,
+        [org.rows[0].id, lid]
+      );
+      await logAdminAction(client, {
+        adminId: req.user.id, action: 'org.create', targetType: 'org', targetId: org.rows[0].id,
+        reason: req.body.reason, payload: { name, leader_email: email },
+      });
+      return org.rows[0];
+    });
+    res.status(201).json({ success: true, org: out });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    fail(res, err, 'Admin route failed');
+  }
+});
+
+// POST /api/admin/orgs/:id/members — { email } — add a registered user.
+router.post('/orgs/:id/members', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const orgId = parseId(req.params.id);
+    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    if (!orgId) return res.status(400).json({ error: 'Org id is required' });
+    if (!email) return res.status(400).json({ error: 'Email required' });
+    const out = await withTransaction(async (client) => {
+      const org = await client.query(`SELECT id, status FROM orgs WHERE id = $1`, [orgId]);
+      if (org.rows.length === 0 || org.rows[0].status !== 'active') {
+        throw Object.assign(new Error('Org not found'), { status: 404 });
+      }
+      const user = await client.query('SELECT id FROM users WHERE email = $1', [email]);
+      if (user.rows.length === 0) throw Object.assign(new Error('No registered user with that email'), { status: 404 });
+      const busy = await client.query(`SELECT org_id FROM org_members WHERE user_id = $1 AND status = 'active'`, [user.rows[0].id]);
+      if (busy.rows.length > 0) throw Object.assign(new Error('User already belongs to an active org'), { status: 400 });
+      await client.query(
+        `INSERT INTO org_members (org_id, user_id, role, status) VALUES ($1, $2, 'member', 'active')
+         ON CONFLICT (org_id, user_id) DO UPDATE SET status = 'active', role = 'member'`,
+        [orgId, user.rows[0].id]
+      );
+      await logAdminAction(client, {
+        adminId: req.user.id, action: 'org.member.add', targetType: 'org', targetId: orgId,
+        reason: req.body.reason, payload: { email },
+      });
+      return { added: user.rows[0].id };
+    });
+    res.status(201).json({ success: true, ...out });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    fail(res, err, 'Admin route failed');
+  }
+});
+
+// DELETE /api/admin/orgs/:id/members/:userId — remove a member (not the leader).
+router.delete('/orgs/:id/members/:userId', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const orgId = parseId(req.params.id);
+    const target = parseId(req.params.userId);
+    if (!orgId || !target) return res.status(400).json({ error: 'Org id and user id are required' });
+    const out = await withTransaction(async (client) => {
+      const org = await client.query(`SELECT leader_user_id FROM orgs WHERE id = $1`, [orgId]);
+      if (org.rows.length === 0) throw Object.assign(new Error('Org not found'), { status: 404 });
+      if (org.rows[0].leader_user_id === target) {
+        throw Object.assign(new Error('Transfer leadership first (or disband)'), { status: 400 });
+      }
+      await client.query(`UPDATE org_members SET status = 'removed' WHERE org_id = $1 AND user_id = $2`, [orgId, target]);
+      await logAdminAction(client, {
+        adminId: req.user.id, action: 'org.member.remove', targetType: 'org', targetId: orgId,
+        reason: req.body && req.body.reason, payload: { user_id: target },
+      });
+      return { removed: target };
+    });
+    res.json({ success: true, ...out });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    fail(res, err, 'Admin route failed');
+  }
+});
+
+// POST /api/admin/orgs/:id/disband — close the org (members fall back to own plans).
+router.post('/orgs/:id/disband', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const orgId = parseId(req.params.id);
+    if (!orgId) return res.status(400).json({ error: 'Org id is required' });
+    await withTransaction(async (client) => {
+      const upd = await client.query(`UPDATE orgs SET status = 'disbanded' WHERE id = $1 AND status = 'active' RETURNING id`, [orgId]);
+      if (upd.rows.length === 0) throw Object.assign(new Error('Org not found'), { status: 404 });
+      await client.query(`UPDATE org_members SET status = 'removed' WHERE org_id = $1`, [orgId]);
+      await logAdminAction(client, {
+        adminId: req.user.id, action: 'org.disband', targetType: 'org', targetId: orgId,
+        reason: req.body.reason, payload: null,
+      });
+    });
+    res.json({ success: true, disbanded: orgId });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    fail(res, err, 'Admin route failed');
+  }
+});
+
 module.exports = router;

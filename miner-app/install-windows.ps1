@@ -19,7 +19,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$KRELZ_VERSION = "3.43.0"
+$KRELZ_VERSION = "3.44.0"
 $INSTALL_DIR = "$HOME\krelz-miner"
 $EXISTING_CONFIG = "$INSTALL_DIR\miner-app\config.json"
 $TASK_NAME = "KrelzMiner"

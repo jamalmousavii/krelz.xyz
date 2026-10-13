@@ -16,6 +16,7 @@ const TABS = [
   { id: 'tickets', icon: '🎫', key: 'admin.tabTickets' },
   { id: 'payments', icon: '💰', key: 'admin.tabPayments' },
   { id: 'purchases', icon: '🛒', key: 'admin.tabPurchases' },
+  { id: 'orgs', icon: '🏢', key: 'admin.tabOrgs' },
 ];
 
 const TICKET_FILTERS = ['all', 'open', 'answered', 'closed'];
@@ -30,6 +31,11 @@ export default function Admin() {
   const [payments, setPayments] = useState(null);
   const [purchases, setPurchases] = useState([]);
   const [tab, setTab] = useState('dashboard');
+  // v3.44.0 — orgs: create + member management (audited server-side).
+  const [orgs, setOrgs] = useState([]);
+  const [orgName, setOrgName] = useState('');
+  const [orgLeader, setOrgLeader] = useState('');
+  const [orgAddEmail, setOrgAddEmail] = useState({}); // orgId -> email draft
 
   // Tickets thread
   const [ticketQuery, setTicketQuery] = useState('');
@@ -97,6 +103,31 @@ export default function Admin() {
     const data = await apiFetch('/api/admin/purchases');
     if (data.success) setPurchases(data.purchases);
   });
+  const fetchOrgs = () => wrap(async () => {
+    const data = await apiFetch('/api/admin/orgs');
+    if (data.success) setOrgs(data.orgs);
+  });
+  const orgAct = async (path, opts, okKey) => {
+    setActionBusy(true);
+    setActionMsg('');
+    try {
+      const data = await apiFetch(path, opts);
+      if (data.success) {
+        setActionMsg({ ok: true, text: t(okKey) });
+        await fetchOrgs();
+      } else setActionMsg({ ok: false, text: data.error || t('common.loadFailed') });
+    } catch (err) {
+      setActionMsg({ ok: false, text: err instanceof ApiError ? err.message : t('common.loadFailed') });
+    }
+    setActionBusy(false);
+  };
+  const createOrg = () => {
+    if (!orgName.trim() || !orgLeader.trim()) return;
+    orgAct('/api/admin/orgs', {
+      method: 'POST',
+      body: JSON.stringify({ name: orgName.trim(), leader_email: orgLeader.trim() }),
+    }, 'admin.orgCreated').then(() => { setOrgName(''); setOrgLeader(''); });
+  };
 
   useEffect(() => { if (isAdmin) fetchDashboard(); }, [isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -112,6 +143,7 @@ export default function Admin() {
     else if (tb === 'tickets') wrap(() => fetchTickets(ticketFilter, ticketQuery));
     else if (tb === 'payments') fetchPayments();
     else if (tb === 'purchases') fetchPurchases();
+    else if (tb === 'orgs') fetchOrgs();
     else fetchDashboard();
   };
 
@@ -689,6 +721,78 @@ export default function Admin() {
               </div>
             </div>
           )
+        )}
+
+        {isAdmin && !loading && !loadError && tab === 'orgs' && (
+          <div className="space-y-4">
+            <div className="bg-white border border-sky-100 shadow-sm rounded-xl p-4 md:p-5">
+              <h3 className="text-gray-800 font-bold text-sm md:text-base mb-3">＋ {t('admin.orgCreateTitle')}</h3>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input value={orgName} onChange={(e) => setOrgName(e.target.value)} maxLength={100}
+                  placeholder={t('admin.orgNamePh')}
+                  className="flex-1 bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400 min-h-[40px]" />
+                <input value={orgLeader} onChange={(e) => setOrgLeader(e.target.value)}
+                  placeholder={t('admin.orgLeaderPh')} type="email"
+                  className="flex-1 bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400 min-h-[40px]" />
+                <button onClick={createOrg} disabled={actionBusy || !orgName.trim() || !orgLeader.trim()}
+                  className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg transition text-sm font-bold disabled:opacity-50 min-h-[40px]">
+                  {t('admin.orgCreateBtn')}
+                </button>
+              </div>
+            </div>
+            {orgs.length === 0 ? (
+              <p className="text-gray-400 text-center py-10">{t('admin.noOrgs')}</p>
+            ) : orgs.map((o) => (
+              <div key={o.id} className="bg-white border border-sky-100 shadow-sm rounded-xl p-4 md:p-5">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="min-w-0">
+                    <span className="text-gray-800 font-bold text-sm md:text-base">🏢 {o.name}</span>
+                    <span className="text-gray-400 text-xs ml-2">#{o.id} · {t('admin.orgLeader')}: {o.leader_email || `#${o.leader_user_id}`}</span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className={`text-xs font-bold px-2 py-1 rounded-full ${o.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-400'}`}>{o.status}</span>
+                    {o.status === 'active' && (
+                      <button onClick={() => orgAct(`/api/admin/orgs/${o.id}/disband`, { method: 'POST' }, 'admin.orgDisbanded')}
+                        disabled={actionBusy}
+                        className="text-red-400 hover:text-red-600 text-xs font-bold transition disabled:opacity-50">
+                        {t('admin.orgDisband')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-1 mb-3">
+                  {(o.members || []).map((m) => (
+                    <div key={m.user_id} className="flex items-center justify-between gap-2 text-sm bg-sky-50/50 rounded-lg px-3 py-1.5">
+                      <span className="text-gray-700 truncate">{m.email} {m.role === 'leader' && <span className="text-amber-600 font-bold">👑</span>}</span>
+                      {o.status === 'active' && m.role !== 'leader' && (
+                        <button onClick={() => orgAct(`/api/admin/orgs/${o.id}/members/${m.user_id}`, { method: 'DELETE' }, 'admin.orgMemberRemoved')}
+                          disabled={actionBusy}
+                          className="text-red-400 hover:text-red-600 text-xs font-bold transition disabled:opacity-50">
+                          {t('admin.orgRemove')}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {o.status === 'active' && (
+                  <div className="flex gap-2">
+                    <input value={orgAddEmail[o.id] || ''} onChange={(e) => setOrgAddEmail((prev) => ({ ...prev, [o.id]: e.target.value }))}
+                      placeholder={t('admin.orgAddPh')} type="email"
+                      className="flex-1 bg-white text-gray-800 placeholder-gray-400 border border-sky-200 px-3 py-2 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-sky-400 min-h-[40px]" />
+                    <button onClick={() => {
+                      const email = (orgAddEmail[o.id] || '').trim();
+                      if (!email) return;
+                      orgAct(`/api/admin/orgs/${o.id}/members`, { method: 'POST', body: JSON.stringify({ email }) }, 'admin.orgMemberAdded')
+                        .then(() => setOrgAddEmail((prev) => ({ ...prev, [o.id]: '' })));
+                    }} disabled={actionBusy}
+                      className="bg-sky-500 hover:bg-sky-600 text-white px-4 py-2 rounded-lg transition text-sm font-bold disabled:opacity-50 min-h-[40px]">
+                      ＋ {t('admin.orgAddBtn')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         )}
 
         {isAdmin && !loading && !loadError && tab === 'purchases' && (

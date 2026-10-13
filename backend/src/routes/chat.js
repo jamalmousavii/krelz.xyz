@@ -22,6 +22,7 @@ const { getFreeStatus } = require('../services/freeAllowance');
 const { getDailyCap, FREE_DAILY_TOKENS, TOKEN_BUNDLE, listPlans } = require('../services/plans');
 const { getTokenBalance } = require('../services/tokenBundles');
 const { settleMessage, MINER_REVENUE_SHARE } = require('../services/billing');
+const { resolveCap } = require('../services/org');
 
 // Single source of truth for the default model (was split between
 // 'llama3:8b' — which exists in no catalog — and 'llama3.1:8b').
@@ -285,10 +286,15 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
     // exactly as before. Failures here never block chat (availability first).
     const guestKey = userId ? null : (req.ip || null);
     let freeCap = FREE_DAILY_TOKENS;
+    // v3.44.0 org shared bucket: members drain the leader's row when the
+    // org plan wins (max rule); everything else stays per-user.
+    let bucketUserId = userId || null;
     let preFlightFree = null;
     try {
-      freeCap = await getDailyCap(userId);
-      preFlightFree = await getFreeStatus({ userId, guestKey, cap: freeCap });
+      const resolved = await resolveCap(userId, guestKey);
+      freeCap = resolved.cap;
+      if (resolved.bucketUserId) bucketUserId = resolved.bucketUserId;
+      preFlightFree = await getFreeStatus({ userId: bucketUserId, guestKey: bucketUserId ? null : guestKey, cap: freeCap });
     } catch (err) {
       logger.error({ err }, 'Free allowance pre-flight failed (proceeding)');
     }
@@ -551,6 +557,7 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
       servedByMiner,
       freeCap,
       freeRemainingInit: preFlightFree ? preFlightFree.remaining : null,
+      bucketUserId,
       paymentCoin,
       taskId,
     });

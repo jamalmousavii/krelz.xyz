@@ -16,7 +16,10 @@ const MINER_REVENUE_SHARE = 0.9;
 //   5. race with nothing left → served as 'free' (generation never wasted).
 // Guests (no userId) only ever reach legs 1 and 5.
 // Returns the settlement snapshot; throws on DB errors (caller 500s).
-async function settleMessage({ userId, guestKey, tokensUsed, cost, minerId, servedByMiner, freeCap, freeRemainingInit = null, paymentCoin = 'USD', taskId = null }) {
+async function settleMessage({ userId, guestKey, tokensUsed, cost, minerId, servedByMiner, freeCap, freeRemainingInit = null, bucketUserId = null, paymentCoin = 'USD', taskId = null }) {
+  // v3.44.0 org shared bucket: the free leg drains the bucket owner's row
+  // (the org leader when the org plan wins); every other leg stays per-user.
+  const bucket = bucketUserId || userId;
   let paymentStatus = 'free';
   let minerCreditRemaining = null;
   let freeRemaining = freeRemainingInit;
@@ -44,9 +47,9 @@ async function settleMessage({ userId, guestKey, tokensUsed, cost, minerId, serv
     try {
       await client.query('BEGIN');
 
-      const freeCharge = await chargeFreeTokens({
-        userId, guestKey, tokens: tokensUsed, cap: freeCap, client,
-      });
+        const freeCharge = await chargeFreeTokens({
+          userId: bucket, guestKey, tokens: tokensUsed, cap: freeCap, client,
+        });
       freeRemaining = freeCharge.remaining;
 
         if (freeCharge.charged) {
