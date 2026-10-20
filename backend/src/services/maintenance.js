@@ -1,11 +1,19 @@
 const pool = require('../database/pool');
 const nowpayments = require('./nowpayments');
 const { applyPlanPurchase, applyDeposit } = require('./paymentClaims');
+const { settleMessage } = require('./billing');
+const { resolveCap } = require('./org');
 const { logger } = require('../logger');
 
 const RECONCILE_BATCH = 25;
 const RECONCILE_MINUTES = 30;
 const MEDIA_RETENTION_DAYS = parseInt(process.env.MEDIA_RETENTION_DAYS || '7', 10);
+// Billing reconciliation (v3.45.0): a task served but left unsettled (the
+// chat/v1 route marked it when settleMessage threw). settleMessage is ONE
+// rolled-back transaction, so a retry can never double-charge; after
+// BILLING_RETRY_MAX failed attempts the row parks as 'unreconciled' for ops.
+const BILLING_RETRY_MAX = 3;
+const BILLING_RETRY_MINUTES = 5;
 
 // B4: IPN delivery is not guaranteed (NowPayments outage, webhook 5xx,
 // nginx restart mid-flight). Re-check stale pending purchases against the
@@ -80,6 +88,56 @@ async function pruneOldMedia() {
   }
 }
 
+// v3.45.0: retry settlement for tasks the routes marked billing_pending.
+// Nothing was charged on the failed attempt (single rolled-back transaction),
+// so re-running settleMessage with the stored tokens/cost is safe. The cap
+// is recomputed at retry time (resolveCap) — a rare, bounded drift.
+async function reconcileBilling() {
+  const rows = await pool.query(
+    `SELECT id, user_id, miner_id, tokens_used, cost
+       FROM tasks
+      WHERE billing_status = 'pending'
+        AND status = 'completed'
+        AND billing_attempts < $1
+        AND completed_at < NOW() - make_interval(mins => $2)
+      ORDER BY id ASC
+      LIMIT $3`,
+    [BILLING_RETRY_MAX, BILLING_RETRY_MINUTES, RECONCILE_BATCH]
+  );
+
+  for (const t of rows.rows) {
+    try {
+      const resolved = await resolveCap(t.user_id, null);
+      await settleMessage({
+        userId: t.user_id,
+        guestKey: null,
+        tokensUsed: Number(t.tokens_used) || 0,
+        cost: Number(t.cost) || 0,
+        minerId: t.miner_id,
+        servedByMiner: !!t.miner_id,
+        freeCap: resolved.cap,
+        freeRemainingInit: null,
+        bucketUserId: resolved.bucketUserId,
+        paymentCoin: 'USD',
+        taskId: t.id,
+      });
+      await pool.query("UPDATE tasks SET billing_status = 'settled' WHERE id = $1", [t.id]);
+      logger.info({ taskId: t.id }, 'Reconciled billing_pending task');
+    } catch (err) {
+      await pool
+        .query(
+          `UPDATE tasks
+              SET billing_attempts = billing_attempts + 1,
+                  billing_status = CASE WHEN billing_attempts + 1 >= $2 THEN 'unreconciled' ELSE 'pending' END
+            WHERE id = $1`,
+          [t.id, BILLING_RETRY_MAX]
+        )
+        .catch((e) => logger.error({ err: e, taskId: t.id }, 'Failed to bump billing attempts'));
+      logger.error({ err, taskId: t.id }, 'Billing reconciliation attempt failed');
+    }
+  }
+}
+
 // Idempotent by construction: claims are exactly-once and NULL-ing old media
 // is safe to repeat, so restarts/overlapping runs are harmless.
 async function runMaintenance() {
@@ -93,6 +151,11 @@ async function runMaintenance() {
   } catch (err) {
     logger.error({ err }, 'Media prune run failed');
   }
+  try {
+    await reconcileBilling();
+  } catch (err) {
+    logger.error({ err }, 'Billing reconciliation run failed');
+  }
 }
 
-module.exports = { runMaintenance, reconcilePendingPayments, pruneOldMedia };
+module.exports = { runMaintenance, reconcilePendingPayments, pruneOldMedia, reconcileBilling };

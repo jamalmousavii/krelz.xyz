@@ -1,15 +1,21 @@
 // Org plans v3.44.0: shared leader bucket, member management, usage.
+// v3.45.0: org mutations run inside transactions (client from pool.connect)
+// and addMember races land on the partial-unique DB index — the mock below
+// routes every client query through the same scripted queryImpl as pool.query.
 
 const express = require('express');
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 
 jest.mock('../src/database/pool', () => {
-  const state = { queryImpl: async () => ({ rows: [] }) };
+  const state = {
+    queryImpl: async () => ({ rows: [] }),
+    connectImpl: async () => { throw new Error('connectImpl not scripted'); },
+  };
   return {
     __state: state,
     query: (sql, params) => state.queryImpl(sql, params),
-    connect: async () => ({ query: async () => ({ rows: [] }), release: jest.fn() }),
+    connect: () => state.connectImpl(),
   };
 });
 
@@ -32,7 +38,17 @@ function buildApp() {
 
 beforeEach(() => {
   pool.__state.queryImpl = async () => ({ rows: [] });
+  pool.__state.connectImpl = async () => { throw new Error('connectImpl not scripted'); };
 });
+
+// Client whose queries flow through the same scripted queryImpl (BEGIN/COMMIT
+// included) so transaction-based routes stay fully mockable.
+function scriptedClient() {
+  pool.__state.connectImpl = async () => ({
+    query: (sql, params) => pool.__state.queryImpl(sql, params),
+    release: jest.fn(),
+  });
+}
 
 function authDb() {
   const prev = pool.__state.queryImpl;
@@ -111,10 +127,11 @@ describe('org member routes', () => {
 
   it('leader adds a registered user by email; unknown email 404s', async () => {
     memberDb();
+    scriptedClient();
     const prev = pool.__state.queryImpl;
     pool.__state.queryImpl = async (sql, params) => {
+      if (String(sql).includes('FROM orgs WHERE id')) return { rows: [{ status: 'active' }] };
       if (String(sql).includes('FROM users WHERE email')) return { rows: [{ id: 8 }] };
-      if (String(sql).includes('FROM org_members WHERE user_id')) return { rows: [] };
       return prev(sql, params);
     };
     const ok = await request(app).post('/api/orgs/members')
@@ -122,12 +139,33 @@ describe('org member routes', () => {
     expect(ok.status).toBe(201);
 
     pool.__state.queryImpl = async (sql, params) => {
+      if (String(sql).includes('FROM orgs WHERE id')) return { rows: [{ status: 'active' }] };
       if (String(sql).includes('FROM users WHERE email')) return { rows: [] };
       return prev(sql, params);
     };
     const miss = await request(app).post('/api/orgs/members')
       .set('Authorization', `Bearer ${sign(7)}`).send({ email: 'ghost@x.co' });
     expect(miss.status).toBe(404);
+  });
+
+  it('duplicate active membership maps the unique-index violation to a 400', async () => {
+    memberDb();
+    scriptedClient();
+    const prev = pool.__state.queryImpl;
+    pool.__state.queryImpl = async (sql, params) => {
+      if (String(sql).includes('FROM orgs WHERE id')) return { rows: [{ status: 'active' }] };
+      if (String(sql).includes('FROM users WHERE email')) return { rows: [{ id: 8 }] };
+      if (String(sql).includes('INSERT INTO org_members')) {
+        const err = new Error('duplicate key value violates unique constraint "uniq_org_members_active_user"');
+        err.code = '23505';
+        throw err;
+      }
+      return prev(sql, params);
+    };
+    const res = await request(app).post('/api/orgs/members')
+      .set('Authorization', `Bearer ${sign(7)}`).send({ email: 'busy@x.co' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/active org/);
   });
 
   it('non-leader cannot add (403) and leader cannot remove self (400)', async () => {
@@ -173,8 +211,9 @@ describe('org member routes', () => {
     expect(res.body.usage).toHaveLength(2);
   });
 
-  it('leaving leader promotes the oldest member', async () => {
+  it('leaving leader promotes the oldest member (one transaction)', async () => {
     authDb();
+    scriptedClient();
     const prev = pool.__state.queryImpl;
     const seen = [];
     pool.__state.queryImpl = async (sql, params) => {
@@ -182,11 +221,42 @@ describe('org member routes', () => {
       if (String(sql).includes('FROM org_members') && String(sql).includes('m.user_id')) {
         return { rows: [{ id: 1, name: 'Acme', leader_user_id: 7, role: 'leader' }] };
       }
+      if (String(sql).includes('FROM orgs WHERE id')) {
+        return { rows: [{ leader_user_id: 7, status: 'active' }] };
+      }
       if (String(sql).includes('ORDER BY joined_at ASC LIMIT 1')) return { rows: [{ user_id: 8 }] };
       return prev(sql, params);
     };
     const res = await request(app).post('/api/orgs/leave').set('Authorization', `Bearer ${sign(7)}`);
     expect(res.status).toBe(200);
+    expect(seen.join('|')).toMatch(/BEGIN/);
+    expect(seen.join('|')).toMatch(/UPDATE orgs SET leader_user_id/);
+    expect(seen.join('|')).toMatch(/COMMIT/);
+  });
+
+  it('transfer runs in a transaction under the org lock', async () => {
+    authDb();
+    scriptedClient();
+    const prev = pool.__state.queryImpl;
+    const seen = [];
+    pool.__state.queryImpl = async (sql, params) => {
+      seen.push(String(sql).split('\n')[0].trim());
+      if (String(sql).includes('FROM org_members') && String(sql).includes('m.user_id')) {
+        return { rows: [{ id: 1, name: 'Acme', leader_user_id: 7, role: 'leader' }] };
+      }
+      if (String(sql).includes('FROM orgs WHERE id')) {
+        return { rows: [{ leader_user_id: 7, status: 'active' }] };
+      }
+      if (String(sql).includes('FROM org_members WHERE org_id')) return { rows: [{ user_id: 8 }] };
+      return prev(sql, params);
+    };
+    const res = await request(app)
+      .post('/api/orgs/transfer')
+      .set('Authorization', `Bearer ${sign(7)}`)
+      .send({ user_id: 8 });
+    expect(res.status).toBe(200);
+    expect(res.body.leader).toBe(8);
+    expect(seen.join('|')).toMatch(/FOR UPDATE/);
     expect(seen.join('|')).toMatch(/UPDATE orgs SET leader_user_id/);
   });
 });

@@ -3,7 +3,7 @@ import { memo } from 'react';
 // The 402 upgrade wall rendered inside a chat bubble: plan rows, token
 // bundle, guest hint. Extracted from pages/index.js in Phase 6 — module-level
 // + memo so typing in the composer never re-renders the plan rows.
-function UpgradeWall({ wall, content, t, purchasePlan, purchaseTokens, bundleAmount, setBundleAmount, purchaseError }) {
+function UpgradeWall({ wall, content, t, purchasePlan, purchaseTokens, purchaseBusy, bundleAmount, setBundleAmount, purchaseError }) {
   return (
     <div className="min-w-[240px] md:min-w-[340px]">
       <div className="font-bold text-violet-800 mb-1">⭐ {t('chat.upgradeTitle')}</div>
@@ -33,9 +33,10 @@ function UpgradeWall({ wall, content, t, purchasePlan, purchaseTokens, bundleAmo
             {wall.signed_in && (
               <button
                 onClick={() => purchasePlan(p.name)}
-                className="bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition flex-shrink-0"
+                disabled={!!purchaseBusy}
+                className="bg-violet-600 hover:bg-violet-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition flex-shrink-0 disabled:opacity-50"
               >
-                ⬆ {p.label}
+                {purchaseBusy === p.name ? '…' : `⬆ ${p.label}`}
               </button>
             )}
           </div>
@@ -56,9 +57,10 @@ function UpgradeWall({ wall, content, t, purchasePlan, purchaseTokens, bundleAmo
           />
           <button
             onClick={purchaseTokens}
-            className="bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition flex-shrink-0"
+            disabled={!!purchaseBusy}
+            className="bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition flex-shrink-0 disabled:opacity-50"
           >
-            {t('chat.bundleBtn')}
+            {purchaseBusy === 'tokens' ? '…' : t('chat.bundleBtn')}
           </button>
         </div>
       )}

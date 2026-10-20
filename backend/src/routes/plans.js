@@ -75,6 +75,21 @@ router.post('/tokens/purchase', authenticate, async (req, res) => {
     }
 
     const tokens = quoteTokens(amountUsd);
+    // Double-click / duplicate-tab guard (v3.45.0): one live token invoice per
+    // user at a time; the client also disables its buy button.
+    const recent = await pool.query(
+      `SELECT 1 FROM plan_purchases
+        WHERE user_id = $1 AND plan_type = 'tokens' AND status = 'pending'
+          AND created_at > NOW() - INTERVAL '90 seconds'
+        LIMIT 1`,
+      [userId]
+    );
+    if (recent.rows.length > 0) {
+      return res.status(409).json({
+        error: 'A token purchase is already in progress — finish the open invoice or retry in a minute.',
+        code: 'purchase_pending',
+      });
+    }
     const orderId = `tok-${userId}-${Date.now()}`;
     // B4: the pending row must exist BEFORE the invoice does. An invoice with
     // no local row means the later IPN deduped against nothing — paid, never
@@ -135,6 +150,21 @@ router.post('/:tier/purchase', authenticate, async (req, res) => {
     }
 
     const orderId = `${tier}-${userId}-${Date.now()}`;
+    // Double-click / duplicate-tab guard (v3.45.0): one live invoice per
+    // user+tier at a time (see /tokens/purchase above).
+    const recent = await pool.query(
+      `SELECT 1 FROM plan_purchases
+        WHERE user_id = $1 AND plan_type = $2 AND status = 'pending'
+          AND created_at > NOW() - INTERVAL '90 seconds'
+        LIMIT 1`,
+      [userId, tier]
+    );
+    if (recent.rows.length > 0) {
+      return res.status(409).json({
+        error: `A ${tier} purchase is already in progress — finish the open invoice or retry in a minute.`,
+        code: 'purchase_pending',
+      });
+    }
     // B4: pending row first — see the note in /tokens/purchase above.
     await pool.query(
       `INSERT INTO plan_purchases (order_id, user_id, invoice_id, amount, plan_type, status)

@@ -110,6 +110,10 @@ export default function Home() {
   const retryTimersRef = useRef([]);
   const [purchaseError, setPurchaseError] = useState('');
   const [bundleAmount, setBundleAmount] = useState('5'); // whole dollars for the token bundle
+  // v3.45.0 — double-click guard: a synchronous ref lock (state alone can't
+  // stop two clicks in the same tick) plus `purchaseBusy` for the button UI.
+  const [purchaseBusy, setPurchaseBusy] = useState(null); // tier | 'tokens' | null
+  const purchaseLockRef = useRef(false);
 
   // v3.29.0 — public pricing section on the empty-state homepage. The catalog
   // endpoint uses optionalAuth, so a logged-in visitor gets their active plan
@@ -294,8 +298,12 @@ export default function Home() {
 
   // Plan/token purchase: one NowPayments invoice per purchase; activation or
   // pot credit happens in the IPN webhook. Hosted checkout opens in a new tab.
+  // v3.45.0: synchronous lock + busy state so a double-click can never fire
+  // two invoices (the server also 409s within a 90s window).
   const purchasePlan = useCallback(async (tier) => {
-    if (!token) return;
+    if (!token || purchaseLockRef.current) return;
+    purchaseLockRef.current = true;
+    setPurchaseBusy(tier);
     setPurchaseError('');
     try {
       const data = await apiFetch(`/api/plans/${tier}/purchase`, { method: 'POST' });
@@ -307,18 +315,23 @@ export default function Home() {
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) setPurchaseError(t('home.loginToBuy'));
       else setPurchaseError(err instanceof ApiError ? err.message : t('chat.errorConnection'));
+    } finally {
+      purchaseLockRef.current = false;
+      setPurchaseBusy(null);
     }
   }, [token, t]);
 
   // Token bundle ($1 = 1M tokens, whole dollars, never expires).
   const purchaseTokens = useCallback(async () => {
-    if (!token) return;
-    setPurchaseError('');
+    if (!token || purchaseLockRef.current) return;
     const amount = parseInt(bundleAmount, 10);
     if (!(amount >= 1 && amount <= 500)) {
       setPurchaseError(t('chat.bundleRange'));
       return;
     }
+    purchaseLockRef.current = true;
+    setPurchaseBusy('tokens');
+    setPurchaseError('');
     try {
       const data = await apiFetch('/api/plans/tokens/purchase', {
         method: 'POST',
@@ -332,6 +345,9 @@ export default function Home() {
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) setPurchaseError(t('home.loginToBuy'));
       else setPurchaseError(err instanceof ApiError ? err.message : t('chat.errorConnection'));
+    } finally {
+      purchaseLockRef.current = false;
+      setPurchaseBusy(null);
     }
   }, [token, t, bundleAmount]);
 
@@ -876,6 +892,7 @@ export default function Home() {
                   catalog={catalog}
                   planHint={planHint}
                   purchaseError={purchaseError}
+                  purchaseBusy={purchaseBusy}
                   bundleAmount={bundleAmount}
                   setBundleAmount={setBundleAmount}
                   onBuyPlan={handlePlanBuy}
@@ -901,6 +918,7 @@ export default function Home() {
           catalog={catalog}
           planHint={planHint}
           purchaseError={purchaseError}
+          purchaseBusy={purchaseBusy}
           bundleAmount={bundleAmount}
           setBundleAmount={setBundleAmount}
           onBuyPlan={handlePlanBuy}
@@ -973,6 +991,7 @@ export default function Home() {
             hasSubjectBar={isLoggedIn && !!activeSessionId}
             purchasePlan={purchasePlan}
             purchaseTokens={purchaseTokens}
+            purchaseBusy={purchaseBusy}
             bundleAmount={bundleAmount}
             setBundleAmount={setBundleAmount}
             purchaseError={purchaseError}
@@ -1026,7 +1045,8 @@ export default function Home() {
               {isLoggedIn && upgradeNotice.plans?.[0] && (
                 <button
                   onClick={() => purchasePlan(upgradeNotice.plans[0].name)}
-                  className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition flex-shrink-0"
+                  disabled={!!purchaseBusy}
+                  className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg font-bold text-xs transition flex-shrink-0 disabled:opacity-50"
                 >
                   ⬆ {upgradeNotice.plans[0].label}
                 </button>
@@ -1071,6 +1091,7 @@ export default function Home() {
         catalog={catalog}
         planHint={planHint}
         purchaseError={purchaseError}
+        purchaseBusy={purchaseBusy}
         bundleAmount={bundleAmount}
         setBundleAmount={setBundleAmount}
         onBuyPlan={handlePlanBuy}

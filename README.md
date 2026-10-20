@@ -46,7 +46,7 @@ Decentralized LLM Network - Share your GPU, earn KRELZ tokens
 - **Split Pages (v3.15.0)** — Dashboard (`/profile`), Miners (`/miners`), Settings (`/settings`) separated
 - **Modern Neutral Chat UI (v3.37.0)** — ChatGPT/Gemini-style chat experience (auto-growing composer, neutral palette, sky accents)
 - **Support Tickets (v3.39.0)** — `/support`: categorized tickets (support/billing/miner) with threaded replies and close/reopen; admins answer from `/admin`
-- **Full Admin Panel (v3.39.0)** — 7 tabs (dashboard/users/miners/tasks/tickets/payments/purchases) with real actions: role & ban, ±USD balance, ±token pot, plan grant, miner remove/restore — every mutation written to `admin_audit_log`
+- **Full Admin Panel (v3.39.0)** — 8 tabs (dashboard/users/miners/tasks/tickets/payments/purchases/orgs) with real actions: role & ban, ±USD balance, ±token pot, plan grant, miner remove/restore — every mutation written to `admin_audit_log`
 - **Transactions Card (v3.39.0)** — profile shows the merged deposit/withdrawal history with status badges
 - **Miner Docs vs Interactive (v3.16.0)** — `/miner`: full install/connect/delete guide + GitHub; `/miners`: copy-command Quick Install + miner cards
 
@@ -206,6 +206,8 @@ Every message settles in one row-locked transaction, in order:
 
 **Organization plans (v3.44.0)** — a company/leader shares their plan cap as one bucket: admin creates the org, the leader adds registered users by email, everyone drains the shared allowance with per-member usage reporting on `/org`. No member cap; one active org per user.
 
+**Data safety + correctness (v3.45.0)** — encrypted nightly DB backups (14-day retention, rclone-ready offsite, restore-drill script) with a systemd timer; billing reconciliation for settlement failures (`billing_pending` → retried by maintenance); race-proof orgs (transactions + DB-enforced single active membership); one shared pricing source; purchase double-click guard (client lock + server `409`).
+
 ## Project Structure
 
 ```
@@ -216,7 +218,8 @@ krelz.xyz/
 │   │   ├── models.js          # AI models + pricing
 │   │   ├── database/
 │   │   │   ├── pool.js        # PostgreSQL connection
-│   │   │   └── migrate.js     # DB migration (23 tables + resource columns)
+│   │   │   ├── tx.js          # withTransaction helper (v3.45.0)
+│   │   │   └── migrate.js     # DB migration (25 tables + resource columns)
 │   │   ├── routes/
 │   │   │   ├── auth.js        # Authentication
 │   │   │   ├── miners.js      # Miner management
@@ -240,7 +243,7 @@ krelz.xyz/
 │   │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)
 │   │   ├── leaderboard.js     # Top miners/users
 │   │   ├── support.js         # Support tickets: list/new/thread (v3.39.0)
-│   │   └── admin.js           # Admin panel: 7 tabs + management actions (v3.39.0)
+│   │   └── admin.js           # Admin panel: 8 tabs + management actions (v3.39.0; orgs v3.44.0)
 │   ├── components/
 │   │   ├── Navbar.js          # Nav (Miner, ⭐ Plans, Leaderboard; 🎫 Support in avatar dropdown + mobile menu, 🛡️ Admin) + auth + lang dropdown
 │   │   ├── EarningsBreakdown.js # 5-way miner earnings breakdown (profile, /miners, /miner)
@@ -262,7 +265,7 @@ krelz.xyz/
 └── docs/                       # Documentation
 ```
 
-## Database Schema (23 Tables)
+## Database Schema (25 Tables)
 
 | Table | Purpose |
 |-------|---------|
@@ -288,6 +291,8 @@ krelz.xyz/
 | tickets | Support tickets — subject/category/status (v3.39.0) |
 | ticket_messages | Ticket thread messages, user + admin replies (v3.39.0) |
 | admin_audit_log | Admin action trail — who/action/target/reason/payload (v3.39.0) |
+| orgs | Organization plans — admin-created, leader-owned shared bucket (v3.44.0) |
+| org_members | Active memberships — one ACTIVE org per user (partial unique, v3.45.0) |
 | schema_migrations | Migration bookkeeping |
 
 ## Tech Stack

@@ -1,6 +1,6 @@
 # مستندات API — Krelz Network
 
-نسخه بک‌اند: `3.44.0` — پایه: `https://krelz.xyz` (نمونه: `https://krelz.xyz/api/chat`)
+نسخه بک‌اند: `3.45.0` — پایه: `https://krelz.xyz` (نمونه: `https://krelz.xyz/api/chat`)
 
 همه پاسخ‌ها JSON هستند. در حالت موفقیت معمولاً `success: true` برمی‌گردد و در حالت خطا `error` (رشته) یا `details` (لیست خطاهای اعتبارسنجی).
 
@@ -371,6 +371,35 @@ curl https://krelz.xyz/v1/chat/completions \
 
 ---
 
+## کلیدهای API (v3.43.0 — نیازمند JWT؛ ساخت از Settings)
+
+فقط برای Coder API (`/v1`). مقدار کلید `sk_...` تنها یک‌بار (در پاسخ ساخت) نمایش داده می‌شود؛ سرور فقط هش sha256 را نگه می‌دارد. حداکثر ۱۰ کلید فعالِ هم‌زمان.
+
+| متد و مسیر | توضیح |
+|------|-------|
+| `GET /api/keys` | لیست کلیدها (نام، prefix، `last_used_at` — بدون هش) |
+| `POST /api/keys` | ساخت کلید: بدنه `{name}` → مقدار کامل فقط در همین پاسخ |
+| `DELETE /api/keys/:id` | ابطال کلید (فقط مالک) |
+
+---
+
+## سازمان‌ها (v3.44.0 — نیازمند JWT؛ ساخت سازمان فقط توسط ادمین)
+
+سازمان = یک سطل مشترک از سقف پلنِ لیدر. کاربرها خودشان ثبت‌نام می‌کنند و لیدر با ایمیل اضافه‌شان می‌کند. سقف مؤثر هر عضو = `max(سقف خودِ عضو, سقف لیدر)`؛ پات توکن، کیف پول و اعتبار ماینر هر عضو جداست. یک عضویت فعال برای هر کاربر (v3.45.0: با ایندکس unique در دیتابیس تضمین می‌شود).
+
+| متد و مسیر | توضیح |
+|------|-------|
+| `GET /api/orgs/mine` | سازمان + اعضای فعال + snapshot سطل مشترک |
+| `GET /api/orgs/usage` | مصرف ۳۰ روز: لیدر همه را می‌بیند، عضو فقط ردیف خودش |
+| `POST /api/orgs/members` | بدنه `{email}` — افزودن کاربر ثبت‌نام‌شده (فقط لیدر). ایمیل ناشناس → `404`؛ عضو فعالِ سازمان دیگر → `400`. v3.45.0: سقف ۲۰ افزودن در ۱۵ دقیقه برای هر لیدر؛ کل عملیات در یک تراکنش |
+| `DELETE /api/orgs/members/:userId` | حذف عضو (فقط لیدر؛ خودش → `400`؛ عضو ناموجود → `404`) |
+| `POST /api/orgs/transfer` | بدنه `{user_id}` — انتقال لیدری به عضو فعال (تراکنش + قفل ردیف سازمان) |
+| `POST /api/orgs/leave` | خروج از سازمان؛ لیدرِ رفته → قدیمی‌ترین عضو لیدر می‌شود؛ خروج آخرین عضو → `disbanded` |
+
+ادمین (با audit، جزئیات در بخش ادمین): `GET/POST /api/admin/orgs`، `POST /api/admin/orgs/:id/members`، `DELETE /api/admin/orgs/:id/members/:userId`، `POST /api/admin/orgs/:id/disband`.
+
+---
+
 ## مدل‌ها، رتبه‌بندی
 
 | مسیر | توضیح |
@@ -413,6 +442,7 @@ curl https://krelz.xyz/v1/chat/completions \
 | `GET /api/admin/tickets/:id` | تیکت + ایمیل مالک + رشته پیام‌ها |
 | `GET /api/admin/payments` | ۱۰۰ واریز + ۱۰۰ برداشت اخیر + ایمیل کاربر |
 | `GET /api/admin/purchases` | ۱۰۰ خرید پلن/بسته اخیر + ایمیل کاربر |
+| `GET /api/admin/orgs` | سازمان‌ها + اعضا + ایمیل لیدر (v3.44.0) |
 
 ### تغییرات (همگی `PUT`/`POST` با `body` JSON)
 
@@ -426,6 +456,10 @@ curl https://krelz.xyz/v1/chat/completions \
 | `POST /api/admin/users/:id/tokens` | `{delta_tokens, reason}` — توکن پات ± (عدد صحیح، کف صفر) |
 | `PUT /api/admin/users/:id/plan` | `{plan: "plus"\|"pro"\|"max"}` — فعال‌سازی/تمدید ۳۰ روزه از `plans.activatePlan` |
 | `PUT /api/admin/miners/:id/status` | `{status: "removed"\|"offline"}` — حذف/بازگردانی ماینر |
+| `POST /api/admin/orgs` | `{name, leader_email}` — ساخت سازمان + ردیف لیدر (v3.44.0، تراکنش + audit) |
+| `POST /api/admin/orgs/:id/members` | `{email}` — افزودن کاربر ثبت‌نام‌شده (v3.44.0) |
+| `DELETE /api/admin/orgs/:id/members/:userId` | حذف عضو (لیدر حذف نمی‌شود؛ v3.44.0) |
+| `POST /api/admin/orgs/:id/disband` | بستن سازمان؛ اعضا به پلن خودشان برمی‌گردند (v3.44.0) |
 
 ---
 

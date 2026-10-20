@@ -726,9 +726,45 @@ const migrate = async () => {
         PRIMARY KEY (org_id, user_id)
       )
     `);
-    await client.query('CREATE INDEX IF NOT EXISTS idx_org_members_user ON org_members(user_id)');
+    // NOTE: the plain (user_id) index moved to the v3.45.0 block below, where
+    // it is superseded by the partial-unique idx on active memberships.
     await client.query('CREATE INDEX IF NOT EXISTS idx_org_members_org ON org_members(org_id)');
     console.log('✅ جدول orgs/org_members ایجاد شد');
+
+    // ---- v3.45.0: hot-path indexes + billing reconciliation columns ----
+    // /v1 auth looks api_keys up by key_hash on every call — without this it
+    // was a sequential scan. Unique because all keys are sha256 sk_ tokens.
+    await client.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id)');
+    // One ACTIVE org membership per user, enforced by the database — the app
+    // check alone was check-then-insert (two concurrent adds could both land).
+    // Replaces the plain user index: active lookups are the only ones served.
+    await client.query('DROP INDEX IF EXISTS idx_org_members_user');
+    await client.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS uniq_org_members_active_user
+         ON org_members(user_id) WHERE status = 'active'`
+    );
+    // Billing reconciliation (v3.45.0): chat/v1 mark a task 'pending' when it
+    // was served but settleMessage threw (nothing charged — it is one
+    // rolled-back transaction). The maintenance worker retries; after
+    // billing_attempts >= 3 the row parks as 'unreconciled' for ops.
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS billing_status VARCHAR(16);
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS billing_attempts INTEGER NOT NULL DEFAULT 0;
+      EXCEPTION WHEN duplicate_column THEN null;
+      END $$;
+    `);
+    await client.query(
+      `CREATE INDEX IF NOT EXISTS idx_tasks_billing_pending ON tasks(billing_status)
+        WHERE billing_status = 'pending'`
+    );
+    console.log('✅ v3.45.0: ایندکسها و ستونهای billing ایجاد شد');
 
     // ---- Schema version bookkeeping (baseline marker for future migrations) ----
     await client.query(`

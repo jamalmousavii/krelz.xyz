@@ -9,7 +9,15 @@ const MODELS = require('../models');
 
 const FREE_DAILY_TOKENS = 2000000;
 const DEFAULT_MODEL_ID = 'llama3.1:8b';
+// The ONE fallback price in the codebase (v3.45.0): an unknown model id
+// resolves here — chat/v1 used to carry three divergent literals
+// (0.158/0.176/0.188) for the same case.
 const DEFAULT_OUTPUT_PRICE = 0.158; // fallback if the catalog loses the default model
+// Hard per-task output-token bound (H1). tokens_used drives both the user
+// charge and the miner share, so an inflated or NaN report must fail the
+// task — never be clamped into a charge. Shared by routes/chat.js,
+// routes/v1.js and the WS task-result handler (v3.45.0).
+const MAX_TASK_TOKENS = 65536;
 
 // Paid tiers. One row per tier in user_plans; a user may hold several active
 // rows and always gets the biggest cap among them.
@@ -32,11 +40,17 @@ const TOKEN_BUNDLE = {
 // miners nothing — unchanged since v3.25.0/v3.27.0.
 const MINER_REVENUE_SHARE = 0.9;
 
+// Single source of truth for output pricing (v3.45.0): chat, the v1 agent
+// API and the WS result handler all resolve through here.
+function modelOutputPrice(modelId) {
+  const m = MODELS.find((x) => x.id === modelId);
+  return m ? m.outputPrice : DEFAULT_OUTPUT_PRICE;
+}
+
 // What a day's allowance is worth at the default model's catalog output
 // price — used to show "N tokens/day (≈ $X/day, $Y/month worth)".
 function outputPrice() {
-  const m = MODELS.find((x) => x.id === DEFAULT_MODEL_ID);
-  return m ? m.outputPrice : DEFAULT_OUTPUT_PRICE;
+  return modelOutputPrice(DEFAULT_MODEL_ID);
 }
 
 function round2(n) {
@@ -110,6 +124,8 @@ module.exports = {
   PLANS,
   TOKEN_BUNDLE,
   MINER_REVENUE_SHARE,
+  MAX_TASK_TOKENS,
+  modelOutputPrice,
   listPlans,
   quoteTokens,
   tokenValueUsd,

@@ -61,7 +61,7 @@ docker run -d --name krelz-it-pg -e POSTGRES_USER=krelz -e POSTGRES_PASSWORD=kre
 DATABASE_URL='postgresql://krelz:krelz@localhost:5433/krelz_it' npm test
 docker rm -f krelz-it-pg
 
-# Frontend — jest (22 tests), lint (warning-only), i18n parity (33 × 408), production build
+# Frontend — jest (27 tests), lint (warning-only), i18n parity (33 × 483), production build
 cd frontend
 npm run lint && npm run i18n:check && npm test && npm run build
 
@@ -89,7 +89,7 @@ frontend/
 │   ├── miner.js           # Miner docs: install/connect/delete + GitHub (v3.16.0)
 │   ├── leaderboard.js     # Top miners/users
 │   ├── support.js         # Support tickets: list/new/thread (v3.39.0)
-│   └── admin.js           # Admin panel: 7 tabs + management actions (v3.39.0)
+│   └── admin.js           # Admin panel: 8 tabs + management actions (v3.39.0; orgs v3.44.0)
 ├── components/
 │   ├── Navbar.js          # Nav + auth dropdown + LanguageSwitcher (🎫 Support: avatar dropdown + mobile menu + dashboard chips; top bar removed v3.39.1)
 │   ├── EarningsBreakdown.js # 5-way earnings breakdown (profile, /miners, /miner; v3.29.0)
@@ -120,7 +120,7 @@ backend/
 │   ├── cache.js           # Redis caching
 │   ├── database/
 │   │   ├── pool.js        # PostgreSQL connection
-│   │   └── migrate.js     # DB migration (23 tables + resource columns)
+│   │   └── migrate.js     # DB migration (25 tables + resource columns)
 │   ├── middleware/
 │   │   ├── auth.js        # JWT + Google OAuth (+ banned check via cached auth state, v3.39.0)
 │   │   └── validate.js    # Body validators (chat/register/deposit/withdraw)
@@ -166,7 +166,7 @@ miner-app/
         └── api.js         # REST API (register, heartbeat)
 ```
 
-## Database Schema (23 Tables)
+## Database Schema (25 Tables)
 
 | Table | Purpose |
 |-------|---------|
@@ -464,7 +464,7 @@ historical; see `CHANGELOG.md` `[3.38.0]` for the full removal record.
 ### UI
 
 - `/support` (v3.39.0): list + new-ticket form + thread with replies/close; `🎫 Support` entry in the Navbar avatar dropdown + mobile menu for everyone (desktop top-bar link removed in v3.39.1; quick-nav chip on dashboard pages), `🛡️ Admin` only when `role === 'admin'`.
-- `/admin` (v3.39.0): 7 tabs — dashboard (6 cards), users (manage drawer: role, ban/unban, ±USD, ±tokens with mandatory reason, grant plan), miners (remove/restore), tasks, tickets (search/filter + thread reply/close/reopen), payments (deposits + withdrawals), purchases. Strings i18n'd (`admin.*`, `support.*` — 33 × 408 keys).
+- `/admin` (v3.39.0): 8 tabs — dashboard (6 cards), users (manage drawer: role, ban/unban, ±USD, ±tokens with mandatory reason, grant plan), miners (remove/restore), tasks, tickets (search/filter + thread reply/close/reopen), payments (deposits + withdrawals), purchases, orgs (v3.44.0). Strings i18n'd (`admin.*`, `support.*` — 33 × 483 keys).
 - `/profile`: read-only **Transactions** card merging `/api/payments/history` deposits + withdrawals (newest first, status badges, link to `/settings`).
 
 ### Tests
@@ -743,6 +743,75 @@ ssh <deploy-host> 'cd /opt/krelz/frontend && npm run build && \
   systemctl restart krelz-frontend krelz-backend'
 curl -s https://krelz.xyz/health   # must report the new version
 ```
+
+### Version Bump (v3.45.0)
+
+One command updates every canonical marker — the three `package.json`s, both
+lockfiles, the 6 shell + 2 PowerShell miner scripts, all 33 locale footers and
+the `docs/api.md` header:
+
+```bash
+node scripts/bump-version.js 3.45.0   # add the CHANGELOG section yourself
+```
+
+`backend/tests/version.parity.test.js` fails the build if any surface is out
+of sync, so CI catches a missed file. Historical version mentions in comments
+and CHANGELOG sections are intentionally left alone.
+
+### Database Backups (v3.45.0)
+
+Encrypted nightly backups run from a systemd timer (03:30 UTC):
+
+```bash
+# One-off setup (already done on the current VPS by the 3.45.0 deploy):
+mkdir -p /etc/krelz
+cp /opt/krelz/deploy/backup.env.example /etc/krelz/backup.env && chmod 600 /etc/krelz/backup.env
+openssl rand -base64 32 > /etc/krelz/backup.pass && chmod 600 /etc/krelz/backup.pass
+cp /opt/krelz/deploy/krelz-backup.{service,timer} /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now krelz-backup.timer
+
+# Run one backup now + inspect:
+/opt/krelz/scripts/backup-db.sh
+ls -l /var/backups/krelz/
+
+# Restore drill (safe: restores into a throwaway DB, then drop it):
+/opt/krelz/scripts/restore-db.sh "$(ls -t /var/backups/krelz/*.enc | head -1)"
+docker exec krelz-postgres psql -U krelz -d postgres -c 'DROP DATABASE krelz_restore_test'
+
+# Real restore over the live DB (last resort — requires --force):
+systemctl stop krelz-backend
+/opt/krelz/scripts/restore-db.sh /var/backups/krelz/<file>.enc krelz --force
+systemctl start krelz-backend
+```
+
+- **Passphrase**: `/etc/krelz/backup.pass` (600, root). Keep a copy in the
+  password manager — without it offsite dumps are undecryptable. Restore
+  refuses to touch the live DB unless `--force`.
+- **Offsite**: set `BACKUP_REMOTE` (rclone syntax, e.g. `b2:krelz-backups`)
+  in `/etc/krelz/backup.env`; install + configure rclone (`rclone config`).
+  Until then, backups are local-only — a lost VPS loses them.
+- **Retention**: `BACKUP_RETENTION_DAYS` (default 14). Dumps smaller than
+  10KB are treated as failed runs and never replace anything.
+
+### Iran Tunnel (v3.45.0 hardening)
+
+`deploy/krelz-tunnel.service` runs localhost.run's reverse SSH tunnel on
+`krelz.lhr.life` for filtered networks. Since v3.45.0 it runs as the
+unprivileged `krelz-tunnel` system user with a pinned `known_hosts`
+(`StrictHostKeyChecking=yes`), `NoNewPrivileges`, `ProtectSystem=strict` and
+restricted address families. Server setup:
+
+```bash
+useradd --system --create-home --home-dir /var/lib/krelz-tunnel --shell /usr/sbin/nologin krelz-tunnel
+mkdir -p /var/lib/krelz-tunnel/.ssh && chmod 700 /var/lib/krelz-tunnel/.ssh
+ssh-keyscan -t rsa,ecdsa,ed25519 localhost.run > /var/lib/krelz-tunnel/.ssh/known_hosts
+chown -R krelz-tunnel:krelz-tunnel /var/lib/krelz-tunnel
+cp /opt/krelz/deploy/krelz-tunnel.service /etc/systemd/system/ && systemctl daemon-reload
+systemctl restart krelz-tunnel && systemctl status krelz-tunnel
+```
+
+The relay IP in `deploy/krelz-relay/Caddyfile` is public **by design** (it is
+the address clients dial); never add it to prose docs.
 
 ## Troubleshooting
 

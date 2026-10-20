@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const pool = require('./database/pool');
 const { invalidateCache } = require('./cache');
 const { deriveKey, encrypt, decrypt, isEncrypted } = require('./services/e2e');
+const { MAX_TASK_TOKENS } = require('./services/plans');
 const { logger } = require('./logger');
 
 const TOKEN_RE = /^kz_[0-9a-f]{32,64}$/;
@@ -447,7 +448,7 @@ const hbModels = Array.isArray(msg.models)
   }
 
   async handleTaskResult(ws, msg) {
-    const { task_id, response, tokens_used, error } = msg;
+    let { task_id, response, tokens_used, error } = msg;
 
     if (!task_id) return;
 
@@ -509,18 +510,40 @@ const hbModels = Array.isArray(msg.models)
       // This handler only records the raw result. Billing (cost, miner earnings,
       // daily tokens) is owned exclusively by routes/chat.js so a task is never
       // paid twice and the user is always charged the published model price.
-      const updated = await pool.query(
-        `UPDATE tasks
-            SET response = $1, tokens_used = $2, status = 'completed', completed_at = CURRENT_TIMESTAMP
-          WHERE id = $3 AND status IN ('pending', 'processing')
-          RETURNING id`,
-        [plainResponse, tokens_used || 0, task_id]
-      );
+      // v3.45.0 (H1): tokens_used is miner-controlled and drives both the user
+      // charge and the miner share — an out-of-bounds report is rejected here
+      // (never persisted, never clamped) and resolved as a miner error so the
+      // dispatcher fails over to the next candidate.
+      const reported = Number(tokens_used);
+      if (!Number.isFinite(reported) || reported < 0 || reported > MAX_TASK_TOKENS) {
+        logger.warn(
+          { taskId: task_id, minerId: miner.id, tokens_used },
+          'Rejected miner result: tokens_used out of bounds'
+        );
+        const failed = await pool.query(
+          "UPDATE tasks SET response = $1, status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $2 AND status IN ('pending', 'processing') RETURNING id",
+          ['tokens_used out of bounds', task_id]
+        );
+        if (failed.rows.length === 0) {
+          logger.warn({ taskId: task_id, minerId: miner.id }, 'Ignored replayed task_result (error)');
+          return;
+        }
+        error = 'tokens_used out of bounds';
+      } else {
+        const updated = await pool.query(
+          `UPDATE tasks
+              SET response = $1, tokens_used = $2, status = 'completed', completed_at = CURRENT_TIMESTAMP
+            WHERE id = $3 AND status IN ('pending', 'processing')
+            RETURNING id`,
+          [plainResponse, reported, task_id]
+        );
 
-      if (updated.rows.length === 0) {
-        // Replay of an already-resolved task: do not touch counters or state.
-        logger.warn({ taskId: task_id, minerId: miner.id }, 'Ignored replayed task_result');
-        return;
+        if (updated.rows.length === 0) {
+          // Replay of an already-resolved task: do not touch counters or state.
+          logger.warn({ taskId: task_id, minerId: miner.id }, 'Ignored replayed task_result');
+          return;
+        }
+        tokens_used = reported;
       }
     }
 

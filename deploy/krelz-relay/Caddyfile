@@ -1,5 +1,10 @@
-# Krelz relay — browser → this host (65.109.190.133, reachable from networks
-# that filter the krelz.xyz SNI / block the origin IP) → Cloudflare → origin.
+# Krelz relay — browser → this host (folder deploy/krelz-relay, reachable
+# from networks that filter the krelz.xyz SNI / block the origin IP) →
+# Cloudflare → origin.
+#
+# The relay's public IP appears below because it IS the address clients dial
+# (nip.io hostname + LE cert); it is public by design, not a secret. Keep it
+# out of prose docs — rotate together with the DNS/nip.io notes in DEVELOP.md.
 #
 # Primary URL:  https://65-109-190-133.nip.io   (real LE cert, auto-renewed)
 # Fallback:     https://65.109.190.133           (self-signed; click through)

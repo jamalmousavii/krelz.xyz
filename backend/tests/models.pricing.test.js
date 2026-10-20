@@ -1,5 +1,6 @@
 const MODELS = require('../src/models');
 const chat = require('../src/routes/chat');
+const { modelOutputPrice } = require('../src/services/plans');
 
 describe('model catalog', () => {
   it('has unique ids', () => {
@@ -39,15 +40,13 @@ describe('model catalog', () => {
 describe('chat pricing', () => {
   it('uses the catalog price for a known model', () => {
     const m = MODELS.find((x) => x.id === 'llama3.1:8b');
-    expect(chat.getModelPricing('llama3.1:8b')).toEqual({
-      inputPrice: m.inputPrice,
-      outputPrice: m.outputPrice,
-    });
+    expect(modelOutputPrice('llama3.1:8b')).toBe(m.outputPrice);
   });
 
   it('falls back to a conservative price for an unknown model', () => {
-    const pricing = chat.getModelPricing('does-not-exist:99b');
-    expect(pricing.outputPrice).toBeGreaterThan(0);
+    // v3.45.0: chat and v1 resolve through services/plans.js — one shared
+    // fallback instead of three divergent literals.
+    expect(modelOutputPrice('does-not-exist:99b')).toBeGreaterThan(0);
   });
 
   it('keeps the revenue split as documented', () => {

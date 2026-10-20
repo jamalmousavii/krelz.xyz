@@ -2,10 +2,9 @@ const pool = require('../database/pool');
 const { chargeFreeTokens } = require('./freeAllowance');
 const { chargeMinerCredit } = require('./minerCredit');
 const { chargeTokenPot } = require('./tokenBundles');
-const { getActivePlan } = require('./plans');
+const { getActivePlan, MINER_REVENUE_SHARE } = require('./plans');
 const { invalidateCache } = require('../cache');
-
-const MINER_REVENUE_SHARE = 0.9;
+const { logger } = require('../logger');
 
 // Single money mutation point (extracted verbatim from routes/chat.js).
 // Chain, in order, inside ONE row-locked transaction:
@@ -117,7 +116,14 @@ async function settleMessage({ userId, guestKey, tokensUsed, cost, minerId, serv
     }
 
     // The balance payload now carries free_tokens/pot too — any charge changes it.
-    invalidateCache('/api/payments/balance');
+    // v3.45.0: this runs AFTER COMMIT, so a cache failure must never throw —
+    // a throw after commit would make the caller mark the task billing_pending
+    // and the maintenance retry would charge the user twice.
+    try {
+      invalidateCache('/api/payments/balance');
+    } catch (err) {
+      logger.warn({ err: err.message }, 'Balance cache invalidation failed (charge committed)');
+    }
   }
 
   return {

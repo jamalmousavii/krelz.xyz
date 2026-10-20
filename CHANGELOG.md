@@ -1,5 +1,52 @@
 # Changelog
 
+## [3.45.0] - 2026-10-19
+
+Safety net + correctness fixes (pre-feature hardening before the next round).
+
+### Ops / safety net
+- **Encrypted nightly backups** — `scripts/backup-db.sh` (pg_dump → gzip →
+  openssl AES-256-CBC), 14-day retention, rclone-ready offsite hook,
+  systemd timer at 03:30 UTC (`deploy/krelz-backup.{service,timer}`).
+  `scripts/restore-db.sh` restores any dump into a throwaway DB for drills;
+  refuses to touch the live DB without `--force`.
+- **Tunnel hardened** — `deploy/krelz-tunnel.service` now runs as an
+  unprivileged system user with a pinned host key and full systemd sandbox
+  (NoNewPrivileges, ProtectSystem=strict, restrict address families).
+
+### Correctness (B)
+- Hot-path indexes: unique `api_keys(key_hash)` (was a seq scan per `/v1`
+  call) + `api_keys(user_id)`; `org_members(user_id)` replaced by a partial
+  unique index on ACTIVE rows — one active org per user is now DB-enforced
+  (the app check was check-then-insert).
+- Org mutations (`transfer`, `leave`, `members add`) run in transactions with
+  the org row locked; add-by-email gets a 20/15min per-leader limiter.
+- Billing guards: `failTask` can no longer flip a completed task to failed
+  (status guard); a settlement failure after the answer was served no longer
+  500s — the task is marked `billing_pending` (new `tasks.billing_status` /
+  `billing_attempts` columns) and the maintenance worker retries it up to 3
+  times (`unreconciled` after). `invalidateCache` after COMMIT can never
+  throw into the caller (double-charge window closed).
+- WS `task_result`: out-of-bounds `tokens_used` (NaN, negative, > 65536) is
+  rejected at the WS boundary — never persisted, never clamped — and resolved
+  as a miner error for failover.
+- Single pricing source: `services/plans.js#modelOutputPrice` (one fallback,
+  0.158) replaces the three divergent literals in chat/v1/plans and the
+  duplicate `MINER_REVENUE_SHARE`.
+
+### UX + tests + docs
+- Purchase double-click guard: buy buttons disable while an invoice opens
+  (synchronous re-entry lock in the page) and the API 409s a second invoice
+  for the same subject within 90s (`purchase_pending`).
+- New tests: orgs (transactions + unique-index mapping), billing
+  reconciliation, WS bounds, purchase double-click, version parity
+  (`backend/tests/version.parity.test.js`).
+- `scripts/bump-version.js` — one command bumps manifests, lockfiles, miner
+  scripts, 33 locale footers and docs; the parity test fails the build if a
+  surface is missed.
+- `docs/api.md`: documents `/api/keys`, `/api/orgs`, `/api/admin/orgs`
+  (v3.43.0/v3.44.0 endpoints previously undocumented).
+
 ## [3.44.0] - 2026-10-12
 
 Organization plans (shared bucket).

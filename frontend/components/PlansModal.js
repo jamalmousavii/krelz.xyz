@@ -15,6 +15,7 @@ export default function PlansModal({
   catalog,
   planHint,
   purchaseError,
+  purchaseBusy,
   bundleAmount,
   setBundleAmount,
   onBuyPlan,
@@ -82,6 +83,7 @@ export default function PlansModal({
             catalog={catalog}
             planHint={planHint}
             purchaseError={purchaseError}
+            purchaseBusy={purchaseBusy}
             bundleAmount={bundleAmount}
             setBundleAmount={setBundleAmount}
             onBuyPlan={onBuyPlan}

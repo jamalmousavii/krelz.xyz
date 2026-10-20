@@ -293,3 +293,48 @@ describe('B10: users leaderboard reads user_coin_balances', () => {
     expect(joined).not.toMatch(/LEFT JOIN user_balances/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// v3.45.0 — double-click guard: one live invoice per subject+kind at a time.
+// ---------------------------------------------------------------------------
+describe('v3.45.0: purchase double-click guard', () => {
+  it('409s a second token purchase while a 90s-window invoice is pending', async () => {
+    authDb();
+    pool.__state.queryImpl = async (sql) => {
+      const s = String(sql).trim().replace(/\s+/g, ' ');
+      if (s.includes('token_version')) return { rows: [{ token_version: 0 }] };
+      if (s.includes('FROM plan_purchases') && s.includes("status = 'pending'")) return { rows: [{ id: 1 }] };
+      return { rows: [] };
+    };
+
+    const token = sign({ id: 306, role: 'user', token_version: 0 });
+    const res = await request(plansApp())
+      .post('/api/plans/tokens/purchase')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ amount_usd: 5 });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('purchase_pending');
+    expect(nowpayments.createInvoice).not.toHaveBeenCalled();
+    expect(pool.__state.statements.join('\n')).not.toMatch(/INSERT INTO plan_purchases/);
+  });
+
+  it('409s a second tier purchase while a 90s-window invoice is pending', async () => {
+    authDb();
+    pool.__state.queryImpl = async (sql) => {
+      const s = String(sql).trim().replace(/\s+/g, ' ');
+      if (s.includes('token_version')) return { rows: [{ token_version: 0 }] };
+      if (s.includes('FROM plan_purchases') && s.includes("status = 'pending'")) return { rows: [{ id: 1 }] };
+      return { rows: [] };
+    };
+
+    const token = sign({ id: 307, role: 'user', token_version: 0 });
+    const res = await request(plansApp())
+      .post('/api/plans/pro/purchase')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('purchase_pending');
+    expect(nowpayments.createInvoice).not.toHaveBeenCalled();
+  });
+});

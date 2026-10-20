@@ -53,26 +53,31 @@ async function getOrgUsage(orgId, client = pool) {
 }
 
 async function addMember(orgId, userId, role = 'member', client = pool) {
-  const existing = await client.query(
-    `SELECT org_id FROM org_members WHERE user_id = $1 AND status = 'active'`,
-    [userId]
-  );
-  if (existing.rows.length > 0) {
-    throw new Error('User already belongs to an active org');
+  // v3.45.0: the pre-check was check-then-insert — two concurrent adds could
+  // both pass it. The partial unique index uniq_org_members_active_user
+  // (one ACTIVE membership per user) is now the final guard; we just map its
+  // violation to the same friendly error.
+  try {
+    await client.query(
+      `INSERT INTO org_members (org_id, user_id, role, status)
+       VALUES ($1, $2, $3, 'active')
+       ON CONFLICT (org_id, user_id) DO UPDATE SET status = 'active', role = EXCLUDED.role`,
+      [orgId, userId, role]
+    );
+  } catch (err) {
+    if (err.code === '23505') {
+      throw Object.assign(new Error('User already belongs to an active org'), { status: 400 });
+    }
+    throw err;
   }
-  await client.query(
-    `INSERT INTO org_members (org_id, user_id, role, status)
-     VALUES ($1, $2, $3, 'active')
-     ON CONFLICT (org_id, user_id) DO UPDATE SET status = 'active', role = $3`,
-    [orgId, userId, role]
-  );
 }
 
 async function removeMember(orgId, userId, client = pool) {
-  await client.query(
-    `UPDATE org_members SET status = 'removed' WHERE org_id = $1 AND user_id = $2`,
+  const r = await client.query(
+    `UPDATE org_members SET status = 'removed' WHERE org_id = $1 AND user_id = $2 AND status = 'active'`,
     [orgId, userId]
   );
+  return r.rowCount;
 }
 
 module.exports = {

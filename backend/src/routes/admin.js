@@ -8,6 +8,7 @@ const pool = require('../database/pool');
 const { authenticate, requireAdmin, invalidateTokenVersion } = require('../middleware/auth');
 const { logger } = require('../logger');
 const { activatePlan, PLANS } = require('../services/plans');
+const { withTransaction } = require('../database/tx');
 
 const ROLES = ['user', 'miner', 'admin'];
 const TICKET_STATUSES = ['open', 'answered', 'closed'];
@@ -26,22 +27,6 @@ async function logAdminAction(client, { adminId, action, targetType, targetId, r
      VALUES ($1, $2, $3, $4, $5, $6)`,
     [adminId, action, targetType, targetId, reason || null, payload ? JSON.stringify(payload) : null]
   );
-}
-
-// Run `fn(client)` inside a transaction; on failure roll back and rethrow.
-async function withTransaction(fn) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const out = await fn(client);
-    await client.query('COMMIT');
-    return out;
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
 }
 
 function fail(res, err, msg) {

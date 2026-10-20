@@ -4,9 +4,10 @@ const router = express.Router();
 const pool = require('../database/pool');
 const { authenticateApiKey } = require('../middleware/apiKey');
 const MODELS = require('../models');
-const { listPlans, TOKEN_BUNDLE } = require('../services/plans');
+const { listPlans, TOKEN_BUNDLE, modelOutputPrice, MAX_TASK_TOKENS, getActivePlan } = require('../services/plans');
 const { getTokenBalance } = require('../services/tokenBundles');
 const { settleMessage } = require('../services/billing');
+const { resolveCap, getActiveOrg } = require('../services/org');
 const { logger } = require('../logger');
 
 // OpenAI-compatible coder API (v3.43.0) for agents (opencode et al).
@@ -52,10 +53,8 @@ async function checkApiCoverage(userId) {
       `SELECT plan_type FROM user_plans WHERE user_id = $1 AND status = 'active' AND expires_at > now()`,
       [userId]
     );
-    if (plan.rows.length > 0 && PAID_PLANS.includes(plan.rows[0].plan_type)) return { covered: true };
+    if (plan.rows.some((row) => PAID_PLANS.includes(row.plan_type))) return { covered: true };
     // v3.44.0 org: a member rides the leader's paid plan.
-    const { getActiveOrg } = require('../services/org');
-    const { getActivePlan } = require('../services/plans');
     const org = await getActiveOrg(userId);
     if (org) {
       const leaderPlan = await getActivePlan(org.leader_user_id);
@@ -169,8 +168,9 @@ router.post('/chat/completions', async (req, res) => {
     const taskId = taskResult.rows[0].id;
 
     const failTask = async (note) => {
+      // Status-guarded (v3.45.0): never flip a completed task back to failed.
       await pool.query(
-        "UPDATE tasks SET response = $1, status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $2",
+        "UPDATE tasks SET response = $1, status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $2 AND status IN ('pending', 'processing')",
         [note, taskId]
       );
     };
@@ -202,7 +202,7 @@ router.post('/chat/completions', async (req, res) => {
           continue;
         }
         const reported = Number(result.tokens_used);
-        if (!Number.isFinite(reported) || reported < 0 || reported > 65536) {
+        if (!Number.isFinite(reported) || reported < 0 || reported > MAX_TASK_TOKENS) {
           wsServer.recordModelResult(cand.minerId, model, false);
           continue;
         }
@@ -222,21 +222,27 @@ router.post('/chat/completions', async (req, res) => {
       return res.status(r.status).json(r.body);
     }
 
-    const pricing = (() => {
-      const found = MODELS.find((m) => m.id === model);
-      return found ? found.outputPrice : 0.188;
-    })();
-    const cost = (tokensUsed * pricing) / 1000000;
+    // Output-only charge at the single shared catalog price (v3.45.0).
+    const cost = (tokensUsed * modelOutputPrice(model)) / 1000000;
 
     await pool.query(
       `UPDATE tasks SET response = $1, tokens_used = $2, cost = $3, status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = $4`,
       [response, tokensUsed, cost, taskId]
     );
     // v3.44.0 org: members settle against the shared bucket when the org
-    // plan wins (same max rule as chat).
-    const { resolveCap } = require('../services/org');
-    const resolved = await resolveCap(userId, null);
-    await settleMessage({ userId, guestKey: null, tokensUsed, cost, minerId, servedByMiner: true, freeCap: resolved.cap, freeRemainingInit: null, bucketUserId: resolved.bucketUserId, paymentCoin: 'USD', taskId });
+    // plan wins (same max rule as chat). v3.45.0: a settlement failure must
+    // not 500 after the completion was already produced — the task is marked
+    // billing_pending for the maintenance retry (nothing was charged).
+    try {
+      const resolved = await resolveCap(userId, null);
+      await settleMessage({ userId, guestKey: null, tokensUsed, cost, minerId, servedByMiner: true, freeCap: resolved.cap, freeRemainingInit: null, bucketUserId: resolved.bucketUserId, paymentCoin: 'USD', taskId });
+    } catch (err) {
+      logger.error({ err, taskId }, 'Settlement failed after task completed — marked billing_pending');
+      await pool.query(
+        "UPDATE tasks SET billing_status = 'pending', billing_attempts = billing_attempts + 1 WHERE id = $1",
+        [taskId]
+      ).catch((e) => logger.error({ err: e, taskId }, 'Failed to mark billing_pending'));
+    }
 
     // prompt_tokens estimated (~4 chars/token); billing stays output-only.
     const promptTokens = Math.ceil(prompt.length / 4);

@@ -7,6 +7,7 @@ export default function PlansContent({
   catalog,
   planHint,
   purchaseError,
+  purchaseBusy,
   bundleAmount,
   setBundleAmount,
   onBuyPlan,
@@ -43,9 +44,10 @@ export default function PlansContent({
               <div className="mt-auto pt-2">
                 <button
                   onClick={() => onBuyPlan(p.name)}
-                  className={`w-full py-2 rounded-xl transition text-sm font-bold text-white ${active ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-violet-600 hover:bg-violet-700'}`}
+                  disabled={!!purchaseBusy}
+                  className={`w-full py-2 rounded-xl transition text-sm font-bold text-white disabled:opacity-50 ${active ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-violet-600 hover:bg-violet-700'}`}
                 >
-                  {active ? t('profile.planRenew') : t('profile.planUpgrade')}
+                  {purchaseBusy === p.name ? '…' : (active ? t('profile.planRenew') : t('profile.planUpgrade'))}
                 </button>
               </div>
             </div>
@@ -72,9 +74,10 @@ export default function PlansContent({
             />
             <button
               onClick={onBuyBundle}
-              className="bg-sky-600 hover:bg-sky-700 text-white px-3 py-2 rounded-xl transition text-sm font-bold whitespace-nowrap"
+              disabled={!!purchaseBusy}
+              className="bg-sky-600 hover:bg-sky-700 text-white px-3 py-2 rounded-xl transition text-sm font-bold whitespace-nowrap disabled:opacity-50"
             >
-              {t('profile.bundleBtn')}
+              {purchaseBusy === 'tokens' ? '…' : t('profile.bundleBtn')}
             </button>
           </div>
         </div>

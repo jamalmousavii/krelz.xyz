@@ -19,7 +19,7 @@ const { logger } = require('../logger');
 const { prepareAttachment, AttachmentError } = require('../services/attachments');
 const { getMinerCreditStatus } = require('../services/minerCredit');
 const { getFreeStatus } = require('../services/freeAllowance');
-const { getDailyCap, FREE_DAILY_TOKENS, TOKEN_BUNDLE, listPlans } = require('../services/plans');
+const { FREE_DAILY_TOKENS, TOKEN_BUNDLE, listPlans, modelOutputPrice, MAX_TASK_TOKENS } = require('../services/plans');
 const { getTokenBalance } = require('../services/tokenBundles');
 const { settleMessage, MINER_REVENUE_SHARE } = require('../services/billing');
 const { resolveCap } = require('../services/org');
@@ -27,15 +27,11 @@ const { resolveCap } = require('../services/org');
 // Single source of truth for the default model (was split between
 // 'llama3:8b' — which exists in no catalog — and 'llama3.1:8b').
 const DEFAULT_MODEL = 'llama3.1:8b';
-// H1: hard per-task output-token bound. tokens_used comes from the miner (it
-// both drives the user charge and the 90% miner share), so an inflated or
-// NaN count must fail the task instead of minting money.
-const MAX_TASK_TOKENS = 65536;
-
-const getModelPricing = (modelId) => {
-  const found = MODELS.find(m => m.id === modelId);
-  return found ? { inputPrice: found.inputPrice, outputPrice: found.outputPrice } : { inputPrice: 0.088, outputPrice: 0.176 };
-};
+// H1: the hard per-task output-token bound (MAX_TASK_TOKENS) lives in
+// services/plans.js (v3.45.0) so chat, v1 and the WS result handler share
+// one number. tokens_used comes from the miner (it both drives the user
+// charge and the 90% miner share), so an inflated or NaN count must fail the
+// task instead of minting money.
 
 // Conversation window (v3.41.0): the last turns sent with every dispatch so
 // miners can actually use context. Sliding window — newest first until the
@@ -422,8 +418,10 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
     let minerId = null;
 
     const failTask = async (note) => {
+      // Status-guarded (v3.45.0): never flip a task that already completed
+      // (e.g. a late dispatch failure after a successful miner result).
       await pool.query(
-        "UPDATE tasks SET response = $1, status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $2",
+        "UPDATE tasks SET response = $1, status = 'failed', completed_at = CURRENT_TIMESTAMP WHERE id = $2 AND status IN ('pending', 'processing')",
         [note, taskId]
       );
     };
@@ -495,8 +493,8 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
         servedByMiner = true;
         minerId = cand.minerId;
         wsServer.recordModelResult(cand.minerId, requestedModel, true);
-        const pricing = getModelPricing(requestedModel);
-        cost = (tokensUsed * pricing.outputPrice) / 1000000;
+        // Output-only charge at the single shared catalog price (v3.45.0).
+        cost = (tokensUsed * modelOutputPrice(requestedModel)) / 1000000;
         break;
 
       } catch (wsError) {
@@ -540,6 +538,33 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
     // leg-by-leg rules; behavior here is unchanged.
     // A subject with no coverage never reaches here: the pre-flight wall
     // (402 upgrade_required) rejected it before dispatch.
+    // v3.45.0: a settlement failure must not 500 after the answer was served.
+    // The task is marked billing_pending and the maintenance worker retries
+    // it — nothing was charged (settleMessage is one rolled-back transaction).
+    let settled = null;
+    let billingPending = false;
+    try {
+      settled = await settleMessage({
+        userId,
+        guestKey,
+        tokensUsed,
+        cost,
+        minerId,
+        servedByMiner,
+        freeCap,
+        freeRemainingInit: preFlightFree ? preFlightFree.remaining : null,
+        bucketUserId,
+        paymentCoin,
+        taskId,
+      });
+    } catch (err) {
+      billingPending = true;
+      logger.error({ err, taskId }, 'Settlement failed after task completed — marked billing_pending');
+      await pool.query(
+        "UPDATE tasks SET billing_status = 'pending', billing_attempts = billing_attempts + 1 WHERE id = $1",
+        [taskId]
+      ).catch((e) => logger.error({ err: e, taskId }, 'Failed to mark billing_pending'));
+    }
     const {
       paymentStatus,
       minerCreditRemaining,
@@ -548,19 +573,7 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
       upgradeNotice,
       freeLow,
       freeExhausted,
-    } = await settleMessage({
-      userId,
-      guestKey,
-      tokensUsed,
-      cost,
-      minerId,
-      servedByMiner,
-      freeCap,
-      freeRemainingInit: preFlightFree ? preFlightFree.remaining : null,
-      bucketUserId,
-      paymentCoin,
-      taskId,
-    });
+    } = settled || {};
 
     res.json({
       success: true,
@@ -570,14 +583,15 @@ router.post('/', strictIfHeader, chatRules, validate, async (req, res) => {
       tokens_used: tokensUsed,
       cost,
       coin: paymentCoin,
-      payment_status: paymentStatus,
+      payment_status: billingPending ? 'pending' : paymentStatus,
       miner_id: servedByMiner ? minerId : null,
       source: 'miner',
       miner_credit_remaining: minerCreditRemaining,
       free_tokens_remaining: freeRemaining,
+      ...(billingPending ? { billing_pending: true } : {}),
       ...(freeLow ? { free_low: true } : {}),
       ...(freeExhausted ? { free_exhausted: true } : {}),
-      ...(tokenBalanceRemaining !== null ? { token_balance_remaining: tokenBalanceRemaining } : {}),
+      ...(tokenBalanceRemaining !== null && tokenBalanceRemaining !== undefined ? { token_balance_remaining: tokenBalanceRemaining } : {}),
       ...(upgradeNotice ? {
         notice: 'upgrade_recommended',
         plans: listPlans(),
@@ -615,7 +629,6 @@ router.get('/history', authenticate, async (req, res) => {
 });
 
 // Exposed for the test suite (pricing rules are money-adjacent).
-router.getModelPricing = getModelPricing;
 router.DEFAULT_MODEL = DEFAULT_MODEL;
 router.MINER_REVENUE_SHARE = MINER_REVENUE_SHARE;
 

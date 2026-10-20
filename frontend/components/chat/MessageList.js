@@ -6,7 +6,7 @@ import UpgradeWall from './UpgradeWall';
 // indicator, scroll spacer. Extracted from pages/index.js in Phase 6 —
 // module-level + memo (defining this inside Home would create a new component
 // type each render and remount the whole subtree, F7).
-function MessageList({ messagesRef, chat, loading, lang, t, hasSubjectBar, purchasePlan, purchaseTokens, bundleAmount, setBundleAmount, purchaseError, onRetryWaiting, onDismissFailed, onSwitchModel }) {
+function MessageList({ messagesRef, chat, loading, lang, t, hasSubjectBar, purchasePlan, purchaseTokens, purchaseBusy, bundleAmount, setBundleAmount, purchaseError, onRetryWaiting, onDismissFailed, onSwitchModel }) {
   const rtl = isRtl(lang);
   return (
     <div ref={messagesRef} className={`bg-white border border-gray-200/80 ${hasSubjectBar ? 'rounded-b-2xl' : 'rounded-2xl'} p-3 md:p-5 flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain mb-3 shadow-sm`}>
@@ -39,6 +39,7 @@ function MessageList({ messagesRef, chat, loading, lang, t, hasSubjectBar, purch
                 t={t}
                 purchasePlan={purchasePlan}
                 purchaseTokens={purchaseTokens}
+                purchaseBusy={purchaseBusy}
                 bundleAmount={bundleAmount}
                 setBundleAmount={setBundleAmount}
                 purchaseError={purchaseError}
